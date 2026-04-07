@@ -482,7 +482,23 @@ export default function Dashboard(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={lbl}>Photo Progress</div><div style={{display:"flex",gap:4}}><button className="press" onClick={()=>setShowGal(!showGal)} style={btnG}>{showGal?"Hide":"Show"}</button></div></div>
             <div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:8}}>📸 {Object.values(photoLog).flat().length} photos · {Object.keys(photoLog).length} days · 🔥 {photoStreak}d streak</div>
             <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>{todos.filter(t=>t.proof).map(t=>{const tl=getPhotoTimeline(t.id);return tl.length>=2?(<button key={t.id} className="press" onClick={()=>setShowTimeline(t.id)} style={{...btnG}}>{t.text}</button>):null;})}</div>
-            {showGal&&<div style={{marginTop:8}}>{Object.keys(photoLog).length===0&&<div style={{textAlign:"center",padding:16,color:C.textDim,fontSize:12}}>No proofs yet</div>}{Object.entries(photoLog).flatMap(([d,items])=>items.map((it,i)=>(<div key={`${d}-${i}`} style={{display:"inline-block",width:80,height:80,margin:6,borderRadius:8,overflow:"hidden"}}><img src={it.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>)))}</div>
+          {Object.entries(photoLog).flatMap(([d, items]) =>
+  items.map((it, i) => (
+    <div
+      key={`${d}-${i}`}
+      style={{
+        display: "inline-block",
+        width: 80,
+        height: 80,
+        margin: 6,
+        borderRadius: 8,
+        overflow: "hidden",
+      }}
+    >
+      <img src={it.img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    </div>
+  ))
+)}
           </div>
 
           <div style={{...card,padding:"16px 20px",marginBottom:14}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={lbl}>This Month</span><span style={{fontSize:12,color:C.textDim}}>{vDate.toLocaleString("en-US",{month:"long"})}</span></div><div style={{display:"flex",gap:8}}><div style={{flex:1,height:80,background:C.surfaceDim,borderRadius:8}}></div><div style={{flex:1,height:80,background:C.surfaceDim,borderRadius:8}}></div></div></div>
