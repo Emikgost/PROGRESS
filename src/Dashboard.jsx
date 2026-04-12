@@ -2,14 +2,18 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 /* ═══ TOKENS ═══ */
-const C={bg:"#F3F4F7",surface:"#FFFFFF",surfaceDim:"#F8F9FB",text:"#1A1D2E",textSec:"#4B4F63",textDim:"#9196A8",blue:"#3568B2",blueLight:"#4178C4",blueSoft:"rgba(53,104,178,0.07)",blueMed:"rgba(53,104,178,0.13)",green:"#2A9D5C",greenBright:"#34BB6E",greenSoft:"rgba(42,157,92,0.07)",greenMed:"rgba(42,157,92,0.13)",red:"#D04545",redSoft:"rgba(208,69,69,0.07)",gold:"#C9960C",goldBright:"#E2AE2A",goldSoft:"rgba(201,150,12,0.07)",goldMed:"rgba(201,150,12,0.13)",orange:"#E07A3A",orangeSoft:"rgba(224,122,58,0.08)",purple:"#7B65B0",purpleSoft:"rgba(123,101,176,0.07)"};
+// Navy editorial dark palette. One accent (warm amber). Everything else is greyscale.
+// Slightly lifted from pitch navy — warmer, more readable, still serious.
+const C={bg:"#131A2B",surface:"#1C2438",surfaceDim:"#161D30",surfaceHi:"#2A334A",text:"#F8F5EC",textSec:"#D4DCE8",textDim:"#7D8699",hairline:"rgba(248,245,236,0.10)",accent:"#F59E0B",accentBright:"#FBBF24",accentSoft:"rgba(245,158,11,0.12)",accentMed:"rgba(245,158,11,0.22)",green:"#34D399",greenSoft:"rgba(52,211,153,0.12)",greenMed:"rgba(52,211,153,0.20)",red:"#F87171",redSoft:"rgba(248,113,113,0.12)",
+// Back-compat aliases so existing code paths keep working
+blue:"#F59E0B",blueLight:"#FBBF24",blueSoft:"rgba(245,158,11,0.12)",blueMed:"rgba(245,158,11,0.20)",greenBright:"#34D399",gold:"#F59E0B",goldBright:"#FBBF24",goldSoft:"rgba(245,158,11,0.12)",goldMed:"rgba(245,158,11,0.20)",orange:"#F59E0B",orangeSoft:"rgba(245,158,11,0.12)",purple:"#7D8699",purpleSoft:"rgba(125,134,153,0.12)"};
 const DIFF={easy:{pts:1,label:"Easy",color:C.green,bg:C.greenSoft},medium:{pts:3,label:"Med",color:C.blue,bg:C.blueSoft},hard:{pts:6,label:"Hard",color:C.orange,bg:C.orangeSoft}};
-const FN={h:"'Audiowide',sans-serif",b:"'Inter',sans-serif"};
+const FN={h:"'Fraunces',serif",b:"'Inter',sans-serif",m:"'JetBrains Mono',monospace"};
 const pC=p=>p>=80?C.greenBright:p>=60?C.green:p>=40?C.gold:p>=20?C.orange:C.red;
 const gB=p=>p>=80?`linear-gradient(90deg,${C.green},${C.greenBright})`:p>=50?`linear-gradient(90deg,${C.blue},${C.green})`:p>=25?`linear-gradient(90deg,${C.gold},${C.blue})`:`linear-gradient(90deg,${C.red},${C.gold})`;
-// Red → Green gradient for calendar cells
-const pctBg=p=>{if(p<=0)return "transparent";const r=Math.round(208+(42-208)*(p/100));const g=Math.round(69+(157-69)*(p/100));const b=Math.round(69+(92-69)*(p/100));return `rgba(${r},${g},${b},0.22)`;};
-const pctBorder=p=>{if(p<=0)return "transparent";const r=Math.round(208+(42-208)*(p/100));const g=Math.round(69+(157-69)*(p/100));const b=Math.round(69+(92-69)*(p/100));return `rgba(${r},${g},${b},0.6)`;};
+// Red → amber → green gradient tuned for dark mode — vivid enough to pop on navy
+const pctBg=p=>{if(p<=0)return "transparent";const r=Math.round(248+(52-248)*(p/100));const g=Math.round(113+(211-113)*(p/100));const b=Math.round(113+(153-113)*(p/100));return `rgba(${r},${g},${b},0.18)`;};
+const pctBorder=p=>{if(p<=0)return "transparent";const r=Math.round(248+(52-248)*(p/100));const g=Math.round(113+(211-113)*(p/100));const b=Math.round(113+(153-113)*(p/100));return `rgba(${r},${g},${b},0.55)`;};
 const dk=d=>{const t=typeof d==="string"?new Date(d):d;return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;};
 const fd=d=>new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"});
 const uid=()=>`_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
@@ -35,25 +39,38 @@ const SHOP_ITEMS=[
   {id:"badge_diamond",name:"Diamond Badge",desc:"Exclusive icon",cost:400,icon:"💠"},
 ];
 
-const card={background:C.surface,borderRadius:16,padding:20,boxShadow:"0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)"};
-const lbl={fontFamily:FN.b,fontSize:13,fontWeight:700,color:C.text,marginBottom:14};
-const inp={background:C.surfaceDim,border:"1px solid rgba(0,0,0,0.06)",borderRadius:10,padding:"11px 14px",color:C.text,fontSize:13,fontFamily:FN.b,fontWeight:500,outline:"none",width:"100%"};
-const numI={...inp,textAlign:"center",fontWeight:600};
-const btnB={background:C.blue,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:13,fontFamily:FN.b,fontWeight:600,cursor:"pointer",transition:"all 0.15s ease"};
-const btnG={background:C.surfaceDim,border:"none",borderRadius:10,padding:"9px 16px",color:C.textSec,fontSize:12,fontFamily:FN.b,fontWeight:500,cursor:"pointer",transition:"all 0.15s ease"};
-const pill=(on,clr)=>({background:on?(clr||C.blue):C.surfaceDim,border:"none",borderRadius:20,padding:"6px 16px",color:on?"#fff":C.textDim,fontSize:12,fontFamily:FN.b,fontWeight:600,cursor:"pointer",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)"});
+const card={background:C.surface,borderRadius:14,padding:20,border:`1px solid ${C.hairline}`,boxShadow:"0 1px 0 rgba(255,255,255,0.03) inset"};
+const lbl={fontFamily:FN.b,fontSize:11,fontWeight:600,color:C.textDim,marginBottom:14,textTransform:"uppercase",letterSpacing:"0.08em"};
+const inp={background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"11px 14px",color:C.text,fontSize:13,fontFamily:FN.b,fontWeight:500,outline:"none",width:"100%"};
+const numI={...inp,textAlign:"center",fontFamily:FN.m,fontWeight:600};
+const btnB={background:C.accent,border:"none",borderRadius:8,padding:"11px 20px",color:"#0B1120",fontSize:12,fontFamily:FN.b,fontWeight:700,cursor:"pointer",transition:"all 0.15s ease",letterSpacing:"0.02em",textTransform:"uppercase"};
+const btnG={background:C.surfaceHi,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"9px 16px",color:C.textSec,fontSize:11,fontFamily:FN.b,fontWeight:600,cursor:"pointer",transition:"all 0.15s ease",textTransform:"uppercase",letterSpacing:"0.04em"};
+const pill=(on,clr)=>({background:on?(clr||C.accent):C.surfaceHi,border:`1px solid ${on?"transparent":C.hairline}`,borderRadius:6,padding:"6px 14px",color:on?"#0B1120":C.textDim,fontSize:11,fontFamily:FN.b,fontWeight:700,cursor:"pointer",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",textTransform:"uppercase",letterSpacing:"0.04em"});
 
-const Tip=({active,payload,label:lb})=>{if(!active||!payload?.length)return null;return(<div style={{background:"#fff",borderRadius:10,padding:"8px 14px",fontSize:12,fontFamily:FN.b,boxShadow:"0 4px 20px rgba(0,0,0,0.08)"}}><div style={{color:C.textDim,marginBottom:3,fontSize:11}}>{lb}</div>{payload.map((p,i)=>(<div key={i} style={{color:p.color||C.text,fontWeight:600}}>{p.name}: {typeof p.value==="number"?Math.round(p.value*10)/10:p.value}</div>))}</div>);};
+const Tip=({active,payload,label:lb})=>{if(!active||!payload?.length)return null;return(<div style={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"8px 14px",fontSize:11,fontFamily:FN.m,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}><div style={{color:C.textDim,marginBottom:3}}>{lb}</div>{payload.map((p,i)=>(<div key={i} style={{color:p.color||C.text,fontWeight:600}}>{p.name}: {typeof p.value==="number"?Math.round(p.value*10)/10:p.value}</div>))}</div>);};
 
 const CSS=`
-@keyframes checkPop{0%{transform:scale(1)}50%{transform:scale(1.25)}100%{transform:scale(1)}}
+@keyframes checkStamp{0%{transform:scale(0.6);opacity:0}50%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:1}}
+@keyframes strikeSweep{0%{transform:scaleX(0)}100%{transform:scaleX(1)}}
+@keyframes rowDim{0%{background:rgba(245,158,11,0.12)}100%{background:transparent}}
 @keyframes xpFloat{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-28px)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
 @keyframes overlayIn{from{opacity:0}to{opacity:1}}
 @keyframes modalIn{from{opacity:0;transform:translateY(20px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes fadeTab{from{opacity:0}to{opacity:1}}
-.task-row{transition:all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)}.task-row:active{transform:scale(0.97)}
+@keyframes sunPulse{0%,100%{opacity:0.3}50%{opacity:0.5}}
+@keyframes chainPulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0.4)}50%{box-shadow:0 0 0 6px rgba(245,158,11,0)}}
+@keyframes finishSweep{0%{background-position:-200% 0;opacity:0}30%{opacity:1}100%{background-position:200% 0;opacity:0}}
+@keyframes finishGlow{0%{opacity:0;transform:scale(0.95)}40%{opacity:1;transform:scale(1.02)}100%{opacity:1;transform:scale(1)}}
+@keyframes finishFade{0%{opacity:0;letter-spacing:0.5em}100%{opacity:1;letter-spacing:0.18em}}
+.task-row{transition:opacity 0.35s ease, background 0.4s ease, border-color 0.3s ease}
+.task-row.just-checked{animation:rowDim 0.7s ease forwards}
+.task-row:active{transform:scale(0.98)}
+.check-stamp{animation:checkStamp 0.35s cubic-bezier(0.34,1.56,0.64,1)}
+.strike-wrap{position:relative;display:inline-block}
+.strike-line{position:absolute;left:0;right:0;top:55%;height:2px;border-radius:2px;background:linear-gradient(90deg,#34D399 0%,#10B981 50%,#059669 100%);box-shadow:0 0 8px rgba(52,211,153,0.4);transform-origin:left center;transform:scaleX(1);pointer-events:none}
+.strike-line.animate{animation:strikeSweep 0.45s cubic-bezier(0.65,0,0.35,1) forwards}
 .hide-scroll::-webkit-scrollbar{display:none}.hide-scroll{scrollbar-width:none}
 .tab-content{animation:slideUp 0.25s cubic-bezier(0.25,0.46,0.45,0.94)}
 .pill-btn{transition:all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)}.pill-btn:active{transform:scale(0.95)}
@@ -61,7 +78,9 @@ const CSS=`
 .overlay-bg{animation:overlayIn 0.2s ease}
 .modal-box{animation:modalIn 0.3s cubic-bezier(0.25,0.46,0.45,0.94)}
 .card-enter{animation:scaleIn 0.2s cubic-bezier(0.25,0.46,0.45,0.94)}
-.banner-fade{animation:fadeTab 0.4s ease}
+.banner-fade{animation:fadeTab 0.6s ease}
+.hero-num{font-family:${FN.m};font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.04em}
+.display{font-family:${FN.h};font-weight:500;letter-spacing:-0.02em;font-variation-settings:"opsz" 144,"SOFT" 50}
 `;
 
 /* ═══ SEED DATA ═══ */
@@ -101,42 +120,131 @@ const spClr={upper:"#4A82D4",lower:"#2A9D5C",pull:"#E07A3A",push:"#D04545",legs:
 const seedWH=[{id:"h6",date:"2026-03-15",split:"upper",exercises:[{name:"Bench Press",sets:[{w:50,r:10},{w:60,r:6}]},{name:"Lat Pull Down",sets:[{w:54,r:8},{w:59,r:7}]}]}];
 const seedBW=[{date:"2025-10-01",weight:72.5},{date:"2026-01-01",weight:74.5},{date:"2026-03-01",weight:75.2},{date:"2026-03-29",weight:75.8}];
 const seedTx={"2026-03-01":[{id:"t14",type:"out",amount:26.5,desc:"Sunday"}],"2026-03-06":[{id:"t16",type:"in",amount:30,desc:"Income"}]};
-const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,notifs:true,vibrate:true,features:{xp:false,levels:false,store:false,achievements:false,dailyChallenges:false}};
+const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,notifs:true,vibrate:true,reflectHour:21,reviewDay:0,features:{xp:false,levels:false,store:false,achievements:false,dailyChallenges:false}};
 
-/* ═══ BANNER SCENE (3 modes) ═══ */
-function BannerScene({mode}){
-  const skies={
-    morning:{a:"#FFE0C2",b:"#FFB88A",c:"#FFD9A8"},
-    day:{a:"#87CEEB",b:"#B4DFF5",c:"#DCF2FC"},
-    evening:{a:"#4B3B6B",b:"#E85A4F",c:"#FFB47A"}
-  };
-  const suns={
-    morning:{x:90,y:95,r:18,color:"#FFD27A",glow:"#FFB366"},
-    day:{x:320,y:34,r:22,color:"#FFE066",glow:"#FFD27A"},
-    evening:{x:330,y:98,r:20,color:"#FF6B35",glow:"#FF4B20"}
-  };
-  const s=skies[mode];const su=suns[mode];
+/* ═══ REFLECTION PROMPTS — rotate based on day quality ═══ */
+const REFLECT_PROMPTS={
+  great:["What worked today?","What's one thing you want to repeat tomorrow?","Who or what helped you show up?","When did you feel most yourself today?"],
+  good:["What's one win, however small?","What surprised you today?","Where did you choose discipline over comfort?","One sentence: how did today actually feel?"],
+  mid:["What got in the way today?","What were you avoiding?","Where did you spend energy that didn't matter?","If today happened again, what's the one thing you'd change?"],
+  poor:["What was the hardest part of today?","What were you telling yourself when you skipped things?","What's one thing tomorrow that's non-negotiable?","Be honest — what are you actually afraid of right now?"],
+  any:["One thing for tomorrow.","What are you grateful for, right now?","What's the version of you that you want to be tomorrow?","What's one sentence to your future self about today?"]
+};
+const pickPrompts=(pct)=>{const tier=pct>=80?"great":pct>=60?"good":pct>=30?"mid":"poor";const a=REFLECT_PROMPTS[tier];const b=REFLECT_PROMPTS.any;const seed=new Date().getDate();return[a[seed%a.length],b[(seed*7)%b.length]];};
+
+/* ═══ NATURAL LANGUAGE PARSER for quick capture ═══ */
+function parseQuick(input){
+  let text=input.trim();let diff="medium";let proof=false;let when="today";let recurring=false;let group=null;
+  // difficulty markers
+  if(/!hard\b/i.test(text)){diff="hard";text=text.replace(/!hard\b/i,"").trim();}
+  else if(/!easy\b/i.test(text)){diff="easy";text=text.replace(/!easy\b/i,"").trim();}
+  else if(/!med(ium)?\b/i.test(text)){diff="medium";text=text.replace(/!med(ium)?\b/i,"").trim();}
+  // photo proof
+  if(/(?:📷|📸|\+photo|\bphoto\b)/i.test(text)){proof=true;text=text.replace(/(?:📷|📸|\+photo|\bphoto\b)/gi,"").trim();}
+  // recurring
+  if(/\b(every ?day|daily)\b/i.test(text)){recurring=true;text=text.replace(/\b(every ?day|daily)\b/i,"").trim();}
+  // group
+  if(/\b(morning|evening|night)\b/i.test(text)){const m=text.match(/\b(morning|evening|night)\b/i);group=m[1].toLowerCase()==="evening"?"night":m[1].toLowerCase();text=text.replace(/\b(morning|evening|night)\b/i,"").trim();}
+  // when
+  if(/\btomorrow\b/i.test(text)){when="tomorrow";text=text.replace(/\btomorrow\b/i,"").trim();}
+  else if(/\btoday\b/i.test(text)){when="today";text=text.replace(/\btoday\b/i,"").trim();}
+  // weekday
+  const days=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+  for(let i=0;i<7;i++){const re=new RegExp(`\\b${days[i]}\\b`,"i");if(re.test(text)){when=days[i];text=text.replace(re,"").trim();break;}}
+  text=text.replace(/\s+/g," ").trim();
+  return{text,diff,proof,when,recurring,group};
+}
+const whenToDate=(when)=>{const d=new Date();if(when==="today")return d;if(when==="tomorrow"){d.setDate(d.getDate()+1);return d;}const days=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];const idx=days.indexOf(when);if(idx>=0){const cur=d.getDay();let diff=idx-cur;if(diff<=0)diff+=7;d.setDate(d.getDate()+diff);return d;}return d;};
+
+/* ═══ REACTIVE BANNER — this is the identity piece ═══ */
+function BannerScene({mode,dayPct,morningPct,eveningPct}){
+  // Linear interpolation helper
+  const lerp=(a,b,t)=>Math.round(a+(b-a)*t);
+  const lerpHex=(c1,c2,t)=>{const p=x=>parseInt(x.slice(1),16);const r1=(p(c1)>>16)&255,g1=(p(c1)>>8)&255,b1=p(c1)&255;const r2=(p(c2)>>16)&255,g2=(p(c2)>>8)&255,b2=p(c2)&255;return `rgb(${lerp(r1,r2,t)},${lerp(g1,g2,t)},${lerp(b1,b2,t)})`;};
+  // Morning: interpolate dark pre-dawn → bright day blue as morningPct grows
+  const mt=Math.max(0,Math.min(1,morningPct/100));
+  let skyA,skyB,skyC,groundColor,mountainColor,treeBase,treeCanopy,treeCanopyMid,treeCanopyTop;
+  if(mode==="morning"){
+    // Dark navy/indigo → warm dawn pink → full bright daylight blue
+    skyA=lerpHex("#1E293B","#7DB9E8",mt); // top of sky
+    skyB=lerpHex("#3B2E4E","#BEE0F5",mt); // middle (dawn pink → light blue)
+    skyC=lerpHex("#5B4E6E","#E8F4FB",mt); // horizon (warm → nearly white)
+    groundColor=lerpHex("#131A2B","#2D5F4E",mt);
+    mountainColor=lerpHex("#1E1B2E","#4A7A8E",mt);
+    treeBase=lerpHex("#2C1810","#3E2723",mt);
+    treeCanopy=lerpHex("#1F3B2E","#2F5F3F",mt);
+    treeCanopyMid=lerpHex("#2A5040","#3F7F4F",mt);
+    treeCanopyTop=lerpHex("#34664F","#4F9F5F",mt);
+  }else if(mode==="day"){
+    // Full bright daylight — stays bright regardless, only sun position shifts
+    skyA="#5FA8D9";skyB="#9ECBEB";skyC="#E0EFF8";
+    groundColor="#2D5F4E";mountainColor="#4A7A8E";
+    treeBase="#3E2723";treeCanopy="#2F5F3F";treeCanopyMid="#3F7F4F";treeCanopyTop="#4F9F5F";
+  }else{
+    // Evening: moody twilight. Darkens slightly as eveningPct grows (going to bed = deepest night)
+    const et=Math.max(0,Math.min(1,eveningPct/100));
+    skyA=lerpHex("#2B2440","#0D1022",et);
+    skyB=lerpHex("#4A3055","#1F1A35",et);
+    skyC=lerpHex("#7A4560","#3B2E4E",et);
+    groundColor=lerpHex("#1A1525","#08060F",et);
+    mountainColor=lerpHex("#2B1F3B","#141020",et);
+    treeBase="#1C0F1E";treeCanopy="#1A2E24";treeCanopyMid="#233F30";treeCanopyTop="#2D4F3C";
+  }
+  // Sun arc is split into thirds across the three tabs so the sun tracks continuously through the day:
+  //   Morning tab → first 1/3 of the arc (horizon-left to upper-left)
+  //   All Day tab → middle 1/3 (upper-left to upper-right, across the peak)
+  //   Evening tab → final 1/3 (upper-right back down to horizon-right)
+  // Within each tab, the sun's position along that third is driven by that tab's own completion %.
+  const mtm=Math.max(0,Math.min(1,morningPct/100));
+  const eta=Math.max(0,Math.min(1,eveningPct/100));
+  const dyt=Math.max(0,Math.min(1,dayPct/100));
+  let arcProgress;
+  if(mode==="morning")arcProgress=mtm*(1/3);
+  else if(mode==="day")arcProgress=(1/3)+dyt*(1/3);
+  else arcProgress=(2/3)+eta*(1/3);
+  const angle=Math.PI*(1-arcProgress);
+  const sunX=200+Math.cos(angle)*160;
+  const sunY=180-Math.sin(angle)*130;
+  // Sun color shifts with context
+  const sunColor=mode==="evening"?"#E85A2B":mode==="morning"?(mtm>0.6?"#FFE066":mtm>0.3?"#FFB84D":"#E85A2B"):"#FFEB66";
+  const sunGlow=mode==="evening"?(0.5-eta*0.3):(mode==="morning"?0.3+mtm*0.4:0.65);
+  // Moon only appears once evening is fully complete — sun has set, night has arrived
+  const showMoon=mode==="evening"&&eta>=1;
+  // Sun shows in all three modes (sun sets through evening into horizon)
+  const showSun=!showMoon;
+  // Stars: visible in evening (fading in as it darkens), fade as morning lightens, hidden in day
+  const showStars=mode==="evening"||(mode==="morning"&&mtm<0.5);
+  const starOpacity=mode==="evening"?(0.3+eta*0.5):(mode==="morning"?(1-mtm*2):0);
+  // Trees: only react in morning (grow with morningPct), frozen in day/evening
+  const growValue=mode==="morning"?mtm:mode==="day"?1:1;
+  const trees=[{x:80,s:0.95,grow:growValue},{x:200,s:1.15,grow:growValue},{x:320,s:0.9,grow:growValue}];
   return(
-    <svg key={mode} viewBox="0 0 400 150" className="banner-fade" style={{width:"100%",height:"100%",display:"block",borderRadius:20}} preserveAspectRatio="xMidYMid slice">
+    <svg key={mode} viewBox="0 0 400 200" className="banner-fade" style={{width:"100%",height:"100%",display:"block"}} preserveAspectRatio="xMidYMid slice">
       <defs>
-        <linearGradient id={`sky-${mode}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={s.a}/><stop offset="0.55" stopColor={s.b}/><stop offset="1" stopColor={s.c}/>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={skyA}/><stop offset="0.55" stopColor={skyB}/><stop offset="1" stopColor={skyC}/>
         </linearGradient>
-        <radialGradient id={`sun-${mode}`}><stop offset="0" stopColor={su.color}/><stop offset="1" stopColor={su.glow}/></radialGradient>
+        <radialGradient id="sung"><stop offset="0" stopColor={sunColor} stopOpacity="1"/><stop offset="1" stopColor={sunColor} stopOpacity="0"/></radialGradient>
       </defs>
-      <rect width="400" height="150" fill={`url(#sky-${mode})`}/>
-      <circle cx={su.x} cy={su.y} r={su.r+12} fill={su.glow} opacity="0.25"/>
-      <circle cx={su.x} cy={su.y} r={su.r} fill={`url(#sun-${mode})`}/>
-      {mode==="evening"&&<ellipse cx="200" cy="120" rx="260" ry="8" fill="#FF8C42" opacity="0.35"/>}
-      {/* distant hills */}
-      <path d="M0,118 Q80,102 160,110 T320,108 T400,112 L400,150 L0,150 Z" fill={mode==="evening"?"#3B2B4E":mode==="morning"?"#7FA07F":"#5F8F5F"} opacity="0.85"/>
-      <path d="M0,126 Q100,120 200,124 T400,123 L400,150 L0,150 Z" fill={mode==="evening"?"#2C1F3B":mode==="morning"?"#5A7A5A":"#4A7A4A"}/>
-      {/* 3 trees */}
-      {[{x:70,s:1.0},{x:200,s:1.2},{x:330,s:0.9}].map((t,i)=>{const trunkColor=mode==="evening"?"#1C1226":"#3E2723";const leafDark=mode==="evening"?"#1F3326":"#2F4F2F";const leafLight=mode==="evening"?"#2A4A34":"#3A5F3A";return(
-        <g key={i} transform={`translate(${t.x},126) scale(${t.s})`}>
-          <rect x="-3" y="-22" width="6" height="24" fill={trunkColor}/>
-          <polygon points="-20,-22 0,-58 20,-22" fill={leafDark}/>
-          <polygon points="-15,-36 0,-66 15,-36" fill={leafLight}/>
+      <rect width="400" height="200" fill="url(#sky)"/>
+      {showStars&&[...Array(22)].map((_,i)=>{const sx=(i*53)%400,sy=(i*37)%100;return <circle key={i} cx={sx} cy={sy} r={(i%3)*0.4+0.5} fill="#F8F5EC" opacity={starOpacity*(0.4+(i%3)*0.2)}/>;})}
+      {/* Sun */}
+      {!showMoon&&<g><circle cx={sunX} cy={sunY} r="36" fill={sunColor} opacity={sunGlow*0.35} style={{animation:"sunPulse 4s ease-in-out infinite"}}/><circle cx={sunX} cy={sunY} r="20" fill="url(#sung)" opacity={sunGlow+0.3}/><circle cx={sunX} cy={sunY} r="12" fill={sunColor}/></g>}
+      {/* Moon for evening */}
+      {showMoon&&<g><circle cx="320" cy="48" r="22" fill="#F8F5EC" opacity="0.12"/><circle cx="320" cy="48" r="14" fill="#F8F5EC" opacity="0.95"/><circle cx="326" cy="44" r="12" fill={skyA} opacity="0.85"/></g>}
+      {/* Mountains */}
+      <path d="M0,150 L60,110 L110,135 L170,95 L230,130 L290,100 L350,125 L400,110 L400,200 L0,200 Z" fill={mountainColor} opacity="0.85"/>
+      <path d="M0,165 L80,140 L160,155 L240,135 L320,155 L400,145 L400,200 L0,200 Z" fill={groundColor} opacity="0.92"/>
+      <rect x="0" y="172" width="400" height="28" fill={groundColor}/>
+      {/* Trees */}
+      {trees.map((t,i)=>{const h=8+t.grow*28;const lw=6+t.grow*14;return(
+        <g key={i} transform={`translate(${t.x},172)`}>
+          <rect x="-2" y={-h*0.4} width="4" height={h*0.4} fill={treeBase}/>
+          <rect x="-3" y="-4" width="6" height="4" fill={treeBase}/>
+          {t.grow>0.1&&<polygon points={`${-lw},${-h*0.4} 0,${-h} ${lw},${-h*0.4}`} fill={treeCanopy}/>}
+          {t.grow>0.4&&<polygon points={`${-lw*0.8},${-h*0.6} 0,${-h*1.15} ${lw*0.8},${-h*0.6}`} fill={treeCanopyMid}/>}
+          {t.grow>0.7&&<polygon points={`${-lw*0.6},${-h*0.8} 0,${-h*1.3} ${lw*0.6},${-h*0.8}`} fill={treeCanopyTop}/>}
+          {t.grow<=0.1&&<g stroke={treeBase} strokeWidth="1.2" fill="none"><line x1="0" y1={-h*0.4} x2={-lw*0.5} y2={-h*0.7}/><line x1="0" y1={-h*0.4} x2={lw*0.5} y2={-h*0.7}/></g>}
         </g>
       );})}
     </svg>
@@ -144,7 +252,7 @@ function BannerScene({mode}){
 }
 
 /* ═══ UI Bits ═══ */
-function Overlay({open,onClose,title,children,wide}){if(!open)return null;return(<div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}><div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(20,22,36,0.25)",backdropFilter:"blur(8px)"}} /><div className="modal-box" onClick={e=>e.stopPropagation()} style={{position:"relative",background:"#fff",borderRadius:20,padding:24,width:"92%",maxWidth:wide?640:520,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.12)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h3 style={{fontSize:15,fontWeight:700,margin:0}}>{title}</h3><button className="press" onClick={onClose} style={{background:C.surfaceDim,border:"none",color:C.textDim,fontSize:16,cursor:"pointer",width:32,height:32,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div>{children}</div></div>);}
+function Overlay({open,onClose,title,children,wide}){if(!open)return null;return(<div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}><div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.75)",backdropFilter:"blur(10px)"}} /><div className="modal-box" onClick={e=>e.stopPropagation()} style={{position:"relative",background:C.surface,color:C.text,borderRadius:18,padding:24,width:"92%",maxWidth:wide?640:520,maxHeight:"85vh",overflowY:"auto",border:`1px solid ${C.hairline}`,boxShadow:"0 24px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><h3 style={{fontSize:11,fontWeight:600,margin:0,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.1em"}}>{title}</h3><button className="press" onClick={onClose} style={{background:C.surfaceHi,border:`1px solid ${C.hairline}`,color:C.textDim,fontSize:16,cursor:"pointer",width:30,height:30,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div>{children}</div></div>);}
 
 function ProofModal({open,onClose,name,onDone}){if(!open)return null;let fileEl=null;const hf=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>{onDone(ev.target.result);onClose();};r.readAsDataURL(f);};return(<div style={{position:"fixed",inset:0,zIndex:250,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}><div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(8px)"}} /><div className="modal-box" onClick={e=>e.stopPropagation()} style={{position:"relative",background:"#111",borderRadius:24,padding:32,width:"86%",maxWidth:360,textAlign:"center"}}><div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)",marginBottom:8}}>Photo Proof Required</div><div style={{fontSize:15,fontWeight:600,color:"#fff",marginBottom:24}}>{name}</div><input ref={el=>fileEl=el} type="file" accept="image/*" capture="environment" onChange={hf} style={{display:"none"}} /><button onClick={()=>fileEl?.click()} style={{width:160,height:160,borderRadius:20,background:"rgba(255,255,255,0.05)",border:"2px dashed rgba(255,255,255,0.15)",margin:"0 auto 24px",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:6,cursor:"pointer"}}><span style={{fontSize:44}}>📸</span><span style={{fontSize:12,color:"rgba(255,255,255,0.5)",fontWeight:600}}>Tap to Open Camera</span></button><button onClick={onClose} style={{background:"transparent",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,color:"rgba(255,255,255,0.4)",fontSize:12,cursor:"pointer",padding:"10px 24px"}}>Cancel</button></div></div>);}
 
@@ -174,6 +282,34 @@ export default function Dashboard(){
   const[spentXP,setSpentXP]=useState(0);
   const[activeTitle,setActiveTitle]=useState(null);
   const[curWkState,setCurWkState]=useState(null); // persisted workout draft
+  // NEW: completion log — tracks the order you complete tasks each day, used to learn your actual routine
+  // Shape: {dateKey: [{taskId, time, ordinal}]} — ordinal is the nth task you checked that day
+  const[completionLog,setCompletionLog]=useState({});
+  // Active workout session: when set, the entire app enters focus mode for this workout
+  // Shape: {split, startTime (ms), exercises}
+  const[activeSession,setActiveSession]=useState(null);
+  const[sessionTick,setSessionTick]=useState(0); // forces re-render every second for the stopwatch
+  const[finishingSession,setFinishingSession]=useState(false); // triggers the finish animation
+  const[sessionMinimized,setSessionMinimized]=useState(false); // pop session out so user can navigate
+  const[showCancelConfirm,setShowCancelConfirm]=useState(false);
+  const[viewWorkout,setViewWorkout]=useState(null); // saved workout being viewed in detail
+  useEffect(()=>{if(!activeSession)return;const id=setInterval(()=>setSessionTick(t=>t+1),1000);return()=>clearInterval(id);},[activeSession]);
+  // NEW: chains (habit stacking), reflections, sunday reviews, quick-capture modal, weekly priorities
+  const[chains,setChains]=useState([]); // [{id, name, taskIds:[], color}]
+  const[reflections,setReflections]=useState({}); // {dateKey: [{prompt, answer, time}]}
+  const[reviews,setReviews]=useState({}); // {weekKey: {numbers, kept, dropped, priorities, time}}
+  const[weekPriorities,setWeekPriorities]=useState([]); // current week's top 3
+  const[showQuick,setShowQuick]=useState(false);
+  const[quickText,setQuickText]=useState("");
+  const[quickPreview,setQuickPreview]=useState(null);
+  const[showReflect,setShowReflect]=useState(false);
+  const[reflectAnswers,setReflectAnswers]=useState(["",""]);
+  const[showReview,setShowReview]=useState(false);
+  const[reviewStep,setReviewStep]=useState(0);
+  const[reviewPriorities,setReviewPriorities]=useState(["","",""]);
+  const[reviewKept,setReviewKept]=useState({});
+  const[reflectDismissed,setReflectDismissed]=useState({});
+  const[reviewDismissed,setReviewDismissed]=useState({});
 
   const[tab,setTab]=useState("today");
   const[menuTab,setMenuTab]=useState(null);
@@ -214,6 +350,36 @@ export default function Dashboard(){
   const morningT=todos.filter(t=>t.grp==="morning");
   const nightT=todos.filter(t=>t.grp==="night");
 
+  /* ─── SMART ORDERING: learn the order you actually complete tasks ─── */
+  // For each task, compute its average ordinal rank across the last 14 days.
+  // Lower avg ordinal = you tend to do it first. Tasks with no data go to the bottom.
+  const learnedOrder=useMemo(()=>{
+    const stats={}; // {taskId: {total, count}}
+    const today=new Date();
+    for(let i=0;i<14;i++){
+      const d=new Date(today);d.setDate(d.getDate()-i);
+      const k=dk(d);
+      const log=completionLog[k]||[];
+      log.forEach(entry=>{
+        if(!stats[entry.taskId])stats[entry.taskId]={total:0,count:0};
+        stats[entry.taskId].total+=entry.ordinal;
+        stats[entry.taskId].count+=1;
+      });
+    }
+    const rank={};
+    Object.keys(stats).forEach(id=>{rank[id]=stats[id].total/stats[id].count;});
+    return rank;
+  },[completionLog]);
+  // Sort tasks by learned order. Tasks with data come first in their learned order.
+  // Tasks without data keep their original relative order at the bottom.
+  const sortByLearned=(tasks)=>{
+    const withData=tasks.filter(t=>learnedOrder[t.id]!==undefined).sort((a,b)=>learnedOrder[a.id]-learnedOrder[b.id]);
+    const withoutData=tasks.filter(t=>learnedOrder[t.id]===undefined);
+    return[...withData,...withoutData];
+  };
+  const morningTSorted=useMemo(()=>sortByLearned(morningT),[morningT,learnedOrder]);
+  const nightTSorted=useMemo(()=>sortByLearned(nightT),[nightT,learnedOrder]);
+
   /* ─── Toggle ─── */
   const toggle=t=>{
     const on=dc[t.id];
@@ -225,6 +391,10 @@ export default function Dashboard(){
       setTimeout(()=>setXpPops(p=>{const n={...p};delete n[t.id];return n;}),900);
     }
     if(!on){
+      // Record completion order (only for today, only for morning/night tasks)
+      if(isToday&&(t.grp==="morning"||t.grp==="night")){
+        setCompletionLog(p=>{const day=p[vk]||[];if(day.find(e=>e.taskId===t.id))return p;return{...p,[vk]:[...day,{taskId:t.id,time:Date.now(),ordinal:day.length}]};});
+      }
       groups.filter(g=>g.tasks.includes(t.id)).forEach(()=>{
         setGroups(p=>p.map(g=>g.tasks.includes(t.id)?{...g,feed:[{user:"You",task:t.text,time:new Date().toISOString(),type:"complete"},...(g.feed||[]).slice(0,49)]}:g));
       });
@@ -388,9 +558,9 @@ export default function Dashboard(){
   },[checks,todos,focusByDate,photoLog,lifetimeXP,longestS,groups,photoStreak,morningT,nightT]);
 
   /* ─── Storage ─── */
-  useEffect(()=>{try{const s=localStorage.getItem("dash-v17");if(s){const d=JSON.parse(s);if(d.todos)setTodos(d.todos);if(d.focusByDate)setFocusByDate(d.focusByDate);if(d.checks)setChecks(d.checks);if(d.photoLog)setPhotoLog(d.photoLog);if(d.wGoals)setWGoals(d.wGoals);if(d.mGoals)setMGoals(d.mGoals);if(d.wHist)setWHist(d.wHist);if(d.bwLog)setBwLog(d.bwLog);if(d.txns)setTxns(d.txns);if(d.groups)setGroups(d.groups);if(d.splits)setSplits(d.splits);if(d.settings)setSettings({...defSettings,...d.settings,features:{...defSettings.features,...(d.settings.features||{})}});if(d.purchased)setPurchased(d.purchased);if(d.spentXP)setSpentXP(d.spentXP);if(d.activeTitle)setActiveTitle(d.activeTitle);if(d.curWkState)setCurWkState(d.curWkState);}}catch(e){}},[]);
+  useEffect(()=>{try{let s=localStorage.getItem("dash-v18");if(!s)s=localStorage.getItem("dash-v17");if(s){const d=JSON.parse(s);if(d.todos)setTodos(d.todos);if(d.focusByDate)setFocusByDate(d.focusByDate);if(d.checks)setChecks(d.checks);if(d.photoLog)setPhotoLog(d.photoLog);if(d.wGoals)setWGoals(d.wGoals);if(d.mGoals)setMGoals(d.mGoals);if(d.wHist)setWHist(d.wHist);if(d.bwLog)setBwLog(d.bwLog);if(d.txns)setTxns(d.txns);if(d.groups)setGroups(d.groups);if(d.splits)setSplits(d.splits);if(d.settings)setSettings({...defSettings,...d.settings,features:{...defSettings.features,...(d.settings.features||{})}});if(d.purchased)setPurchased(d.purchased);if(d.spentXP)setSpentXP(d.spentXP);if(d.activeTitle)setActiveTitle(d.activeTitle);if(d.curWkState)setCurWkState(d.curWkState);if(d.chains)setChains(d.chains);if(d.reflections)setReflections(d.reflections);if(d.reviews)setReviews(d.reviews);if(d.weekPriorities)setWeekPriorities(d.weekPriorities);if(d.reflectDismissed)setReflectDismissed(d.reflectDismissed);if(d.reviewDismissed)setReviewDismissed(d.reviewDismissed);if(d.completionLog)setCompletionLog(d.completionLog);if(d.activeSession)setActiveSession(d.activeSession);}}catch(e){}},[]);
   // Save frequently (200ms debounce so typing in workout never loses data)
-  useEffect(()=>{const t=setTimeout(()=>{try{localStorage.setItem("dash-v17",JSON.stringify({todos,focusByDate,checks,photoLog,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState}));}catch(e){}},200);return()=>clearTimeout(t);},[todos,focusByDate,checks,photoLog,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState]);
+  useEffect(()=>{const t=setTimeout(()=>{try{localStorage.setItem("dash-v18",JSON.stringify({todos,focusByDate,checks,photoLog,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,completionLog,activeSession}));}catch(e){}},200);return()=>clearTimeout(t);},[todos,focusByDate,checks,photoLog,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,completionLog,activeSession]);
 
   /* ─── Workout ─── */
   useEffect(()=>{
@@ -404,11 +574,42 @@ export default function Dashboard(){
       setDoneEx({});
     }
   },[gSplit]);
-  const uSet=(ei,si,f,v)=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets[si][f]=parseFloat(v)||0;return n;});
-  const aSet=ei=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0});return n;});
-  const rSet=ei=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei].sets.length>1)n.exercises[ei].sets.pop();return n;});
+  // Sync write of just the active session — fires on every keystroke so a phone lock can't lose data
+  const syncSession=(s)=>{try{const raw=localStorage.getItem("dash-v18");const d=raw?JSON.parse(raw):{};d.activeSession=s;localStorage.setItem("dash-v18",JSON.stringify(d));}catch(e){}};
+  const uSet=(ei,si,f,v)=>{
+    if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets[si][f]=parseFloat(v)||0;syncSession(n);return n;});}
+    else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets[si][f]=parseFloat(v)||0;return n;});
+  };
+  const aSet=ei=>{
+    if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0});syncSession(n);return n;});}
+    else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0});return n;});
+  };
+  const rSet=ei=>{
+    if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei].sets.length>1)n.exercises[ei].sets.pop();syncSession(n);return n;});}
+    else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei].sets.length>1)n.exercises[ei].sets.pop();return n;});
+  };
+  // Start a workout: take the current curWkState (or build from split) and lock it as activeSession
+  const startSession=(splitKey)=>{
+    const exs=(splits[splitKey]||[]).map(name=>{const ls=[...wHist].reverse().find(h=>h.split===splitKey);const le=ls?.exercises?.find(e=>e.name===name);return{name,sets:Array.from({length:le?le.sets.length:3},(_,i)=>({w:0,r:0}))};});
+    const sess={split:splitKey,startTime:Date.now(),exercises:exs};
+    setActiveSession(sess);syncSession(sess);
+    setDoneEx({});
+  };
+  const finishSession=()=>{
+    if(!activeSession)return;
+    setFinishingSession(true);
+    setTimeout(()=>{
+      setWHist(p=>[...p,{id:uid(),date:dk(now),split:activeSession.split,exercises:activeSession.exercises,duration:Date.now()-activeSession.startTime}]);
+      setActiveSession(null);syncSession(null);setDoneEx({});setFinishingSession(false);setSessionMinimized(false);
+    },1800);
+  };
+  const cancelSession=()=>setShowCancelConfirm(true);
+  const confirmCancel=()=>{setActiveSession(null);syncSession(null);setDoneEx({});setShowCancelConfirm(false);setSessionMinimized(false);};
   const saveWk=()=>{if(!curWkState)return;setWHist(p=>[...p,{id:uid(),date:dk(now),split:curWkState.split,exercises:curWkState.exercises}]);setConfetti(true);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});},2000);};
-  const lastSess=useMemo(()=>gSplit?wHist.filter(h=>h.split===gSplit).sort((a,b)=>new Date(b.date)-new Date(a.date))[0]||null:null,[wHist,gSplit]);
+  const lastSess=useMemo(()=>{const k=activeSession?activeSession.split:gSplit;return k?wHist.filter(h=>h.split===k).sort((a,b)=>new Date(b.date)-new Date(a.date))[0]||null:null;},[wHist,gSplit,activeSession]);
+  // Format stopwatch
+  const sessionElapsed=activeSession?Math.floor((Date.now()-activeSession.startTime)/1000):0;
+  const fmtTime=s=>{const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h>0?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`;};
 
   /* ─── Budget ─── */
   const bY=bMonth.getFullYear(),bM=bMonth.getMonth(),bDIM=new Date(bY,bM+1,0).getDate(),bFD=new Date(bY,bM,1).getDay(),bCM=bY===now.getFullYear()&&bM===now.getMonth();
@@ -449,16 +650,80 @@ export default function Dashboard(){
 
   const buyItem=item=>{if(totalXP<item.cost||purchased.includes(item.id))return;setPurchased(p=>[...p,item.id]);setSpentXP(p=>p+item.cost);};
 
+  /* ─── NEW: Quick capture, reflections, sunday review ─── */
+  const weekKey=(d=new Date())=>{const x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-x.getDay());return dk(x);};
+  const curWeekKey=weekKey();
+  const todayK=dk(now);
+  useEffect(()=>{if(!quickText.trim()){setQuickPreview(null);return;}setQuickPreview(parseQuick(quickText));},[quickText]);
+  const submitQuick=()=>{
+    if(!quickPreview||!quickPreview.text)return;
+    const{text,diff,proof,when,recurring,group}=quickPreview;
+    const targetDate=whenToDate(when);const tk=dk(targetDate);
+    const newTask={id:uid(),text,diff,proof};
+    if(recurring)setTodos(p=>[...p,{...newTask,grp:group||"general"}]);
+    else setFocusByDate(p=>({...p,[tk]:[...(p[tk]||[]),newTask]}));
+    setQuickText("");setQuickPreview(null);setShowQuick(false);
+  };
+  const todayReflection=reflections[todayK];
+  const reflectReady=now.getHours()>=settings.reflectHour&&!todayReflection&&!reflectDismissed[todayK];
+  const startReflect=()=>{setReflectAnswers(["",""]);setShowReflect(true);};
+  const saveReflect=()=>{
+    const prompts=pickPrompts(todayCompletion.pct);
+    const entries=prompts.map((p,i)=>({prompt:p,answer:reflectAnswers[i]||"",time:new Date().toISOString()})).filter(e=>e.answer.trim());
+    if(entries.length>0)setReflections(p=>({...p,[todayK]:entries}));
+    setShowReflect(false);
+  };
+  const reviewReady=now.getDay()===settings.reviewDay&&!reviews[curWeekKey]&&!reviewDismissed[curWeekKey];
+  const startReview=()=>{setReviewStep(0);setReviewKept({});setReviewPriorities(weekPriorities[0]?[...weekPriorities,"","",""].slice(0,3):["","",""]);setShowReview(true);};
+  const saveReview=()=>{
+    setReviews(p=>({...p,[curWeekKey]:{numbers:weekRecap,kept:reviewKept,priorities:reviewPriorities.filter(x=>x.trim()),time:new Date().toISOString()}}));
+    setWeekPriorities(reviewPriorities.filter(x=>x.trim()));
+    setShowReview(false);
+  };
+  const weekReflections=useMemo(()=>{const out=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=dk(d);if(reflections[k])out.push({date:k,entries:reflections[k]});}return out;},[reflections]);
+  const weakHabitsForReview=useMemo(()=>sortedH.filter(h=>h.rate<40).slice(0,5),[sortedH]);
+  const strongHabitsForReview=useMemo(()=>sortedH.filter(h=>h.rate>=80).slice(0,5),[sortedH]);
+
+  const[justChecked,setJustChecked]=useState({});
+  // Chain builder state
+  const[buildingChain,setBuildingChain]=useState(false);
+  const[chainName,setChainName]=useState("");
+  const[chainPicks,setChainPicks]=useState([]);
+  const saveChain=()=>{if(!chainName.trim()||chainPicks.length<2)return;setChains(p=>[...p,{id:uid(),name:chainName.trim(),taskIds:chainPicks}]);setChainName("");setChainPicks([]);setBuildingChain(false);};
+  const removeChain=id=>setChains(p=>p.filter(c=>c.id!==id));
+  // Build a map: taskId → chain it belongs to
+  const taskToChain=useMemo(()=>{const m={};chains.forEach(c=>{c.taskIds.forEach((tid,i)=>{m[tid]={chain:c,index:i,total:c.taskIds.length};});});return m;},[chains]);
+  // Find which task in a chain is the next one to check (first uncompleted)
+  const chainNextId=useMemo(()=>{const m={};chains.forEach(c=>{const next=c.taskIds.find(tid=>!dc[tid]);if(next)m[c.id]=next;});return m;},[chains,dc]);
+  const handleCheck=(t)=>{
+    const wasOff=!dc[t.id];
+    toggle(t);
+    if(wasOff){
+      setJustChecked(p=>({...p,[t.id]:true}));
+      setTimeout(()=>setJustChecked(p=>{const n={...p};delete n[t.id];return n;}),700);
+    }
+  };
+
   /* ─── Task Row ─── */
-  const TRow=({t,big,onEdit,onDelete})=>{const on=dc[t.id];return(
-    <div className="task-row" style={{position:"relative",display:"flex",alignItems:"center",gap:big?14:10,padding:big?"14px 16px":"11px 14px",marginBottom:big?8:6,borderRadius:big?14:12,background:on?C.greenMed:C.surfaceDim,border:on?`1px solid ${C.green}22`:"1px solid transparent"}}>
-      <div onClick={()=>toggle(t)} style={{width:big?24:22,height:big?24:22,borderRadius:big?7:6,flexShrink:0,border:`2px solid ${on?C.greenBright:"rgba(0,0,0,0.18)"}`,background:on?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:big?12:11,fontWeight:800,cursor:"pointer",animation:on?"checkPop 0.3s ease":"none"}}>{on&&"✓"}</div>
-      <span onClick={()=>toggle(t)} style={{flex:1,fontSize:big?14:13,fontWeight:big?600:500,textDecoration:on?"line-through":"none",color:on?C.textDim:C.text,cursor:"pointer"}}>{t.text}</span>
-      {t.proof&&<span style={{fontSize:big?16:14,opacity:on?0.3:0.8}}>📷</span>}
-      {F.xp&&<span style={{fontSize:big?11:10,fontWeight:700,color:DIFF[t.diff].color,opacity:0.7}}>{DIFF[t.diff].pts}xp</span>}
-      {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:13,padding:"2px 6px",opacity:0.6}}>✎</button>}
-      {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete();}} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:16,opacity:0.4}}>×</button>}
-      {xpPops[t.id]&&<div style={{position:"absolute",top:-4,right:16,fontSize:13,fontWeight:800,color:C.orange,animation:"xpFloat 0.9s ease forwards",pointerEvents:"none"}}>+{xpPops[t.id]}xp</div>}
+  const TRow=({t,big,onEdit,onDelete})=>{const on=dc[t.id];const flash=justChecked[t.id];const link=taskToChain[t.id];const isNext=link&&chainNextId[link.chain.id]===t.id&&!on;return(
+    <div className={`task-row ${flash?"just-checked":""}`} style={{position:"relative",display:"flex",alignItems:"center",gap:big?14:12,padding:big?"18px 18px":"14px 16px",marginBottom:big?10:8,marginLeft:link?14:0,borderRadius:10,background:"transparent",border:`1px solid ${isNext?C.accent:C.hairline}`,opacity:on?0.45:1,animation:isNext?"chainPulse 2.4s ease-in-out infinite":"none"}}>
+      {link&&<div style={{position:"absolute",left:-14,top:0,bottom:0,width:14,display:"flex",flexDirection:"column",alignItems:"center"}}>
+        {link.index>0&&<div style={{flex:1,width:2,background:C.accent,opacity:0.5}}/>}
+        <div style={{width:8,height:8,borderRadius:"50%",background:on?C.accent:isNext?C.accent:C.surfaceHi,border:`1.5px solid ${C.accent}`,flexShrink:0}}/>
+        {link.index<link.total-1&&<div style={{flex:1,width:2,background:C.accent,opacity:0.5}}/>}
+      </div>}
+      <div onClick={()=>handleCheck(t)} style={{width:big?22:20,height:big?22:20,borderRadius:4,flexShrink:0,border:`1.5px solid ${on?C.accent:C.textDim}`,background:on?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#0B1120",fontSize:big?13:11,fontWeight:800,cursor:"pointer"}}>
+        {on&&<span className={flash?"check-stamp":""} style={{display:"flex",alignItems:"center",justifyContent:"center"}}>✓</span>}
+      </div>
+      <span onClick={()=>handleCheck(t)} style={{flex:1,fontSize:big?15:13,fontWeight:500,fontFamily:big?FN.h:FN.b,fontStyle:big?"italic":"normal",color:on?C.textDim:C.text,cursor:"pointer"}}>
+        <span className="strike-wrap">
+          {t.text}
+          {on&&<span className={`strike-line${flash?" animate":""}`} />}
+        </span>
+      </span>
+      {t.proof&&<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>}
+      {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 6px"}}>edit</button>}
+      {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete();}} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:16,opacity:0.5}}>×</button>}
     </div>);};
 
   const mainTabs=[{k:"today",l:"Today",i:Icons.today},{k:"groups",l:"Groups",i:Icons.groups},{k:"analytics",l:"Analytics",i:Icons.analytics},{k:"goals",l:"Goals",i:Icons.goals}];
@@ -466,7 +731,7 @@ export default function Dashboard(){
   /* ═══ RENDER ═══ */
   return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column"}}>
-      <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <style>{CSS}</style>
 
       {confetti&&<div style={{position:"fixed",inset:0,zIndex:300,pointerEvents:"none",overflow:"hidden"}}>{Array.from({length:30}).map((_,i)=>{const l=Math.random()*100,d=Math.random()*2+1;const c=[C.green,C.goldBright,C.blue,C.orange,"#fff"][Math.floor(Math.random()*5)];return(<div key={i} style={{position:"absolute",left:`${l}%`,top:-10,width:7,height:7,borderRadius:"50%",background:c,animation:`xpFloat ${d}s ease-out forwards`}} />);})}</div>}
@@ -479,7 +744,7 @@ export default function Dashboard(){
           <button className="press" onClick={()=>setShowMenu(!showMenu)} style={{background:"transparent",border:"none",cursor:"pointer",padding:4,display:"flex",flexDirection:"column",gap:3}}><div style={{width:20,height:2,background:C.goldBright,borderRadius:1}} /><div style={{width:16,height:2,background:C.goldBright,borderRadius:1}} /><div style={{width:20,height:2,background:C.goldBright,borderRadius:1}} /></button>
           {/* PROGRESS title as button → Today */}
           <button className="press" onClick={()=>{setTab("today");setMenuTab(null);}} style={{background:"transparent",border:"none",cursor:"pointer",padding:0}}>
-            <span style={{fontFamily:FN.h,fontSize:20,color:C.goldBright,letterSpacing:"0.08em"}}>PROGRESS</span>
+            <span className="display" style={{fontSize:30,color:C.text,fontStyle:"italic",fontWeight:500}}>Progress</span>
           </button>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             {F.store&&<button className="press" onClick={()=>setShowShop(true)} style={{background:"transparent",border:"none",cursor:"pointer",padding:4,fontSize:16}}>🏪</button>}
@@ -509,10 +774,10 @@ export default function Dashboard(){
         <div style={{display:"flex",alignItems:"center",gap:4,padding:"0 12px"}}>
           <div ref={calRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",flex:1,padding:"4px 0"}}>
             {calDays.map((d,i)=>{const sel=vk===d.key;return(
-              <div key={i} onClick={()=>{setVDate(d.date);setTab("today");setMenuTab(null);}} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:10,cursor:"pointer",background:sel?C.goldBright:d.pct>0?pctBg(d.pct):"transparent",border:sel?"2px solid transparent":d.isToday?`2px solid ${C.goldBright}`:d.pct>0?`1px solid ${pctBorder(d.pct)}`:"2px solid transparent",transition:"all 0.2s ease"}}>
-                <div style={{fontSize:9,fontWeight:600,color:sel?"#fff":C.textDim}}>{d.dayName}</div>
-                <div style={{fontSize:14,fontWeight:sel?800:600,color:sel?"#fff":d.isToday?C.goldBright:C.text}}>{d.dayNum}</div>
-                <div style={{fontSize:9,fontWeight:700,color:sel?"rgba(255,255,255,0.85)":d.pct>0?pC(d.pct):C.textDim,marginTop:1}}>{d.pct>0?`${d.pct}%`:"—"}</div>
+              <div key={i} onClick={()=>{setVDate(d.date);setTab("today");setMenuTab(null);}} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:"pointer",background:sel?C.accent:d.pct>0?pctBg(d.pct):"transparent",border:sel?"1px solid transparent":d.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,transition:"all 0.2s ease"}}>
+                <div style={{fontSize:9,fontWeight:600,color:sel?"#0B1120":C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{d.dayName}</div>
+                <div className="hero-num" style={{fontSize:16,color:sel?"#0B1120":d.isToday?C.accent:C.text}}>{d.dayNum}</div>
+                <div style={{fontFamily:FN.m,fontSize:9,fontWeight:600,color:sel?"rgba(11,17,32,0.7)":d.pct>0?pC(d.pct):C.textDim,marginTop:1}}>{d.pct>0?`${d.pct}%`:"—"}</div>
               </div>
             );})}
           </div>
@@ -525,47 +790,66 @@ export default function Dashboard(){
       </div>
 
       {/* ═══ SCROLLABLE MIDDLE ═══ */}
-      <div style={{flex:1,overflowY:"auto",padding:"12px 20px 80px"}}>
+      <div style={{flex:1,overflowY:"auto",padding:"12px 20px 24px"}}>
 
         {/* ═══ TODAY TAB ═══ */}
-        {tab==="today"&&<div className="tab-content">
-          {/* Section 1: Banner (20%) */}
-          <div style={{height:150,borderRadius:20,overflow:"hidden",marginBottom:14,boxShadow:"0 4px 16px rgba(0,0,0,0.08)"}}>
-            <BannerScene mode={todaySub==="morning"?"morning":todaySub==="allday"?"day":"evening"} />
+        {tab==="today"&&(()=>{
+          const mPct=morningT.length>0?Math.round(morningT.filter(t=>dc[t.id]).length/morningT.length*100):0;
+          const ePct=nightT.length>0?Math.round(nightT.filter(t=>dc[t.id]).length/nightT.length*100):0;
+          const empties={morning:"The day hasn't started yet.",allday:"What are you actually going to do today?",evening:"Nothing to close out. Rest, or add something worth doing."};
+          return(<div className="tab-content" style={{paddingBottom:140}}>
+          {/* Pinned weekly priorities — set during Sunday review */}
+          {weekPriorities.length>0&&<div style={{marginBottom:14,padding:"14px 16px",background:C.surface,borderRadius:12,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${C.accent}`}}>
+            <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>This Week</div>
+            {weekPriorities.map((p,i)=>(<div key={i} style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4}}><span className="hero-num" style={{fontSize:11,color:C.accent}}>{i+1}</span><span className="display" style={{fontSize:14,fontStyle:"italic",color:C.text}}>{p}</span></div>))}
+          </div>}
+
+          {/* Sunday review surface — passive card */}
+          {reviewReady&&<div onClick={startReview} className="press" style={{marginBottom:14,padding:"16px 18px",background:`linear-gradient(135deg,${C.accentSoft},${C.surface})`,borderRadius:12,border:`1px solid ${C.accentMed}`,cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+            <div className="hero-num" style={{fontSize:32,color:C.accent}}>↻</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>Sunday</div>
+              <div className="display" style={{fontSize:16,fontStyle:"italic",color:C.text}}>Weekly Review · 5 min</div>
+            </div>
+            <button onClick={e=>{e.stopPropagation();setReviewDismissed(p=>({...p,[curWeekKey]:true}));}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:18,cursor:"pointer",padding:6}}>×</button>
+          </div>}
+
+          {/* End-of-day reflection surface */}
+          {reflectReady&&<div onClick={startReflect} className="press" style={{marginBottom:14,padding:"16px 18px",background:C.surface,borderRadius:12,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${C.green}`,cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+            <div className="hero-num" style={{fontSize:28,color:C.green}}>·</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>End of day</div>
+              <div className="display" style={{fontSize:15,fontStyle:"italic",color:C.text}}>Reflect · 30 sec</div>
+            </div>
+            <button onClick={e=>{e.stopPropagation();setReflectDismissed(p=>({...p,[todayK]:true}));}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:18,cursor:"pointer",padding:6}}>×</button>
+          </div>}
+
+          {/* Section 1: Living banner — reacts to your day */}
+          <div style={{height:180,borderRadius:14,overflow:"hidden",marginBottom:18,border:`1px solid ${C.hairline}`}}>
+            <BannerScene mode={todaySub==="morning"?"morning":todaySub==="allday"?"day":"evening"} dayPct={todayCompletion.pct} morningPct={mPct} eveningPct={ePct} />
           </div>
 
           {/* Section 2: Big tab selector */}
-          <div style={{display:"flex",gap:8,marginBottom:18,padding:"4px",background:C.surface,borderRadius:16,boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}>
-            {[{k:"morning",l:"Morning",emoji:"☀️"},{k:"allday",l:"All Day",emoji:"🎯"},{k:"evening",l:"Evening",emoji:"🌙"}].map(s=>{const on=todaySub===s.k;return(
-              <button key={s.k} onClick={()=>setTodaySub(s.k)} className="pill-btn" style={{flex:1,padding:"14px 8px",borderRadius:12,border:"none",cursor:"pointer",background:on?(s.k==="morning"?"linear-gradient(135deg,#FFB88A,#FFD27A)":s.k==="allday"?"linear-gradient(135deg,#4178C4,#3568B2)":"linear-gradient(135deg,#7B65B0,#4B3B6B)"):"transparent",color:on?"#fff":C.textSec,fontFamily:FN.b,fontSize:13,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6,boxShadow:on?"0 4px 12px rgba(0,0,0,0.15)":"none"}}>
-                <span style={{fontSize:16}}>{s.emoji}</span>{s.l}
-              </button>
+          <div style={{display:"flex",gap:0,marginBottom:22,borderBottom:`1px solid ${C.hairline}`}}>
+            {[{k:"morning",l:"Morning"},{k:"allday",l:"All Day"},{k:"evening",l:"Evening"}].map(s=>{const on=todaySub===s.k;return(
+              <button key={s.k} onClick={()=>setTodaySub(s.k)} style={{flex:1,padding:"16px 8px",background:"transparent",border:"none",borderBottom:on?`2px solid ${C.accent}`:"2px solid transparent",cursor:"pointer",color:on?C.text:C.textDim,fontFamily:FN.b,fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s ease",marginBottom:-1}}>{s.l}</button>
             );})}
           </div>
 
-          {/* Section 3: Tasks display — no card wrapper, just rows */}
           {todaySub==="morning"&&<div>
-            {morningT.length===0&&<div style={{textAlign:"center",padding:20,color:C.textDim,fontSize:13}}>No morning tasks yet.</div>}
-            {morningT.map(t=><TRow key={t.id} t={t} />)}
+            {morningT.length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.morning}</div>}
+            {morningTSorted.map(t=><TRow key={t.id} t={t} />)}
           </div>}
-
           {todaySub==="allday"&&<div>
-            {focusTasks.length===0&&<div style={{textAlign:"center",padding:24,color:C.textDim,fontSize:13}}>No focus tasks for this day. Add them in Goals → Focus.</div>}
+            {focusTasks.length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.allday}</div>}
             {focusTasks.map(t=><TRow key={t.id} t={t} big />)}
           </div>}
-
           {todaySub==="evening"&&<div>
-            {nightT.length===0&&<div style={{textAlign:"center",padding:20,color:C.textDim,fontSize:13}}>No evening tasks yet.</div>}
-            {nightT.map(t=><TRow key={t.id} t={t} />)}
+            {nightT.length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.evening}</div>}
+            {nightTSorted.map(t=><TRow key={t.id} t={t} />)}
           </div>}
 
-          {/* Small completion stat at bottom */}
-          <div style={{marginTop:16,padding:"14px 18px",background:C.surface,borderRadius:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div><div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em"}}>Completion</div><div style={{fontSize:22,fontWeight:800,color:pC(todayCompletion.pct),marginTop:2}}>{todayCompletion.pct}%</div></div>
-            <div style={{flex:1,margin:"0 16px",height:10,background:C.surfaceDim,borderRadius:6,overflow:"hidden"}}><div style={{height:"100%",width:`${todayCompletion.pct}%`,background:gB(todayCompletion.pct),borderRadius:6,transition:"width 0.6s cubic-bezier(0.34,1.56,0.64,1)"}} /></div>
-            <div style={{fontSize:12,color:C.textDim,fontWeight:600}}>{todayCompletion.done}/{todayCompletion.total}</div>
-          </div>
-        </div>}
+        </div>);})()}
 
         {/* ═══ GROUPS ═══ (unchanged behavior) */}
         {tab==="groups"&&<div className="tab-content">
@@ -591,16 +875,16 @@ export default function Dashboard(){
         {/* ═══ ANALYTICS ═══ (simplified) */}
         {tab==="analytics"&&<div className="tab-content">
           {/* Top metric cards: Completion, Focus, Weekly */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-            <div style={{...card,padding:16,textAlign:"center",background:`linear-gradient(135deg,${C.greenSoft},${C.surface})`}}>
-              <div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:6}}>Completion Rate</div>
-              <div style={{fontSize:30,fontWeight:800,color:pC(monthCompletionAvg)}}>{monthCompletionAvg}%</div>
-              <div style={{fontSize:10,color:C.textDim,marginTop:2}}>this month, avg</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
+            <div style={{...card,padding:"22px 18px"}}>
+              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:12}}>Completion</div>
+              <div className="hero-num" style={{fontSize:48,color:C.text,lineHeight:1}}>{monthCompletionAvg}<span style={{fontSize:20,color:C.textDim}}>%</span></div>
+              <div style={{fontSize:10,color:C.textDim,marginTop:8,fontFamily:FN.m}}>month avg</div>
             </div>
-            <div style={{...card,padding:16,textAlign:"center",background:`linear-gradient(135deg,${C.orangeSoft},${C.surface})`}}>
-              <div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:6}}>Focus Completion</div>
-              <div style={{fontSize:30,fontWeight:800,color:pC(focusAvgPct)}}>{focusAvgPct}%</div>
-              <div style={{fontSize:10,color:C.textDim,marginTop:2}}>avg focus tasks done</div>
+            <div style={{...card,padding:"22px 18px"}}>
+              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:12}}>Focus</div>
+              <div className="hero-num" style={{fontSize:48,color:C.accent,lineHeight:1}}>{focusAvgPct}<span style={{fontSize:20,color:C.textDim}}>%</span></div>
+              <div style={{fontSize:10,color:C.textDim,marginTop:8,fontFamily:FN.m}}>focus tasks done</div>
             </div>
           </div>
 
@@ -633,6 +917,22 @@ export default function Dashboard(){
               </div>))}
             </div>}
           </div>
+
+          {/* Recent Reflections */}
+          {Object.keys(reflections).length>0&&<div style={{...card,marginBottom:14}}>
+            <div style={lbl}>Recent Reflections</div>
+            <div style={{maxHeight:240,overflowY:"auto"}} className="hide-scroll">
+              {Object.entries(reflections).sort(([a],[b])=>b.localeCompare(a)).slice(0,7).map(([date,entries])=>(
+                <div key={date} style={{marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.hairline}`}}>
+                  <div style={{fontSize:9,fontFamily:FN.m,color:C.textDim,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>{fd(date)}</div>
+                  {entries.map((e,i)=>(<div key={i} style={{marginBottom:6,paddingLeft:10,borderLeft:`2px solid ${C.accent}`}}>
+                    <div style={{fontSize:11,fontFamily:FN.h,fontStyle:"italic",color:C.textDim,marginBottom:2}}>{e.prompt}</div>
+                    <div style={{fontSize:13,color:C.text,lineHeight:1.5}}>{e.answer}</div>
+                  </div>))}
+                </div>
+              ))}
+            </div>
+          </div>}
 
           {/* Strong / Weak */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -683,7 +983,32 @@ export default function Dashboard(){
           </div>}
 
           {/* ─── DAILY (recurring) ─── */}
-          {gTab==="daily"&&<div>{["morning","night","general"].map(grp=>{const items=todos.filter(t=>t.grp===grp);return(
+          {gTab==="daily"&&<div>
+            {/* Chains — habit stacking */}
+            <div style={{...card,marginBottom:12}}>
+              <div style={{...lbl,display:"flex",alignItems:"center"}}>Chains<span style={{marginLeft:8,fontSize:9,color:C.textDim,fontWeight:500,textTransform:"none",letterSpacing:0,fontStyle:"italic",fontFamily:FN.h}}>habit stacking</span></div>
+              {chains.length===0&&!buildingChain&&<div style={{fontSize:12,color:C.textDim,padding:"4px 0 12px",fontFamily:FN.h,fontStyle:"italic"}}>Link tasks into a routine. After X, do Y.</div>}
+              {chains.map(c=>(
+                <div key={c.id} style={{padding:"12px 14px",marginBottom:8,borderRadius:10,background:C.surfaceDim,border:`1px solid ${C.hairline}`}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                    <span style={{fontSize:13,fontWeight:600,color:C.text}}>{c.name}</span>
+                    <button onClick={()=>removeChain(c.id)} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:15,opacity:0.5}}>×</button>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>{c.taskIds.map((tid,i)=>{const task=todos.find(t=>t.id===tid);if(!task)return null;return(<div key={tid} style={{display:"flex",alignItems:"center",gap:6}}>{i>0&&<span style={{color:C.accent,fontSize:12,margin:"0 2px"}}>→</span>}<span style={{fontSize:11,fontFamily:FN.m,color:C.text,background:C.surfaceHi,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.hairline}`}}>{task.text}</span></div>);})}</div>
+                </div>
+              ))}
+              {buildingChain?
+                <div style={{padding:14,background:C.surfaceDim,borderRadius:10,marginTop:8}}>
+                  <input value={chainName} onChange={e=>setChainName(e.target.value)} placeholder="Chain name (e.g. Morning Routine)" style={{...inp,marginBottom:10}} autoFocus/>
+                  <div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Pick tasks in order ({chainPicks.length} selected)</div>
+                  {chainPicks.length>0&&<div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap",marginBottom:10,padding:"8px 10px",background:C.surfaceHi,borderRadius:8}}>{chainPicks.map((tid,i)=>{const task=todos.find(t=>t.id===tid);if(!task)return null;return(<div key={`${tid}-${i}`} style={{display:"flex",alignItems:"center",gap:4}}>{i>0&&<span style={{color:C.accent,fontSize:11}}>→</span>}<span onClick={()=>setChainPicks(p=>p.filter((_,j)=>j!==i))} style={{fontSize:10,fontFamily:FN.m,color:C.accent,background:C.accentSoft,padding:"3px 7px",borderRadius:5,cursor:"pointer",border:`1px solid ${C.accentMed}`}}>{task.text} ×</span></div>);})}</div>}
+                  <div style={{maxHeight:200,overflowY:"auto"}} className="hide-scroll">{todos.map(t=>(<div key={t.id} onClick={()=>setChainPicks(p=>[...p,t.id])} style={{padding:"8px 12px",marginBottom:3,borderRadius:6,background:"transparent",border:`1px solid ${C.hairline}`,cursor:"pointer",fontSize:12,color:C.textSec,display:"flex",justifyContent:"space-between"}}><span>{t.text}</span><span style={{color:C.accent,fontFamily:FN.m,fontSize:10}}>+ add</span></div>))}</div>
+                  <div style={{display:"flex",gap:8,marginTop:12}}><button onClick={saveChain} style={{...btnB,flex:1}}>Save Chain</button><button onClick={()=>{setBuildingChain(false);setChainName("");setChainPicks([]);}} style={btnG}>Cancel</button></div>
+                </div>
+                :<button onClick={()=>setBuildingChain(true)} style={{width:"100%",background:"transparent",border:`1px dashed ${C.hairline}`,borderRadius:10,padding:12,color:C.textDim,fontSize:11,fontWeight:600,cursor:"pointer",marginTop:4,textTransform:"uppercase",letterSpacing:"0.06em"}}>+ Build a Chain</button>
+              }
+            </div>
+            {["morning","night","general"].map(grp=>{const items=todos.filter(t=>t.grp===grp);return(
             <div key={grp} style={{...card,marginBottom:12}}>
               <div style={{...lbl,textTransform:"capitalize"}}>{grp} Tasks</div>
               {items.map(t=>(
@@ -761,9 +1086,9 @@ export default function Dashboard(){
         {/* ═══ WORKOUT ═══ */}
         {menuTab==="workout"&&<div className="tab-content">
           <div style={{display:"flex",gap:4,marginBottom:14}}>{[{k:"log",l:"Log"},{k:"progress",l:"Progress"},{k:"bodyweight",l:"Weight"}].map(v=>(<button key={v.k} onClick={()=>{setGView(v.k);if(v.k!=="log")setGSplit(null);}} className="pill-btn" style={pill(gView===v.k)}>{v.l}</button>))}</div>
-          {gView==="log"&&!gSplit&&<div><div style={{display:"flex",flexDirection:"column",gap:8}}>{Object.entries(splits).map(([key,exL])=>(<div key={key} style={{...card,padding:"14px 20px",display:"flex",alignItems:"center",gap:14}}><button className="press" onClick={()=>setGSplit(key)} style={{flex:1,display:"flex",alignItems:"center",gap:14,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",padding:0}}><div style={{width:44,height:44,borderRadius:12,background:`${spClr[key]||C.blue}10`,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:16,fontWeight:800,color:spClr[key]||C.blue,textTransform:"uppercase"}}>{key[0]}</span></div><div><div style={{fontSize:14,fontWeight:700,color:spClr[key]||C.blue,textTransform:"uppercase"}}>{key}</div><div style={{fontSize:11,color:C.textDim}}>{exL.length} ex</div></div></button><button className="press" onClick={()=>setSplits(p=>{const n={...p};delete n[key];return n;})} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,opacity:0.35}}>×</button></div>))}</div>{!addSplit?<button onClick={()=>setAddSplit(true)} style={{...btnB,width:"100%",marginTop:12,fontSize:12}}>+ Add Split</button>:<div style={{...card,marginTop:12}}><input value={nSpName} onChange={e=>setNSpName(e.target.value)} placeholder="Split name" style={{...inp,marginBottom:8}} /><input value={nSpEx} onChange={e=>setNSpEx(e.target.value)} placeholder="Exercises (comma sep)" style={{...inp,marginBottom:10}} /><div style={{display:"flex",gap:8}}><button onClick={()=>{if(!nSpName.trim())return;setSplits(p=>({...p,[nSpName.trim().toLowerCase()]:nSpEx.split(",").map(e=>e.trim()).filter(Boolean)}));setNSpName("");setNSpEx("");setAddSplit(false);}} style={{...btnB,flex:1}}>Add</button><button onClick={()=>setAddSplit(false)} style={btnG}>Cancel</button></div></div>}</div>}
+          {gView==="log"&&!gSplit&&<div><div style={{display:"flex",flexDirection:"column",gap:8}}>{Object.entries(splits).map(([key,exL])=>(<div key={key} style={{...card,padding:"14px 20px",display:"flex",alignItems:"center",gap:14}}><button className="press" onClick={()=>setGSplit(key)} style={{flex:1,display:"flex",alignItems:"center",gap:14,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",padding:0}}><div style={{width:44,height:44,borderRadius:12,background:`${spClr[key]||C.blue}10`,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:16,fontWeight:800,color:spClr[key]||C.blue,textTransform:"uppercase"}}>{key[0]}</span></div><div><div style={{fontSize:14,fontWeight:700,color:spClr[key]||C.blue,textTransform:"uppercase"}}>{key}</div><div style={{fontSize:11,color:C.textDim}}>{exL.length} ex</div></div></button><button className="press" onClick={()=>startSession(key)} style={{background:C.accent,border:"none",borderRadius:8,padding:"8px 14px",color:"#0B1120",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em"}}>Start</button><button className="press" onClick={()=>setSplits(p=>{const n={...p};delete n[key];return n;})} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,opacity:0.35}}>×</button></div>))}</div>{!addSplit?<button onClick={()=>setAddSplit(true)} style={{...btnB,width:"100%",marginTop:12,fontSize:12}}>+ Add Split</button>:<div style={{...card,marginTop:12}}><input value={nSpName} onChange={e=>setNSpName(e.target.value)} placeholder="Split name" style={{...inp,marginBottom:8}} /><input value={nSpEx} onChange={e=>setNSpEx(e.target.value)} placeholder="Exercises (comma sep)" style={{...inp,marginBottom:10}} /><div style={{display:"flex",gap:8}}><button onClick={()=>{if(!nSpName.trim())return;setSplits(p=>({...p,[nSpName.trim().toLowerCase()]:nSpEx.split(",").map(e=>e.trim()).filter(Boolean)}));setNSpName("");setNSpEx("");setAddSplit(false);}} style={{...btnB,flex:1}}>Add</button><button onClick={()=>setAddSplit(false)} style={btnG}>Cancel</button></div></div>}</div>}
           {gView==="log"&&gSplit&&curWkState&&<div><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}><button onClick={()=>setGSplit(null)} style={btnG}>←</button><span style={{fontSize:15,fontWeight:800,color:spClr[gSplit]||C.blue,textTransform:"uppercase"}}>{gSplit}</span><span style={{fontSize:9,color:C.green,marginLeft:6}}>● auto-saving</span><button className="press" onClick={()=>{const n=prompt("Exercise name:");if(n&&n.trim()){setSplits(p=>({...p,[gSplit]:[...(p[gSplit]||[]),n.trim()]}));setCurWkState(p=>({...p,exercises:[...p.exercises,{name:n.trim(),sets:[{w:0,r:0},{w:0,r:0},{w:0,r:0}]}]}));}}} style={{...btnG,fontSize:10,marginLeft:"auto"}}>+ Ex</button></div>{curWkState.exercises.map((ex,ei)=>{const lE=lastSess?.exercises?.find(e=>e.name===ex.name);const dn=doneEx[ei];return(<div key={ei} style={{...card,marginBottom:10,background:dn?C.greenSoft:C.surface}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><span style={{fontSize:13,fontWeight:700,color:dn?C.green:C.text}}>{dn&&"✓ "}{ex.name}</span><div style={{display:"flex",gap:3}}><button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"3px 8px",fontSize:10}}>Done</button><button onClick={()=>rSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>−</button><button onClick={()=>aSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>+</button><button onClick={()=>{setSplits(p=>({...p,[gSplit]:(p[gSplit]||[]).filter(e=>e!==ex.name)}));setCurWkState(p=>({...p,exercises:p.exercises.filter((_,i)=>i!==ei)}));}} style={{...btnG,padding:"3px 6px",fontSize:11,color:C.red}}>✕</button></div></div>{ex.sets.map((s,si)=>{const ls=lE?.sets?.[si];const wd=ls?s.w-ls.w:null;return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:spClr[gSplit]||C.blue,fontWeight:700}}>S{si+1}</span><input type="number" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder="kg" style={numI} /><input type="number" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={numI} /><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:ls?(wd>0?C.greenBright:wd<0?C.red:C.textDim):C.textDim}}>{ls?`${ls.w}×${ls.r}`:"—"}</span></div>);})}</div>);})}<button className="press" onClick={saveWk} style={{width:"100%",background:spClr[gSplit]||C.blue,border:"none",borderRadius:12,padding:"14px 0",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",marginTop:4}}>Save ✓</button></div>}
-          {gView==="progress"&&<div style={card}><div style={lbl}>History</div>{wHist.slice().reverse().map(w=>(<div key={w.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",marginBottom:4,borderRadius:10,background:C.surfaceDim}}><div style={{width:8,height:8,borderRadius:"50%",background:spClr[w.split]||C.blue}} /><span style={{fontSize:12,fontWeight:600,color:spClr[w.split]||C.blue,textTransform:"uppercase",width:50}}>{w.split}</span><span style={{fontSize:12,color:C.textDim}}>{fd(w.date)}</span><span style={{marginLeft:"auto",fontSize:11,color:C.textDim}}>{w.exercises.length} ex</span><button onClick={()=>setWHist(p=>p.filter(x=>x.id!==w.id))} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,opacity:0.4}}>×</button></div>))}</div>}
+          {gView==="progress"&&<div style={card}><div style={lbl}>History</div>{wHist.slice().reverse().map(w=>(<div key={w.id} className="press" onClick={()=>setViewWorkout(w)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:4,borderRadius:10,background:C.surfaceDim,cursor:"pointer",border:`1px solid ${C.hairline}`}}><div style={{width:8,height:8,borderRadius:"50%",background:spClr[w.split]||C.accent}} /><span style={{fontSize:12,fontWeight:700,color:spClr[w.split]||C.accent,textTransform:"uppercase",letterSpacing:"0.06em",width:50}}>{w.split}</span><span style={{fontSize:12,color:C.textDim,fontFamily:FN.m}}>{fd(w.date)}</span><span style={{marginLeft:"auto",fontSize:10,color:C.textDim,fontFamily:FN.m}}>{w.exercises.length} ex · {w.exercises.reduce((a,e)=>a+e.sets.length,0)} sets{w.duration?` · ${fmtTime(Math.floor(w.duration/1000))}`:""}</span><span style={{fontSize:14,color:C.textDim}}>›</span><button onClick={e=>{e.stopPropagation();setWHist(p=>p.filter(x=>x.id!==w.id));}} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,opacity:0.4,padding:"0 4px"}}>×</button></div>))}{wHist.length===0&&<div style={{textAlign:"center",padding:24,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:14}}>No saved workouts yet.</div>}</div>}
           {gView==="bodyweight"&&<div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>{[{l:"Current",v:`${bwLog.length>0?bwLog[bwLog.length-1].weight:0}kg`,c:C.text},{l:"Start",v:`${bwLog.length>0?bwLog[0].weight:0}kg`,c:C.textDim},{l:"Change",v:`${bwLog.length>=2?(bwLog[bwLog.length-1].weight-bwLog[0].weight).toFixed(1):"0"}kg`,c:parseFloat(bwLog.length>=2?(bwLog[bwLog.length-1].weight-bwLog[0].weight).toFixed(1):"0")>0?C.greenBright:C.red}].map((s,i)=>(<div key={i} style={{...card,padding:12,textAlign:"center"}}><div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:2}}>{s.l}</div><div style={{fontSize:18,fontWeight:700,color:s.c}}>{s.v}</div></div>))}</div><div style={{...card,marginBottom:12}}><div style={lbl}>Weight Over Time</div><ResponsiveContainer width="100%" height={140}><LineChart data={bwLog.map(e=>({date:fd(e.date),weight:e.weight}))}><CartesianGrid strokeDasharray="3 3" stroke={C.surfaceDim} vertical={false} /><XAxis dataKey="date" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} /><YAxis domain={["dataMin-1","dataMax+1"]} tick={{fill:C.textDim,fontSize:10}} axisLine={false} tickLine={false} width={32} /><Tooltip content={<Tip />} /><Line type="monotone" dataKey="weight" stroke={C.blue} strokeWidth={2} dot={{fill:C.blue,r:3,stroke:"#fff",strokeWidth:2}} name="kg" /></LineChart></ResponsiveContainer></div><div style={card}><div style={lbl}>Log</div><div style={{display:"flex",gap:8}}><input type="number" step="0.1" value={nBW} onChange={e=>setNBW(e.target.value)} placeholder="kg" style={{...inp,flex:1}} onKeyDown={e=>{if(e.key==="Enter"){const w=parseFloat(nBW);if(w){setBwLog(p=>[...p,{date:dk(now),weight:w}]);setNBW("");}}}} /><button onClick={()=>{const w=parseFloat(nBW);if(w){setBwLog(p=>[...p,{date:dk(now),weight:w}]);setNBW("");}}} style={btnB}>Log</button></div></div></div>}
         </div>}
 
@@ -781,9 +1106,29 @@ export default function Dashboard(){
       </div>
 
       {/* ═══ BOTTOM TAB BAR with icons ═══ */}
-      <div style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,boxShadow:"0 -2px 12px rgba(0,0,0,0.06)",display:"flex",padding:"8px 10px",gap:4}}>
+      {/* ═══ FIXED HERO COMPLETION (Today tab only — always visible while scrolling) ═══ */}
+      {tab==="today"&&!menuTab&&(()=>{
+        const pct=todayCompletion.pct;
+        const lerp=(a,b,t)=>Math.round(a+(b-a)*t);
+        let r,g,bl;
+        if(pct<=50){const t=pct/50;r=lerp(248,251,t);g=lerp(113,191,t);bl=lerp(113,36,t);}
+        else{const t=(pct-50)/50;r=lerp(251,52,t);g=lerp(191,211,t);bl=lerp(36,153,t);}
+        const numColor=`rgb(${r},${g},${bl})`;
+        return(
+          <div style={{position:"fixed",left:0,right:0,bottom:70,zIndex:99,background:`linear-gradient(180deg,rgba(28,36,56,0.85) 0%,${C.surface} 30%)`,backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",borderTop:`1px solid ${C.hairline}`,padding:"12px 24px 12px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.14em",marginBottom:4}}>Today · Completion</div>
+            <div className="hero-num" style={{fontSize:48,lineHeight:0.95,color:numColor,marginBottom:8,transition:"color 0.4s ease"}}>{pct}<span style={{fontSize:18,color:C.textDim}}>%</span></div>
+            <div style={{height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden",margin:"0 auto",maxWidth:420}}>
+              <div style={{height:"100%",width:`${pct}%`,background:numColor,borderRadius:3,transition:"width 0.6s cubic-bezier(0.34,1.56,0.64,1), background 0.4s ease",boxShadow:pct>0?`0 0 14px ${numColor}80`:"none"}} />
+            </div>
+            <div style={{fontFamily:FN.m,fontSize:9,color:C.textDim,letterSpacing:"0.04em",marginTop:6}}>{todayCompletion.done} / {todayCompletion.total} tasks</div>
+          </div>
+        );
+      })()}
+
+      <div style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 14px",gap:4}}>
         {mainTabs.map(t=>{const on=tab===t.k&&!menuTab;return(
-          <button key={t.k} onClick={()=>{setTab(t.k);setMenuTab(null);}} className="press" style={{flex:1,border:"none",borderRadius:14,padding:"10px 0",cursor:"pointer",textAlign:"center",background:on?C.blue:"transparent",color:on?"#fff":C.textDim,fontSize:11,fontFamily:FN.b,fontWeight:on?700:500,transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+          <button key={t.k} onClick={()=>{setTab(t.k);setMenuTab(null);}} className="press" style={{flex:1,border:"none",borderRadius:10,padding:"10px 0",cursor:"pointer",textAlign:"center",background:"transparent",color:on?C.accent:C.textDim,fontSize:10,fontFamily:FN.b,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>{t.i}</span>
             <span>{t.l}</span>
           </button>
@@ -812,6 +1157,8 @@ export default function Dashboard(){
         <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Time Ranges</div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Morning Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.morningStart} onChange={e=>setSettings(p=>({...p,morningStart:parseInt(e.target.value)||5}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.morningEnd} onChange={e=>setSettings(p=>({...p,morningEnd:parseInt(e.target.value)||12}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Night Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.nightStart} onChange={e=>setSettings(p=>({...p,nightStart:parseInt(e.target.value)||18}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.nightEnd} onChange={e=>setSettings(p=>({...p,nightEnd:parseInt(e.target.value)||23}))} style={{...numI,width:60}} /></div></div>
+        <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Reflection Prompt Time</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" min="0" max="23" value={settings.reflectHour} onChange={e=>setSettings(p=>({...p,reflectHour:parseInt(e.target.value)||21}))} style={{...numI,width:60}} /><span style={{fontSize:11,color:C.textDim,fontFamily:FN.m}}>:00 — surfaces "End of day" card after this hour</span></div></div>
+        <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Review Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,reviewDay:i}))} style={{...pill(settings.reviewDay===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:`1px solid ${C.surfaceDim}`}}><span style={{fontSize:13,fontWeight:600}}>Notifications</span><button onClick={()=>setSettings(p=>({...p,notifs:!p.notifs}))} style={{...pill(settings.notifs,C.green),padding:"6px 20px"}}>{settings.notifs?"ON":"OFF"}</button></div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:`1px solid ${C.surfaceDim}`}}><span style={{fontSize:13,fontWeight:600}}>Vibrations</span><button onClick={()=>setSettings(p=>({...p,vibrate:!p.vibrate}))} style={{...pill(settings.vibrate,C.green),padding:"6px 20px"}}>{settings.vibrate?"ON":"OFF"}</button></div>
 
@@ -878,6 +1225,191 @@ export default function Dashboard(){
           <div style={{...card,padding:14,textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:C.green}}>{weekRecap.perf}</div><div style={{fontSize:11,color:C.textDim}}>Perfect Days</div></div>
           <div style={{...card,padding:14,textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:C.orange}}>{weekRecap.best}%</div><div style={{fontSize:11,color:C.textDim}}>Best Day</div></div>
           <div style={{...card,padding:14,textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:weekLabelColor}}>{weekLabel}</div><div style={{fontSize:11,color:C.textDim}}>Overall</div></div>
+        </div>
+      </Overlay>
+
+      {/* ═══ ACTIVE WORKOUT SESSION — fullscreen focus mode (hidden when minimized) ═══ */}
+      {activeSession&&!sessionMinimized&&<div style={{position:"fixed",inset:0,zIndex:300,background:C.bg,display:"flex",flexDirection:"column",fontFamily:FN.b}}>
+        {/* Finish overlay */}
+        {finishingSession&&<div style={{position:"absolute",inset:0,zIndex:10,background:`radial-gradient(circle at center,${C.accentSoft},${C.bg} 70%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",animation:"finishGlow 1.8s ease forwards"}}>
+          <div style={{width:120,height:120,borderRadius:"50%",border:`2px solid ${C.accent}`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:24,boxShadow:`0 0 60px ${C.accent}80`}}>
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div className="display" style={{fontSize:32,fontStyle:"italic",color:C.text,marginBottom:8,textTransform:"none"}}>Done.</div>
+          <div style={{fontFamily:FN.m,fontSize:12,color:C.textDim,animation:"finishFade 1.2s ease forwards",letterSpacing:"0.18em",textTransform:"uppercase"}}>{fmtTime(sessionElapsed)} · {activeSession.split}</div>
+          <div style={{position:"absolute",left:0,right:0,top:"50%",height:2,background:`linear-gradient(90deg,transparent,${C.accent},transparent)`,backgroundSize:"200% 100%",animation:"finishSweep 1.6s ease forwards",pointerEvents:"none"}}/>
+        </div>}
+        {/* Header: stopwatch + cancel */}
+        <div style={{padding:"16px 22px",borderBottom:`1px solid ${C.hairline}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:C.surface}}>
+          <div>
+            <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:2}}>{activeSession.split}</div>
+            <div className="hero-num" style={{fontSize:34,color:C.accent,lineHeight:1}}>{fmtTime(sessionElapsed)}</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setSessionMinimized(true)} style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:8,padding:"8px 12px",color:C.textDim,fontSize:10,fontFamily:FN.b,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.06em",display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>Minimize</button>
+            <button onClick={cancelSession} style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:8,padding:"8px 14px",color:C.textDim,fontSize:10,fontFamily:FN.b,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cancel</button>
+          </div>
+        </div>
+        {/* Exercises */}
+        <div style={{flex:1,overflowY:"auto",padding:"16px 22px 24px"}}>
+          {activeSession.exercises.map((ex,ei)=>{const lE=lastSess?.exercises?.find(e=>e.name===ex.name);const dn=doneEx[ei];return(
+            <div key={ei} style={{...card,marginBottom:12,background:dn?C.greenSoft:C.surface,border:`1px solid ${dn?C.greenMed:C.hairline}`}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                <span style={{fontSize:14,fontWeight:700,color:dn?C.green:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{dn&&"✓ "}{ex.name}</span>
+                <div style={{display:"flex",gap:4}}>
+                  <button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"4px 10px",fontSize:9}}>Done</button>
+                  <button onClick={()=>rSet(ei)} style={{...btnG,padding:"4px 8px",fontSize:13}}>−</button>
+                  <button onClick={()=>aSet(ei)} style={{...btnG,padding:"4px 8px",fontSize:13}}>+</button>
+                </div>
+              </div>
+              {ex.sets.map((s,si)=>{const ls=lE?.sets?.[si];const wd=ls?s.w-ls.w:null;return(
+                <div key={si} style={{display:"grid",gridTemplateColumns:"32px 1fr 1fr 56px",gap:6,marginBottom:6,alignItems:"center"}}>
+                  <span style={{fontSize:10,color:C.accent,fontWeight:700,fontFamily:FN.m}}>S{si+1}</span>
+                  <input type="number" inputMode="decimal" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder="kg" style={{...numI,padding:"12px 8px",fontSize:15}}/>
+                  <input type="number" inputMode="numeric" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={{...numI,padding:"12px 8px",fontSize:15}}/>
+                  <span style={{fontSize:9,textAlign:"center",fontWeight:600,fontFamily:FN.m,color:ls?(wd>0?C.green:wd<0?C.red:C.textDim):C.textDim}}>{ls?`${ls.w}×${ls.r}`:"—"}</span>
+                </div>
+              );})}
+            </div>
+          );})}
+        </div>
+        {/* Finish button */}
+        <div style={{padding:"14px 22px 18px",background:C.surface,borderTop:`1px solid ${C.hairline}`}}>
+          <button onClick={finishSession} className="press" style={{width:"100%",background:C.accent,border:"none",borderRadius:12,padding:"18px 0",color:"#0B1120",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.16em",boxShadow:`0 4px 20px ${C.accent}40`}}>Finish Workout</button>
+          <div style={{fontFamily:FN.m,fontSize:9,color:C.textDim,textAlign:"center",marginTop:8,letterSpacing:"0.04em"}}>● auto-saving every keystroke</div>
+        </div>
+      </div>}
+
+      {/* ═══ MINIMIZED SESSION PILL — sits at top so user can resume anytime ═══ */}
+      {activeSession&&sessionMinimized&&<button onClick={()=>setSessionMinimized(false)} className="press" style={{position:"fixed",left:"50%",top:14,transform:"translateX(-50%)",zIndex:120,background:C.accent,border:"none",borderRadius:24,padding:"10px 20px",color:"#0B1120",fontSize:11,fontFamily:FN.b,fontWeight:700,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.08em",boxShadow:`0 6px 24px ${C.accent}60, 0 2px 8px rgba(0,0,0,0.4)`,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{width:8,height:8,borderRadius:"50%",background:"#0B1120",animation:"sunPulse 1.6s ease-in-out infinite"}}/>
+        <span>{activeSession.split} · {fmtTime(sessionElapsed)}</span>
+        <span style={{fontSize:9,opacity:0.7}}>RESUME →</span>
+      </button>}
+
+      {/* ═══ CANCEL CONFIRM DIALOG ═══ */}
+      {showCancelConfirm&&<div onClick={()=>setShowCancelConfirm(false)} style={{position:"fixed",inset:0,zIndex:400,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.85)",backdropFilter:"blur(10px)"}}/>
+        <div onClick={e=>e.stopPropagation()} className="modal-box" style={{position:"relative",background:C.surface,color:C.text,borderRadius:16,padding:28,width:"86%",maxWidth:380,border:`1px solid ${C.hairline}`,textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
+          <div className="display" style={{fontSize:22,fontStyle:"italic",color:C.text,marginBottom:8}}>Cancel workout?</div>
+          <div style={{fontSize:12,color:C.textDim,marginBottom:24,fontFamily:FN.m,lineHeight:1.5}}>All sets logged in this session will be lost. This can't be undone.</div>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setShowCancelConfirm(false)} style={{...btnG,flex:1,padding:"12px 0"}}>Keep Going</button>
+            <button onClick={confirmCancel} style={{...btnB,flex:1,background:C.red,color:"#fff",padding:"12px 0"}}>Discard</button>
+          </div>
+        </div>
+      </div>}
+
+      {/* ═══ WORKOUT DETAIL MODAL — view a saved workout's full set/weight/rep summary ═══ */}
+      <Overlay open={!!viewWorkout} onClose={()=>setViewWorkout(null)} title={viewWorkout?`${viewWorkout.split.toUpperCase()} · ${fd(viewWorkout.date)}`:""} wide>
+        {viewWorkout&&<div>
+          {viewWorkout.duration&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.m,marginBottom:18,letterSpacing:"0.04em"}}>Duration: {fmtTime(Math.floor(viewWorkout.duration/1000))} · {viewWorkout.exercises.length} exercises · {viewWorkout.exercises.reduce((a,e)=>a+e.sets.length,0)} sets total</div>}
+          {viewWorkout.exercises.map((ex,ei)=>{const totalVol=ex.sets.reduce((a,s)=>a+(s.w||0)*(s.r||0),0);return(
+            <div key={ei} style={{...card,padding:16,marginBottom:10,background:C.surfaceDim,border:`1px solid ${C.hairline}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
+                <span style={{fontSize:14,fontWeight:600,color:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{ex.name}</span>
+                <span style={{fontSize:10,fontFamily:FN.m,color:C.textDim,letterSpacing:"0.04em"}}>{Math.round(totalVol)} kg vol</span>
+              </div>
+              {ex.sets.map((s,si)=>(
+                <div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr",gap:10,padding:"6px 0",borderTop:si>0?`1px solid ${C.hairline}`:"none",alignItems:"center"}}>
+                  <span style={{fontSize:10,fontFamily:FN.m,color:C.accent,fontWeight:700}}>S{si+1}</span>
+                  <span style={{fontFamily:FN.m,fontSize:14,color:C.text}}>{s.w||0}<span style={{fontSize:10,color:C.textDim,marginLeft:4}}>kg</span></span>
+                  <span style={{fontFamily:FN.m,fontSize:14,color:C.text}}>{s.r||0}<span style={{fontSize:10,color:C.textDim,marginLeft:4}}>reps</span></span>
+                </div>
+              ))}
+            </div>
+          );})}
+        </div>}
+      </Overlay>
+
+      {/* ═══ FLOATING QUICK CAPTURE BUTTON ═══ */}
+      <button onClick={()=>{setShowQuick(true);setQuickText("");}} className="press" style={{position:"fixed",right:18,bottom:200,zIndex:91,width:54,height:54,borderRadius:"50%",background:C.accent,border:"none",cursor:"pointer",boxShadow:"0 6px 24px rgba(245,158,11,0.4), 0 2px 8px rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0B1120" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+
+      {/* ═══ QUICK CAPTURE MODAL ═══ */}
+      {showQuick&&<div onClick={()=>setShowQuick(false)} style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+        <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(8px)"}}/>
+        <div onClick={e=>e.stopPropagation()} className="modal-box" style={{position:"relative",background:C.surface,borderTopLeftRadius:24,borderTopRightRadius:24,padding:"24px 22px 32px",width:"100%",maxWidth:560,border:`1px solid ${C.hairline}`,borderBottom:"none"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <span style={{fontSize:11,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Quick Capture</span>
+            <button onClick={()=>setShowQuick(false)} style={{background:"transparent",border:"none",color:C.textDim,fontSize:20,cursor:"pointer"}}>×</button>
+          </div>
+          <input autoFocus value={quickText} onChange={e=>setQuickText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")submitQuick();}} placeholder="What needs doing?" style={{...inp,fontSize:16,padding:"14px 16px",fontFamily:FN.h,fontStyle:"italic"}}/>
+          {quickPreview&&quickPreview.text&&<div style={{marginTop:14,padding:"12px 14px",background:C.surfaceDim,borderRadius:10,border:`1px solid ${C.hairline}`}}>
+            <div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Preview</div>
+            <div style={{fontSize:14,color:C.text,marginBottom:8}}>{quickPreview.text}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <span style={{fontSize:10,fontFamily:FN.m,color:C.accent,background:C.accentSoft,padding:"3px 8px",borderRadius:4}}>{quickPreview.recurring?"recurring":quickPreview.when}</span>
+              <span style={{fontSize:10,fontFamily:FN.m,color:DIFF[quickPreview.diff].color,background:DIFF[quickPreview.diff].bg,padding:"3px 8px",borderRadius:4}}>{quickPreview.diff}</span>
+              {quickPreview.proof&&<span style={{fontSize:10,fontFamily:FN.m,color:C.textSec,background:C.surfaceHi,padding:"3px 8px",borderRadius:4}}>📷 proof</span>}
+              {quickPreview.group&&<span style={{fontSize:10,fontFamily:FN.m,color:C.textSec,background:C.surfaceHi,padding:"3px 8px",borderRadius:4}}>{quickPreview.group}</span>}
+            </div>
+          </div>}
+          <div style={{fontSize:10,color:C.textDim,marginTop:10,fontFamily:FN.m,lineHeight:1.6}}>Try: "gym tomorrow", "spanish daily", "!hard read 30 min", "📷 workout monday"</div>
+          <button onClick={submitQuick} style={{...btnB,width:"100%",marginTop:14,padding:"14px"}}>Add Task</button>
+        </div>
+      </div>}
+
+      {/* ═══ REFLECT MODAL ═══ */}
+      <Overlay open={showReflect} onClose={()=>setShowReflect(false)} title="End of Day · Reflect">
+        <div style={{fontSize:11,color:C.textDim,marginBottom:18,fontFamily:FN.m}}>Two questions. One sentence each. Thirty seconds.</div>
+        {pickPrompts(todayCompletion.pct).map((prompt,i)=>(
+          <div key={i} style={{marginBottom:18}}>
+            <div className="display" style={{fontSize:16,fontStyle:"italic",color:C.text,marginBottom:8}}>{prompt}</div>
+            <textarea autoFocus={i===0} value={reflectAnswers[i]||""} onChange={e=>setReflectAnswers(p=>{const n=[...p];n[i]=e.target.value;return n;})} placeholder="…" rows={2} style={{...inp,fontFamily:FN.b,fontSize:13,resize:"none",lineHeight:1.5}}/>
+          </div>
+        ))}
+        <button onClick={saveReflect} style={{...btnB,width:"100%",marginTop:8}}>Save Reflection</button>
+      </Overlay>
+
+      {/* ═══ SUNDAY REVIEW MODAL ═══ */}
+      <Overlay open={showReview} onClose={()=>setShowReview(false)} title={`Weekly Review · Step ${reviewStep+1}/5`} wide>
+        {reviewStep===0&&<div>
+          <div className="display" style={{fontSize:24,fontStyle:"italic",color:C.text,marginBottom:6}}>Here's your week.</div>
+          <div style={{fontSize:12,color:C.textDim,marginBottom:20,fontFamily:FN.m}}>Five minutes. We'll go step by step.</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
+            <div style={{...card,padding:18}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Avg Completion</div><div className="hero-num" style={{fontSize:42,color:C.text,lineHeight:1}}>{weekRecap.avg}<span style={{fontSize:18,color:C.textDim}}>%</span></div></div>
+            <div style={{...card,padding:18}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Perfect Days</div><div className="hero-num" style={{fontSize:42,color:C.accent,lineHeight:1}}>{weekRecap.perf}<span style={{fontSize:18,color:C.textDim}}>/7</span></div></div>
+          </div>
+          <ResponsiveContainer width="100%" height={140}><BarChart data={weekRecap.daily}><CartesianGrid strokeDasharray="3 3" stroke={C.hairline} vertical={false}/><XAxis dataKey="day" tick={{fill:C.textDim,fontSize:10}} axisLine={false} tickLine={false}/><YAxis tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} domain={[0,100]} width={30}/><Tooltip content={<Tip/>}/><Bar dataKey="pct" radius={[6,6,0,0]}>{weekRecap.daily.map((d,i)=>(<Cell key={i} fill={pC(d.pct)}/>))}</Bar></BarChart></ResponsiveContainer>
+        </div>}
+        {reviewStep===1&&<div>
+          <div className="display" style={{fontSize:22,fontStyle:"italic",color:C.text,marginBottom:6}}>What worked.</div>
+          <div style={{fontSize:12,color:C.textDim,marginBottom:18,fontFamily:FN.m}}>Habits you crushed this week (≥80%).</div>
+          {strongHabitsForReview.length===0&&<div style={{padding:20,textAlign:"center",color:C.textDim,fontFamily:FN.h,fontStyle:"italic"}}>No standouts this week. That's data too.</div>}
+          {strongHabitsForReview.map((h,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:10,background:C.greenSoft,border:`1px solid ${C.greenMed}`}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg><span style={{fontSize:14,flex:1,color:C.text}}>{h.name}</span><span style={{fontFamily:FN.m,fontSize:13,color:C.green,fontWeight:700}}>{h.rate}%</span></div>))}
+        </div>}
+        {reviewStep===2&&<div>
+          <div className="display" style={{fontSize:22,fontStyle:"italic",color:C.text,marginBottom:6}}>What didn't.</div>
+          <div style={{fontSize:12,color:C.textDim,marginBottom:18,fontFamily:FN.m}}>For each, decide: keep going, modify, or drop.</div>
+          {weakHabitsForReview.length===0&&<div style={{padding:20,textAlign:"center",color:C.textDim,fontFamily:FN.h,fontStyle:"italic"}}>Nothing fell through the cracks.</div>}
+          {weakHabitsForReview.map((h,i)=>{const choice=reviewKept[h.name];return(<div key={i} style={{padding:"14px",marginBottom:8,borderRadius:10,background:C.surfaceDim,border:`1px solid ${C.hairline}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:14,color:C.text}}>{h.name}</span><span style={{fontFamily:FN.m,fontSize:12,color:C.red}}>{h.rate}%</span></div>
+            <div style={{display:"flex",gap:6}}>{["Keep","Modify","Drop"].map(opt=>(<button key={opt} onClick={()=>setReviewKept(p=>({...p,[h.name]:opt}))} style={{...pill(choice===opt,opt==="Keep"?C.green:opt==="Drop"?C.red:C.accent),flex:1,fontSize:10}}>{opt}</button>))}</div>
+          </div>);})}
+        </div>}
+        {reviewStep===3&&<div>
+          <div className="display" style={{fontSize:22,fontStyle:"italic",color:C.text,marginBottom:6}}>What you wrote.</div>
+          <div style={{fontSize:12,color:C.textDim,marginBottom:18,fontFamily:FN.m}}>Reflections from this week.</div>
+          {weekReflections.length===0&&<div style={{padding:20,textAlign:"center",color:C.textDim,fontFamily:FN.h,fontStyle:"italic"}}>No reflections logged this week.</div>}
+          {weekReflections.map(({date,entries})=>(<div key={date} style={{marginBottom:14}}>
+            <div style={{fontSize:10,fontFamily:FN.m,color:C.textDim,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>{fd(date)}</div>
+            {entries.map((e,i)=>(<div key={i} style={{padding:"10px 14px",marginBottom:4,borderRadius:8,background:C.surfaceDim,borderLeft:`2px solid ${C.accent}`}}><div style={{fontSize:11,fontStyle:"italic",color:C.textDim,fontFamily:FN.h,marginBottom:3}}>{e.prompt}</div><div style={{fontSize:13,color:C.text}}>{e.answer}</div></div>))}
+          </div>))}
+        </div>}
+        {reviewStep===4&&<div>
+          <div className="display" style={{fontSize:22,fontStyle:"italic",color:C.text,marginBottom:6}}>Three priorities.</div>
+          <div style={{fontSize:12,color:C.textDim,marginBottom:18,fontFamily:FN.m}}>What matters most this coming week. Be specific.</div>
+          {[0,1,2].map(i=>(<div key={i} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+            <div className="hero-num" style={{fontSize:24,color:C.accent,width:24,textAlign:"center"}}>{i+1}</div>
+            <input value={reviewPriorities[i]||""} onChange={e=>setReviewPriorities(p=>{const n=[...p];n[i]=e.target.value;return n;})} placeholder="…" style={{...inp,fontFamily:FN.h,fontStyle:"italic",fontSize:15}}/>
+          </div>))}
+        </div>}
+        <div style={{display:"flex",gap:8,marginTop:24,paddingTop:18,borderTop:`1px solid ${C.hairline}`}}>
+          {reviewStep>0&&<button onClick={()=>setReviewStep(s=>s-1)} style={btnG}>Back</button>}
+          <div style={{flex:1}}/>
+          {reviewStep<4?<button onClick={()=>setReviewStep(s=>s+1)} style={btnB}>Next →</button>:<button onClick={saveReview} style={{...btnB,background:C.green,color:"#0B1120"}}>Save Review</button>}
         </div>
       </Overlay>
     </div>
