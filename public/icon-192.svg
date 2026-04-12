@@ -1,4 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="40" fill="#3D7EC7"/>
-  <text x="96" y="115" text-anchor="middle" font-family="Arial" font-weight="800" font-size="80" fill="white">L</text>
+  <!-- Background -->
+  <rect width="192" height="192" rx="40" fill="#1F2A44"/>
+  
+  <!-- Text -->
+  <text 
+    x="50%" 
+    y="52%" 
+    text-anchor="middle" 
+    dominant-baseline="middle"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-style="italic"
+    font-weight="500"
+    font-size="42"
+    fill="#EDE7DF"
+    letter-spacing="1">
+    Progress
+  </text>
 </svg>
