@@ -454,8 +454,12 @@ export default function Dashboard(){
   const[gcSteps,setGcSteps]=useState(["","",""]);
   const[gcTarget,setGcTarget]=useState(""); // days per month for habit type
   const[gcAction,setGcAction]=useState(""); // daily action text for habit type
+  const[gcIntention,setGcIntention]=useState(""); // implementation intention — situational cue
+  const[intentionPromptFor,setIntentionPromptFor]=useState(null); // legacy goal being asked about
+  const[intentionPromptText,setIntentionPromptText]=useState("");
+  const[intentionPromptDismissed,setIntentionPromptDismissed]=useState({}); // {goalId:true}
   const[gcOverride,setGcOverride]=useState(false); // direct habit override
-  const resetGc=()=>{setGcStep(0);setGcName("");setGcType(null);setGcDeadline("");setGcHours("");setGcSteps(["","",""]);setGcTarget("");setGcAction("");setGcOverride(false);setShowGoalCreator(false);};
+  const resetGc=()=>{setGcStep(0);setGcName("");setGcType(null);setGcDeadline("");setGcHours("");setGcSteps(["","",""]);setGcTarget("");setGcAction("");setGcIntention("");setGcOverride(false);setShowGoalCreator(false);};
   const[showGal,setShowGal]=useState(false);
   const[selGrp,setSelGrp]=useState(null);const[mkGrp,setMkGrp]=useState(false);const[nGrpName,setNGrpName]=useState("");const[nGrpTasks,setNGrpTasks]=useState([]);
   const[modal,setModal]=useState(null);
@@ -577,7 +581,6 @@ export default function Dashboard(){
     const base={id:uid(),text:gcName.trim(),created:dk(now),status:"active",graduated:false,monthsAtTarget:0};
     let goal;
     if(gcOverride){
-      // Direct habit — skips the funnel
       goal={...base,goalType:"established",targetDays:parseInt(gcTarget)||20,dailyAction:gcAction.trim()||gcName.trim(),graduated:true};
     }else if(gcType==="measurable"){
       const totalH=parseInt(gcHours)||20;
@@ -588,9 +591,10 @@ export default function Dashboard(){
       const steps=gcSteps.filter(s=>s.trim()).map(s=>({id:uid(),text:s.trim(),done:false}));
       goal={...base,goalType:"outcome",steps};
     }else{
-      // habit-building
+      // habit-building — implementation intention is required
+      if(!gcIntention.trim())return;
       const td=parseInt(gcTarget)||20;
-      goal={...base,goalType:"habit",targetDays:td,weeklyPace:Math.round((td/30)*7*10)/10,dailyAction:gcAction.trim()||gcName.trim()};
+      goal={...base,goalType:"habit",targetDays:td,weeklyPace:Math.round((td/30)*7*10)/10,dailyAction:gcAction.trim()||gcName.trim(),implementationIntention:gcIntention.trim()};
     }
     setAspirations(p=>[...p,goal]);
     resetGc();
@@ -623,7 +627,7 @@ export default function Dashboard(){
       const hitToday=!!(checks[dk(now)]||{})[a.id];
       if(a.goalType==="measurable")return{id:a.id,text:`${a.text} — study session`,goalId:a.id,goalType:a.goalType,hitToday};
       if(a.goalType==="outcome"){const next=(a.steps||[]).find(s=>!s.done);return next?{id:a.id,text:next.text,goalId:a.id,goalType:a.goalType,hitToday}:null;}
-      if(a.goalType==="habit"||a.goalType==="established")return{id:a.id,text:a.dailyAction||a.text,goalId:a.id,goalType:a.goalType,hitToday,graduated:a.graduated};
+      if(a.goalType==="habit"||a.goalType==="established")return{id:a.id,text:a.dailyAction||a.text,goalId:a.id,goalType:a.goalType,hitToday,graduated:a.graduated,implementationIntention:a.implementationIntention};
       return null;
     }).filter(Boolean);
   },[aspirations,checks,now]);
@@ -646,6 +650,33 @@ export default function Dashboard(){
   const finalizeGraduation=()=>{if(!graduatingGoal)return;setAspirations(p=>p.map(a=>a.id===graduatingGoal.id?{...a,graduated:true,graduatedAt:dk(now),status:"active"}:a));setGraduatingGoal(null);};
   const demoteGoal=(id)=>{setAspirations(p=>p.map(a=>a.id===id?{...a,graduated:false,monthsAtTarget:0}:a));};
   const removeGoal=(id)=>{setAspirations(p=>p.filter(a=>a.id!==id));};
+
+  /* ─── LEGACY IMPLEMENTATION INTENTION PROMPT ─── */
+  // Finds habit-type goals that were created before the intention field existed and haven't been
+  // prompted yet. Queues them one at a time via intentionPromptFor. User sees a single overlay
+  // asking "when do you actually do this?" — can fill it in or dismiss permanently.
+  useEffect(()=>{
+    if(intentionPromptFor)return; // already showing one
+    const legacy=aspirations.find(a=>a.goalType==="habit"&&!a.implementationIntention&&!intentionPromptDismissed[a.id]);
+    if(legacy)setIntentionPromptFor(legacy);
+  },[aspirations,intentionPromptDismissed,intentionPromptFor]);
+
+  const saveIntentionPrompt=()=>{
+    if(!intentionPromptFor)return;
+    const goalId=intentionPromptFor.id;
+    if(intentionPromptText.trim()){
+      setAspirations(p=>p.map(a=>a.id===goalId?{...a,implementationIntention:intentionPromptText.trim()}:a));
+    }
+    setIntentionPromptDismissed(p=>({...p,[goalId]:true}));
+    setIntentionPromptFor(null);
+    setIntentionPromptText("");
+  };
+  const skipIntentionPrompt=()=>{
+    if(!intentionPromptFor)return;
+    setIntentionPromptDismissed(p=>({...p,[intentionPromptFor.id]:true}));
+    setIntentionPromptFor(null);
+    setIntentionPromptText("");
+  };
 
   // Monthly avg completion rate (equal weight)
   const monthCompletionAvg=useMemo(()=>{
@@ -805,7 +836,63 @@ export default function Dashboard(){
   /* ─── MORNING LAUNCH MESSAGE — first-hour framing generator ─── */
   // Returns a single Fraunces-italic sentence that frames today. Generated from actual data.
   // Only shows if: (a) time is between 5am-12pm, (b) not yet dismissed for today, (c) not on today's start
+  // Compute yesterday's completion + recovery-mode data. If yPct < 40%, we show the Recovery Card
+  // instead of the regular launchMessage. This uses abstinence-violation-effect research — rather
+  // than framing a bad day as failure, we externally attribute it (via day-of-week patterns) and
+  // offer one specific small win to collapse the shame cascade.
+  const recoveryData=useMemo(()=>{
+    const h=now.getHours();
+    if(h<5||h>=13)return null;
+    const todayKey=dk(now);
+    if(launchDismissed[todayKey])return null;
+    const y=now.getFullYear(),mo=now.getMonth(),d=now.getDate();
+    const yesterday=new Date(y,mo,d-1);const yKey=dk(yesterday);
+    const yDow=yesterday.getDay();
+    const yCh=checks[yKey]||{};
+    const yAll=[...todos];
+    if(yAll.length===0)return null;
+    const yDone=yAll.filter(t=>yCh[t.id]).length;
+    const yPct=Math.round(yDone/yAll.length*100);
+    if(yPct>=40)return null; // not a rough day — normal launch card applies
+    // Check day-of-week miss rate over last 30 days — if yesterday's DOW is historically hard
+    // (completion rate below 40%), frame it externally. Otherwise say "yesterday was a rough one."
+    const dowDays=[];
+    for(let i=1;i<=30;i++){
+      const dt=new Date(y,mo,d-i);if(dt.getDay()!==yDow)continue;
+      const k=dk(dt);const ch=checks[k]||{};
+      if(yAll.length===0)continue;
+      const done=yAll.filter(t=>ch[t.id]).length;
+      dowDays.push(done/yAll.length);
+    }
+    const dowAvg=dowDays.length>=2?dowDays.reduce((a,v)=>a+v,0)/dowDays.length:null;
+    const dowName=["Sundays","Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays"][yDow];
+    const todayDow=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][now.getDay()];
+    const externallyAttributed=dowAvg!==null&&dowAvg<0.4;
+    const headline=externallyAttributed
+      ?`${dowName} are hard for you. Let's make ${todayDow} count.`
+      :`Yesterday was a rough one. Today's a new day.`;
+    // Pick one specific action: easiest uncompleted morning habit today
+    const dcToday=checks[todayKey]||{};
+    const morningCandidates=todos.filter(t=>t.grp==="morning"&&!dcToday[t.id]);
+    let startHere=null;
+    if(morningCandidates.length>0){
+      // Prefer easy difficulty. If none, pick the one with the highest historical completion rate.
+      const easies=morningCandidates.filter(t=>t.diff==="easy");
+      if(easies.length>0){startHere=easies[0];}
+      else{
+        const ranked=morningCandidates.map(t=>{
+          let hit=0,tot=0;
+          for(let i=1;i<=30;i++){const dt=new Date(y,mo,d-i);const k=dk(dt);const ch=checks[k]||{};tot++;if(ch[t.id])hit++;}
+          return{t,rate:tot>0?hit/tot:0};
+        }).sort((a,b)=>b.rate-a.rate);
+        startHere=ranked[0]?.t||morningCandidates[0];
+      }
+    }
+    return{headline,startHere,yPct};
+  },[now,launchDismissed,checks,todos]);
+
   const launchMessage=useMemo(()=>{
+    if(recoveryData)return null; // recovery card takes over
     const h=now.getHours();
     if(h<5||h>=13)return null;
     const todayKey=dk(now);
@@ -827,8 +914,6 @@ export default function Dashboard(){
     const closeToTarget=aspirationProgress.filter(a=>a.goalType==="habit"&&!a.graduated&&a.daysHit>=a.target-2&&a.daysHit<a.target);
     // Pick the most resonant message
     if(closeToTarget.length>0){const a=closeToTarget[0];return`${a.text} is at ${a.daysHit} of ${a.target} this month. Today's rep could close it.`;}
-    if(yPct===0&&yAll.length>0)return "Yesterday was quiet. First move today sets the tone.";
-    if(yPct<40&&yAll.length>0)return "Yesterday slipped. Today's the repair.";
     if(weekHits>=3&&dow>=4)return`${weekHits} strong days this week. Hit today and the week is yours.`;
     if(weekHits===0&&dow>=3)return "Week's been soft so far. One good day changes the shape.";
     if(behind.length>=2)return`${behind.length} goals are off pace. Pick the one that matters and start there.`;
@@ -838,7 +923,7 @@ export default function Dashboard(){
     if(dow===5)return "Friday. One more day of momentum before the weekend.";
     if(todos.length>10)return `${todos.length} habits to move through today. Start with the one that's hardest.`;
     return "New day. What are you giving it?";
-  },[now,launchDismissed,checks,todos,aspirationProgress]);
+  },[now,launchDismissed,checks,todos,aspirationProgress,recoveryData]);
   const dismissLaunch=()=>{const k=dk(now);setLaunchDismissed(p=>({...p,[k]:true}));};
 
   /* ─── EVENING RECONCILIATION — closes the day, 8pm–midnight ─── */
@@ -997,7 +1082,7 @@ export default function Dashboard(){
       if(d.purchased)setPurchased(d.purchased);if(d.spentXP)setSpentXP(d.spentXP);if(d.activeTitle)setActiveTitle(d.activeTitle);
       if(d.curWkState)setCurWkState(d.curWkState);if(d.chains)setChains(d.chains);if(d.reflections)setReflections(d.reflections);
       if(d.reviews)setReviews(d.reviews);if(d.weekPriorities)setWeekPriorities(d.weekPriorities);
-      if(d.reflectDismissed)setReflectDismissed(d.reflectDismissed);if(d.reviewDismissed)setReviewDismissed(d.reviewDismissed);if(d.launchDismissed)setLaunchDismissed(d.launchDismissed);if(d.eveningClosed)setEveningClosed(d.eveningClosed);
+      if(d.reflectDismissed)setReflectDismissed(d.reflectDismissed);if(d.reviewDismissed)setReviewDismissed(d.reviewDismissed);if(d.launchDismissed)setLaunchDismissed(d.launchDismissed);if(d.eveningClosed)setEveningClosed(d.eveningClosed);if(d.intentionPromptDismissed)setIntentionPromptDismissed(d.intentionPromptDismissed);
       if(d.completionLog)setCompletionLog(d.completionLog);if(d.activeSession)setActiveSession(d.activeSession);
       if(d.aspirations)setAspirations(d.aspirations);
       // Migrate photoLog from main blob to separate key (one-time)
@@ -1034,10 +1119,10 @@ export default function Dashboard(){
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,completionLog,activeSession,theme});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,completionLog,activeSession,theme]);
+  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -1187,6 +1272,7 @@ export default function Dashboard(){
   const[buildingChain,setBuildingChain]=useState(false);
   const[chainName,setChainName]=useState("");
   const[chainPicks,setChainPicks]=useState([]);
+  const[stackStep,setStackStep]=useState(0); // 0=anchor, 1=new habit, 2=name/confirm
   const saveChain=()=>{if(!chainName.trim()||chainPicks.length<2)return;setChains(p=>[...p,{id:uid(),name:chainName.trim(),taskIds:chainPicks}]);setChainName("");setChainPicks([]);setBuildingChain(false);};
   const removeChain=id=>setChains(p=>p.filter(c=>c.id!==id));
   // Build a map: taskId → chain it belongs to
@@ -1450,6 +1536,31 @@ export default function Dashboard(){
           const ePct=nightT.length>0?Math.round(nightT.filter(t=>dc[t.id]).length/nightT.length*100):0;
           const empties={morning:"The day hasn't started yet.",allday:"What are you actually going to do today?",evening:"Nothing to close out. Rest, or add something worth doing."};
           return(<div className="tab-content" style={{paddingBottom:140}}>
+          {/* ═══ RECOVERY CARD — replaces launch card after a rough day ═══ */}
+          {recoveryData&&(()=>{
+            const sh=recoveryData.startHere;
+            const startHereCheck=()=>{
+              if(!sh)return;
+              flashChecked(sh.id);
+              const vk=dk(now);
+              setChecks(p=>({...p,[vk]:{...(p[vk]||{}),[sh.id]:true}}));
+            };
+            return(<div style={{marginBottom:14,padding:"20px 22px",background:`linear-gradient(135deg,${C.accentSoft},${C.surface})`,borderRadius:14,border:`1px solid ${C.accentMed}`,position:"relative",animation:"launchFade 0.8s ease"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div style={{fontSize:9,color:C.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.16em"}}>Fresh start · {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][now.getDay()]}</div>
+                <button onClick={dismissLaunch} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:16,padding:0,lineHeight:1,opacity:0.6}}>×</button>
+              </div>
+              <div className="display" style={{fontSize:17,fontStyle:"italic",color:C.text,lineHeight:1.4,marginBottom:sh?16:4}}>{recoveryData.headline}</div>
+              {sh&&<button onClick={startHereCheck} className="press" style={{width:"100%",padding:"16px 18px",background:C.accent,border:"none",borderRadius:12,color:C.btnText,cursor:"pointer",fontFamily:FN.b,textAlign:"left",display:"flex",alignItems:"center",gap:14,boxShadow:`0 4px 16px ${C.accent}40`,transition:"all 0.2s ease"}}>
+                <div style={{width:26,height:26,borderRadius:6,background:"rgba(255,255,255,0.22)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.12em",opacity:0.8,marginBottom:2}}>Start here</div>
+                  <div style={{fontSize:14,fontWeight:700}}>{sh.text}</div>
+                </div>
+              </button>}
+            </div>);
+          })()}
+
           {/* ═══ MORNING LAUNCH CARD — frames today, appears 5am-1pm, once per day ═══ */}
           {launchMessage&&<div style={{marginBottom:14,padding:"18px 20px",background:`linear-gradient(135deg,${C.accentSoft},${C.surface})`,borderRadius:14,border:`1px solid ${C.accentMed}`,position:"relative",animation:"launchFade 0.8s ease"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
@@ -1520,7 +1631,7 @@ export default function Dashboard(){
 
           {/* Section 1: Living banner — reacts to your day */}
           <div style={{height:180,borderRadius:14,overflow:"hidden",marginBottom:18,border:`1px solid ${C.hairline}`}}>
-            <BannerScene mode={todaySub==="morning"?"morning":todaySub==="allday"?"day":"evening"} dayPct={todayCompletion.pct} morningPct={mPct} eveningPct={ePct} />
+            <BannerScene mode={recoveryData?"morning":todaySub==="morning"?"morning":todaySub==="allday"?"day":"evening"} dayPct={recoveryData?0:todayCompletion.pct} morningPct={recoveryData?0:mPct} eveningPct={recoveryData?0:ePct} />
           </div>
 
           {/* Section 2: Big tab selector */}
@@ -1551,7 +1662,10 @@ export default function Dashboard(){
                     {/* Amber dot — marks this as goal-derived */}
                     <div style={{position:"relative",zIndex:2,width:4,height:4,borderRadius:"50%",background:C.accent,flexShrink:0,boxShadow:`0 0 6px ${C.accent}`}}/>
                     <div onClick={handleCheck} style={{position:"relative",zIndex:2,width:22,height:22,borderRadius:4,flexShrink:0,border:`1.5px solid ${on?C.greenBright:C.textDim}`,background:on?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:13,fontWeight:800,cursor:"pointer",transition:"all 0.3s ease"}}>{on&&"✓"}</div>
-                    <span onClick={handleCheck} style={{position:"relative",zIndex:2,flex:1,fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:on?C.textDim:C.text,cursor:"pointer",transition:"color 0.4s ease"}}>{a.text}</span>
+                    <div onClick={handleCheck} style={{position:"relative",zIndex:2,flex:1,cursor:"pointer",display:"flex",flexDirection:"column",gap:a.implementationIntention?3:0}}>
+                      {a.implementationIntention&&<span style={{fontSize:8,fontFamily:FN.m,color:C.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.12em",opacity:on?0.5:0.85}}>{a.implementationIntention}</span>}
+                      <span style={{fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:on?C.textDim:C.text,transition:"color 0.4s ease"}}>{a.text}</span>
+                    </div>
                     <span style={{position:"relative",zIndex:2,fontSize:9,fontFamily:FN.m,color:prog?.onPace?C.green:C.red,fontWeight:700,letterSpacing:"0.06em"}}>{prog?`${prog.daysHit}/${prog.target}`:""}</span>
                   </div>
                 </div>
@@ -1836,8 +1950,90 @@ export default function Dashboard(){
                 </div>
               );})}
             </div>
+
+            {/* ─── HABIT STACKING ─── */}
+            <div style={{marginTop:28}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Habit Stacking</div>
+              <div style={{fontSize:11,color:C.textDim,fontFamily:FN.m,marginBottom:12,lineHeight:1.5}}>Anchor a new habit to one you already do. Evidence-backed approach (BJ Fogg, James Clear) — existing cues carry new behaviors.</div>
+              {/* Existing stacks */}
+              {chains.map(c=>(<div key={c.id} style={{...card,padding:"14px 16px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.text}}>{c.name}</div>
+                  <button onClick={()=>removeChain(c.id)} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:13,opacity:0.5}}>×</button>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>{c.taskIds.map((tid,i)=>{const task=todos.find(t=>t.id===tid);if(!task)return null;return(<div key={tid} style={{display:"flex",alignItems:"center",gap:4}}>{i>0&&<span style={{color:C.accent,fontSize:12,margin:"0 4px"}}>→</span>}<span style={{fontSize:10,fontFamily:FN.m,color:C.text,background:C.surfaceHi,padding:"4px 8px",borderRadius:5,border:`1px solid ${C.hairline}`}}>{task.text}</span></div>);})}</div>
+              </div>))}
+              <button onClick={()=>{setBuildingChain(true);setStackStep(0);setChainPicks([]);setChainName("");}} style={{width:"100%",background:"transparent",border:`1px dashed ${C.hairline}`,borderRadius:10,padding:14,color:C.textDim,fontSize:11,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:chains.length>0?4:0}}>+ Build a habit stack</button>
+            </div>
           </div>}
         </div>}
+
+        {/* ═══ HABIT STACK BUILDER MODAL — two-step anchor-and-new-habit flow ═══ */}
+        <Overlay open={buildingChain} onClose={()=>{setBuildingChain(false);setStackStep(0);setChainName("");setChainPicks([]);}} title={stackStep===0?"The Anchor":stackStep===1?"The New Habit":"Name Your Stack"}>
+          {/* Step 0: pick the anchor (something they already do every day) */}
+          {stackStep===0&&<div>
+            <div className="display" style={{fontSize:17,fontStyle:"italic",color:C.text,lineHeight:1.4,marginBottom:14}}>What do you already do every day?</div>
+            <div style={{fontSize:11,color:C.textDim,fontFamily:FN.m,marginBottom:14,lineHeight:1.5}}>Pick one of your most reliable habits — the cue that will trigger the new one.</div>
+            <div style={{maxHeight:240,overflowY:"auto",marginBottom:12}} className="hide-scroll">
+              {todos.map(t=>{
+                const sel=chainPicks[0]===t.id;
+                return(<div key={t.id} onClick={()=>setChainPicks([t.id])} style={{padding:"11px 14px",marginBottom:4,borderRadius:8,border:`1px solid ${sel?C.accent:C.hairline}`,background:sel?C.accentSoft:"transparent",cursor:"pointer",fontSize:13,color:sel?C.text:C.textSec,fontWeight:sel?600:500,display:"flex",alignItems:"center",gap:10,transition:"all 0.15s ease"}}>
+                  <div style={{width:16,height:16,borderRadius:"50%",border:`1.5px solid ${sel?C.accent:C.textDim}`,background:sel?C.accent:"transparent",flexShrink:0}}/>
+                  <span style={{flex:1}}>{t.text}</span>
+                  <span style={{fontSize:8,color:C.textDim,fontFamily:FN.m,textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.grp==="night"?"evening":t.grp}</span>
+                </div>);
+              })}
+            </div>
+            <button disabled={chainPicks.length===0} onClick={()=>setStackStep(1)} style={{...btnB,width:"100%",opacity:chainPicks.length>0?1:0.4}}>Next →</button>
+          </div>}
+
+          {/* Step 1: pick the new habit */}
+          {stackStep===1&&<div>
+            <div className="display" style={{fontSize:17,fontStyle:"italic",color:C.text,lineHeight:1.4,marginBottom:8}}>What new habit do you want to attach to it?</div>
+            {(()=>{const anchor=todos.find(t=>t.id===chainPicks[0]);return anchor&&<div style={{fontSize:11,fontFamily:FN.m,color:C.textDim,marginBottom:14,padding:"8px 12px",background:C.surfaceDim,borderRadius:8,borderLeft:`2px solid ${C.accent}`}}>After "{anchor.text}", I will...</div>;})()}
+            <div style={{fontSize:11,color:C.textDim,fontFamily:FN.m,marginBottom:10}}>Pick an existing habit to attach, or add the anchor only and come back later:</div>
+            <div style={{maxHeight:200,overflowY:"auto",marginBottom:12}} className="hide-scroll">
+              {todos.filter(t=>t.id!==chainPicks[0]&&!chainPicks.includes(t.id)).map(t=>{
+                return(<div key={t.id} onClick={()=>setChainPicks(p=>[...p,t.id])} style={{padding:"10px 14px",marginBottom:3,borderRadius:8,border:`1px solid ${C.hairline}`,cursor:"pointer",fontSize:12,color:C.textSec,transition:"all 0.15s ease"}}>+ {t.text}</div>);
+              })}
+            </div>
+            {chainPicks.length>1&&<div style={{padding:"10px 12px",marginBottom:12,background:C.surfaceDim,borderRadius:8}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Your Stack</div>
+              <div style={{display:"flex",alignItems:"center",flexWrap:"wrap"}}>{chainPicks.map((tid,i)=>{const t=todos.find(x=>x.id===tid);if(!t)return null;return(<div key={tid+i} style={{display:"flex",alignItems:"center",gap:4}}>{i>0&&<span style={{color:C.accent,fontSize:11,margin:"0 4px"}}>→</span>}<span onClick={()=>setChainPicks(p=>p.filter((_,j)=>j!==i))} style={{fontSize:10,fontFamily:FN.m,background:C.surfaceHi,padding:"4px 8px",borderRadius:5,cursor:"pointer",border:`1px solid ${C.hairline}`}}>{t.text} ×</span></div>);})}</div>
+            </div>}
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setStackStep(0)} style={{...btnG,flex:1}}>Back</button>
+              <button disabled={chainPicks.length<2} onClick={()=>setStackStep(2)} style={{...btnB,flex:2,opacity:chainPicks.length>=2?1:0.4}}>Next →</button>
+            </div>
+          </div>}
+
+          {/* Step 2: name and save */}
+          {stackStep===2&&<div>
+            <div className="display" style={{fontSize:17,fontStyle:"italic",color:C.text,lineHeight:1.4,marginBottom:14}}>Name your stack.</div>
+            <input value={chainName} onChange={e=>setChainName(e.target.value)} placeholder="e.g. Morning routine, Evening wind-down" style={{...inp,marginBottom:12}} autoFocus/>
+            <div style={{padding:"10px 12px",marginBottom:14,background:C.surfaceDim,borderRadius:8,borderLeft:`2px solid ${C.accent}`}}>
+              <div style={{display:"flex",alignItems:"center",flexWrap:"wrap"}}>{chainPicks.map((tid,i)=>{const t=todos.find(x=>x.id===tid);if(!t)return null;return(<div key={tid+i} style={{display:"flex",alignItems:"center",gap:4}}>{i>0&&<span style={{color:C.accent,fontSize:11,margin:"0 4px"}}>→</span>}<span style={{fontSize:10,fontFamily:FN.m,color:C.text,background:C.surfaceHi,padding:"4px 8px",borderRadius:5,border:`1px solid ${C.hairline}`}}>{t.text}</span></div>);})}</div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setStackStep(1)} style={{...btnG,flex:1}}>Back</button>
+              <button disabled={!chainName.trim()} onClick={()=>{saveChain();setStackStep(0);}} style={{...btnB,flex:2,opacity:chainName.trim()?1:0.4}}>Save Stack</button>
+            </div>
+          </div>}
+        </Overlay>
+
+        {/* ═══ LEGACY IMPLEMENTATION INTENTION PROMPT — surfaces once per pre-existing habit goal ═══ */}
+        <Overlay open={!!intentionPromptFor} onClose={skipIntentionPrompt} title="Quick question">
+          {intentionPromptFor&&<div>
+            <div className="display" style={{fontSize:17,fontStyle:"italic",color:C.text,lineHeight:1.4,marginBottom:6}}>"{intentionPromptFor.dailyAction||intentionPromptFor.text}"</div>
+            <div style={{fontSize:13,color:C.textSec,fontFamily:FN.b,lineHeight:1.5,marginBottom:16}}>When do you actually do this? It makes a measurable difference.</div>
+            <input value={intentionPromptText} onChange={e=>setIntentionPromptText(e.target.value)} placeholder="e.g. after morning coffee, when I get home from class, before I open my laptop" style={{...inp,marginBottom:8}} autoFocus/>
+            <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,fontStyle:"italic",marginBottom:16,lineHeight:1.5}}>A situational cue, not a time. Anchor it to something you already do.</div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={skipIntentionPrompt} style={{...btnG,flex:1}}>Skip</button>
+              <button onClick={saveIntentionPrompt} disabled={!intentionPromptText.trim()} style={{...btnB,flex:2,opacity:intentionPromptText.trim()?1:0.4,cursor:intentionPromptText.trim()?"pointer":"not-allowed"}}>Save</button>
+            </div>
+          </div>}
+        </Overlay>
 
         {/* ═══ GOAL CREATION MODAL — multi-step flow ═══ */}
         <Overlay open={showGoalCreator} onClose={resetGc} title={gcOverride?"Add Established Habit":gcStep===0?"New Goal":gcStep===1?"Goal Type":"Details"}>
@@ -1891,10 +2087,16 @@ export default function Dashboard(){
               <input type="number" value={gcTarget} onChange={e=>setGcTarget(e.target.value)} placeholder="Or type a custom number" style={{...inp,marginBottom:12}}/>
               <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>What's the daily action?</div>
               <input value={gcAction} onChange={e=>setGcAction(e.target.value)} placeholder="e.g. Read 30 min, Study Spanish 20 min" style={{...inp,marginBottom:14}}/>
+              {/* ─── IMPLEMENTATION INTENTION — required for habit goals ─── */}
+              <div style={{padding:"12px 14px",background:C.accentSoft,borderRadius:10,border:`1px solid ${C.accentMed}`,marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>When will you do this?</div>
+                <input value={gcIntention} onChange={e=>setGcIntention(e.target.value)} placeholder="e.g. after morning coffee, when I get home from class, before I open my laptop" style={{...inp,marginBottom:6,background:C.surface}}/>
+                <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,lineHeight:1.5,fontStyle:"italic"}}>A situational cue — not a time. Anchor it to something you already do.</div>
+              </div>
             </div>}
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>setGcStep(1)} style={{...btnG,flex:1}}>Back</button>
-              <button onClick={submitGoal} style={{...btnB,flex:2}}>Create Goal</button>
+              <button onClick={submitGoal} disabled={gcType==="habit"&&!gcIntention.trim()} style={{...btnB,flex:2,opacity:(gcType==="habit"&&!gcIntention.trim())?0.4:1,cursor:(gcType==="habit"&&!gcIntention.trim())?"not-allowed":"pointer"}}>Create Goal</button>
             </div>
           </div>}
         </Overlay>
@@ -2447,4 +2649,5 @@ export default function Dashboard(){
     </div>
   );
 }
+
 
