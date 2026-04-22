@@ -1514,8 +1514,6 @@ export default function Dashboard(){
             {generalItems.length>0&&renderGridSection("All Day",generalItems,C.green)}
             {goalItems.length>0&&renderGridSection("Goals",goalItems.map(g=>({...g,id:g.goalId})),C.accent,"auto")}
 
-        })()}
-
         {/* ═══ TODAY — Flow Mode (default card-based view) ═══ */}
         {tab==="today"&&!structuredMode&&(()=>{
           const mPct=morningT.length>0?Math.round(morningT.filter(t=>dc[t.id]).length/morningT.length*100):0;
