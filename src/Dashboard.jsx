@@ -1514,20 +1514,6 @@ export default function Dashboard(){
             {generalItems.length>0&&renderGridSection("All Day",generalItems,C.green)}
             {goalItems.length>0&&renderGridSection("Goals",goalItems.map(g=>({...g,id:g.goalId})),C.accent,"auto")}
 
-            {/* Weekly summary bar */}
-            <div style={{...card,padding:14,marginTop:8}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em"}}>Today</div>
-                  <div className="hero-num" style={{fontSize:28,color:dailyLabel.color,lineHeight:1}}>{todayCompletion.pct}<span style={{fontSize:12,color:C.textDim}}>%</span></div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em"}}>{dailyLabel.text}</div>
-                  <div style={{fontSize:11,fontFamily:FN.m,color:C.textDim,marginTop:2}}>{todayCompletion.done}/{todayCompletion.total} tasks</div>
-                </div>
-              </div>
-            </div>
-          </div>);
         })()}
 
         {/* ═══ TODAY — Flow Mode (default card-based view) ═══ */}
