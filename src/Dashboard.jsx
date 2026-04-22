@@ -2448,7 +2448,7 @@ export default function Dashboard(){
                     </div>
                     {/* Habit rows */}
                     {habitStats.map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",marginBottom:1}}>
-                      <div style={{width:labelW,flexShrink:0,fontSize:8,fontWeight:600,color:C.text,textTransform:"uppercase",letterSpacing:"0.04em",paddingRight:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.text}</div>
+                      <div style={{width:labelW,flexShrink:0,fontSize:14,fontWeight:600,color:C.text,textTransform:"uppercase",letterSpacing:"0.04em",paddingRight:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.text}</div>
                       {days.map(d=>{
                         const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
                         const done=(checks[k]||{})[t.id];
