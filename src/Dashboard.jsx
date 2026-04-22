@@ -1664,7 +1664,7 @@ export default function Dashboard(){
                     <div onClick={handleCheck} style={{position:"relative",zIndex:2,width:22,height:22,borderRadius:4,flexShrink:0,border:`1.5px solid ${on?C.greenBright:C.textDim}`,background:on?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:13,fontWeight:800,cursor:"pointer",transition:"all 0.3s ease"}}>{on&&"✓"}</div>
                     <div onClick={handleCheck} style={{position:"relative",zIndex:2,flex:1,cursor:"pointer",display:"flex",flexDirection:"column",gap:a.implementationIntention?3:0}}>
                       {a.implementationIntention&&<span style={{fontSize:8,fontFamily:FN.m,color:C.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.12em",opacity:on?0.5:0.85}}>{a.implementationIntention}</span>}
-                      <span style={{fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:on?C.textDim:C.text,transition:"color 0.4s ease"}}>{a.text}</span>
+                      <span style={{fontSize:20,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:on?C.textDim:C.text,transition:"color 0.4s ease"}}>{a.text}</span>
                     </div>
                     <span style={{position:"relative",zIndex:2,fontSize:9,fontFamily:FN.m,color:prog?.onPace?C.green:C.red,fontWeight:700,letterSpacing:"0.06em"}}>{prog?`${prog.daysHit}/${prog.target}`:""}</span>
                   </div>
