@@ -1445,15 +1445,15 @@ export default function Dashboard(){
             if(items.length===0)return null;
             return(<div style={{marginBottom:20}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,paddingLeft:2}}>
-                <span style={{fontSize:9,fontWeight:700,color,textTransform:"uppercase",letterSpacing:"0.1em"}}>{title}</span>
+                <span style={{fontSize:12,fontWeight:700,color,textTransform:"uppercase",letterSpacing:"0.1em"}}>{title}</span>
                 {badge&&<span style={{fontSize:8,padding:"1px 6px",borderRadius:4,background:`${color}20`,color,fontWeight:700,fontFamily:FN.m}}>{badge}</span>}
               </div>
               {/* Column headers */}
               <div style={{display:"flex",marginBottom:4}}>
                 <div style={{width:100,flexShrink:0}}/>
                 {weekDays.map(d=>(<div key={d} style={{width:cellW,textAlign:"center"}}>
-                  <div style={{fontSize:7,color:d===todayDate?C.accent:C.textDim,fontFamily:FN.m,fontWeight:d===todayDate?800:400}}>{dayLabels[weekDays.indexOf(d)]}</div>
-                  <div style={{fontSize:9,color:d===todayDate?C.accent:C.textDim,fontFamily:FN.m,fontWeight:d===todayDate?800:500}}>{d}</div>
+                  <div style={{fontSize:10,color:d===todayDate?C.accent:C.textDim,fontFamily:FN.m,fontWeight:d===todayDate?800:400}}>{dayLabels[weekDays.indexOf(d)]}</div>
+                  <div style={{fontSize:12,color:d===todayDate?C.accent:C.textDim,fontFamily:FN.m,fontWeight:d===todayDate?800:500}}>{d}</div>
                 </div>))}
                 <div style={{width:40,textAlign:"center",fontSize:7,color:C.textDim,fontFamily:FN.m}}>🔥</div>
               </div>
@@ -1469,7 +1469,7 @@ export default function Dashboard(){
                   <div style={{width:100,flexShrink:0,display:"flex",alignItems:"center",gap:4,paddingRight:4}}>
                     {isGoalDerived&&<div style={{width:4,height:4,borderRadius:"50%",background:C.accent,flexShrink:0}}/>}
                     {isGraduated&&<div style={{width:4,height:4,borderRadius:"50%",background:C.green,flexShrink:0}}/>}
-                    <span style={{fontSize:9,fontWeight:600,color:atRisk?C.red:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{t.text||t.dailyAction}</span>
+                    <span style={{fontSize:12,fontWeight:600,color:atRisk?C.red:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{t.text||t.dailyAction}</span>
                     {atRisk&&<span style={{fontSize:7,color:C.red,fontWeight:800}}>!</span>}
                   </div>
                   {weekDays.map(d=>{
@@ -2448,7 +2448,7 @@ export default function Dashboard(){
                     </div>
                     {/* Habit rows */}
                     {habitStats.map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",marginBottom:1}}>
-                      <div style={{width:labelW,flexShrink:0,fontSize:14,fontWeight:600,color:C.text,textTransform:"uppercase",letterSpacing:"0.04em",paddingRight:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.text}</div>
+                      <div style={{width:labelW,flexShrink:0,fontSize:12,fontWeight:600,color:C.text,textTransform:"uppercase",letterSpacing:"0.04em",paddingRight:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.text}</div>
                       {days.map(d=>{
                         const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
                         const done=(checks[k]||{})[t.id];
