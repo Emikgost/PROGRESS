@@ -1,19 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
-  <!-- Background -->
-  <rect width="192" height="192" rx="40" fill="#1F2A44"/>
-  
-  <!-- Text -->
-  <text 
-    x="50%" 
-    y="52%" 
-    text-anchor="middle" 
-    dominant-baseline="middle"
-    font-family="Georgia, 'Times New Roman', serif"
-    font-style="italic"
-    font-weight="500"
-    font-size="42"
-    fill="#EDE7DF"
-    letter-spacing="1">
-    Progress
-  </text>
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Progress app icon</title>
+  <desc>Progress app icon with navy background, bar chart, trend arrow, and wordmark</desc>
+
+  <defs>
+    <clipPath id="sq-clip">
+      <rect x="0" y="0" width="300" height="300" rx="68" ry="68"/>
+    </clipPath>
+  </defs>
+
+  <rect x="0" y="0" width="300" height="300" rx="68" ry="68" fill="#131A2B"/>
+  <rect x="0" y="0" width="300" height="300" rx="68" ry="68" fill="none" stroke="#2A334A" stroke-width="2"/>
+
+  <text x="150" y="62" text-anchor="middle" font-family="'Inter','Helvetica Neue',sans-serif" font-size="20" font-weight="700" fill="#F8F5EC" letter-spacing="5">PROGRESS</text>
+  <rect x="53" y="69" width="194" height="2" rx="1" fill="#F59E0B" opacity="0.8"/>
+
+  <rect x="52" y="200" width="42" height="60" rx="6" fill="#34D399" opacity="0.85"/>
+  <rect x="109" y="165" width="42" height="95" rx="6" fill="#F59E0B"/>
+  <rect x="166" y="128" width="42" height="132" rx="6" fill="#FBBF24"/>
+
+  <polyline points="65,180 130,138 195,98" fill="none" stroke="#F8F5EC" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="178,92 195,98 189,115" fill="none" stroke="#F8F5EC" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
 </svg>
