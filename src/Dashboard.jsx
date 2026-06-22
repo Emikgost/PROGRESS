@@ -51,27 +51,6 @@ const dk=d=>{const t=typeof d==="string"?new Date(d):d;return`${t.getFullYear()}
 const fd=d=>new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"});
 const uid=()=>`_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
 
-/* ═══ RANKS / ACHIEVEMENTS / SHOP (only shown if feature toggle on) ═══ */
-const RANKS=[{name:"Rookie",min:0,color:"#9196A8",icon:"🌱"},{name:"Bronze",min:5,color:"#CD7F32",icon:"🥉"},{name:"Silver",min:10,color:"#A8A8A8",icon:"🥈"},{name:"Gold",min:18,color:"#E2AE2A",icon:"🥇"},{name:"Diamond",min:28,color:"#4FC3F7",icon:"💎"},{name:"Legend",min:40,color:"#E07A3A",icon:"👑"}];
-const getLevel=xp=>Math.floor(Math.sqrt(xp/8))+1;
-const getXPFor=lvl=>Math.round(Math.pow(lvl-1,2)*8);
-const getRank=lv=>{for(let i=RANKS.length-1;i>=0;i--){if(lv>=RANKS[i].min)return RANKS[i];}return RANKS[0];};
-const ACHIEVEMENTS=[
-  {id:"first_blood",title:"First Blood",desc:"Complete your first task",icon:"🎯",check:s=>s.lifetimeXP>0},
-  {id:"week_warrior",title:"Week Warrior",desc:"7-day streak",icon:"🗡️",check:s=>s.longestStreak>=7},
-  {id:"iron_will",title:"Iron Will",desc:"30-day streak",icon:"🦾",check:s=>s.longestStreak>=30},
-  {id:"perfectionist",title:"Perfectionist",desc:"10 perfect days",icon:"✨",check:s=>s.perfectDays>=10},
-  {id:"photographer",title:"Photographer",desc:"100 proof photos",icon:"📸",check:s=>s.totalPhotos>=100},
-  {id:"grinder",title:"The Grinder",desc:"1000 lifetime XP",icon:"⚡",check:s=>s.lifetimeXP>=1000},
-];
-const SHOP_ITEMS=[
-  {id:"shield",name:"Streak Shield",desc:"Protect streak for 1 missed day",cost:80,icon:"🛡️"},
-  {id:"double_xp",name:"Double XP Token",desc:"2× XP for one day",cost:300,icon:"⚡"},
-  {id:"theme_dark",name:"Dark Mode",desc:"Unlock dark theme",cost:250,icon:"🌙"},
-  {id:"badge_fire",name:"Fire Badge",desc:"Custom fire badge",cost:120,icon:"🔥"},
-  {id:"badge_diamond",name:"Diamond Badge",desc:"Exclusive icon",cost:400,icon:"💠"},
-];
-
 let card={background:C.surface,borderRadius:14,padding:20,border:`1px solid ${C.hairline}`,boxShadow:C.shadow};
 let lbl={fontFamily:FN.b,fontSize:11,fontWeight:600,color:C.textDim,marginBottom:14,textTransform:"uppercase",letterSpacing:"0.08em"};
 let inp={background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"11px 14px",color:C.text,fontSize:13,fontFamily:FN.b,fontWeight:500,outline:"none",width:"100%"};
@@ -121,6 +100,11 @@ const CSS=`
 @keyframes graduateShimmer{0%,100%{opacity:0.4}50%{opacity:1}}
 @keyframes liquidRise{0%{clip-path:inset(0 100% 0 0)}100%{clip-path:inset(0 0 0 0)}}
 @keyframes textDim{0%{color:inherit}100%{opacity:0.55}}
+@keyframes recPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.8)}}
+@keyframes pageInR{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
+@keyframes pageInL{from{opacity:0;transform:translateX(-24px)}to{opacity:1;transform:translateX(0)}}
+.page-r{animation:pageInR 0.28s cubic-bezier(0.25,0.46,0.45,0.94)}
+.page-l{animation:pageInL 0.28s cubic-bezier(0.25,0.46,0.45,0.94)}
 .task-row{transition:opacity 0.35s ease, background 0.4s ease, border-color 0.3s ease}
 .task-row.just-checked{animation:rowDim 0.7s ease forwards}
 .task-row:active{transform:scale(0.98)}
@@ -178,7 +162,7 @@ const spClr={upper:"#4A82D4",lower:"#2A9D5C",pull:"#E07A3A",push:"#D04545",legs:
 const seedWH=[{id:"h6",date:"2026-03-15",split:"upper",exercises:[{name:"Bench Press",sets:[{w:50,r:10},{w:60,r:6}]},{name:"Lat Pull Down",sets:[{w:54,r:8},{w:59,r:7}]}]}];
 const seedBW=[{date:"2025-10-01",weight:72.5},{date:"2026-01-01",weight:74.5},{date:"2026-03-01",weight:75.2},{date:"2026-03-29",weight:75.8}];
 const seedTx={"2026-03-01":[{id:"t14",type:"out",amount:26.5,desc:"Sunday"}],"2026-03-06":[{id:"t16",type:"in",amount:30,desc:"Income"}]};
-const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,notifs:true,vibrate:true,reflectHour:21,reviewDay:0,features:{xp:false,levels:false,store:false,achievements:false,dailyChallenges:false}};
+const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0};
 
 /* ═══ REFLECTION PROMPTS — rotate based on day quality ═══ */
 const REFLECT_PROMPTS={
@@ -343,12 +327,103 @@ function Overlay({open,onClose,title,children,wide}){if(!open)return null;return
 
 function ProofModal({open,onClose,name,onDone}){if(!open)return null;let fileEl=null;const hf=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>{onDone(ev.target.result);onClose();};r.readAsDataURL(f);};return(<div style={{position:"fixed",inset:0,zIndex:250,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}><div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(8px)"}} /><div className="modal-box" onClick={e=>e.stopPropagation()} style={{position:"relative",background:"#111",borderRadius:24,padding:32,width:"86%",maxWidth:360,textAlign:"center"}}><div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)",marginBottom:8}}>Photo Proof Required</div><div style={{fontSize:15,fontWeight:600,color:"#fff",marginBottom:24}}>{name}</div><input ref={el=>fileEl=el} type="file" accept="image/*" capture="environment" onChange={hf} style={{display:"none"}} /><button onClick={()=>fileEl?.click()} style={{width:160,height:160,borderRadius:20,background:"rgba(255,255,255,0.05)",border:"2px dashed rgba(255,255,255,0.15)",margin:"0 auto 24px",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:6,cursor:"pointer"}}><span style={{fontSize:44}}>📸</span><span style={{fontSize:12,color:"rgba(255,255,255,0.5)",fontWeight:600}}>Tap to Open Camera</span></button><button onClick={onClose} style={{background:"transparent",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,color:"rgba(255,255,255,0.4)",fontSize:12,cursor:"pointer",padding:"10px 24px"}}>Cancel</button></div></div>);}
 
+/* ═══ VIDEO JOURNAL STORAGE ═══ */
+// Video blobs are large, so they live in IndexedDB (keyed by entry id) rather than localStorage.
+// Only lightweight metadata (id, note, timestamp, duration) is kept in app state + localStorage.
+const VJ_DB="progress-vj",VJ_STORE="videos";
+function vjOpen(){return new Promise((res,rej)=>{const r=indexedDB.open(VJ_DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(VJ_STORE))r.result.createObjectStore(VJ_STORE);};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function vjPut(id,blob){const db=await vjOpen();return new Promise((res,rej)=>{const tx=db.transaction(VJ_STORE,"readwrite");tx.objectStore(VJ_STORE).put(blob,id);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+async function vjGet(id){const db=await vjOpen();return new Promise((res,rej)=>{const tx=db.transaction(VJ_STORE,"readonly");const rq=tx.objectStore(VJ_STORE).get(id);rq.onsuccess=()=>res(rq.result||null);rq.onerror=()=>rej(rq.error);});}
+async function vjDel(id){const db=await vjOpen();return new Promise((res,rej)=>{const tx=db.transaction(VJ_STORE,"readwrite");tx.objectStore(VJ_STORE).delete(id);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+const fmtDur=ms=>{const s=Math.floor((ms||0)/1000);return`${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;};
+
+/* ═══ VIDEO RECORDER MODAL — live camera capture via MediaRecorder ═══ */
+function VideoRecorderModal({open,onClose,onSave,dateLabel}){
+  const videoRef=useRef(null);
+  const streamRef=useRef(null);
+  const recRef=useRef(null);
+  const chunksRef=useRef([]);
+  const startRef=useRef(0);
+  const[phase,setPhase]=useState("idle"); // idle | recording | review
+  const[elapsed,setElapsed]=useState(0);
+  const[err,setErr]=useState(null);
+  const[blob,setBlob]=useState(null);
+  const[previewUrl,setPreviewUrl]=useState(null);
+  const[saving,setSaving]=useState(false);
+
+  // Acquire camera when the modal opens; tear everything down when it closes.
+  useEffect(()=>{
+    if(!open)return;
+    let active=true;
+    setPhase("idle");setElapsed(0);setErr(null);setBlob(null);setPreviewUrl(null);setSaving(false);
+    (async()=>{
+      try{
+        const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:true});
+        if(!active){stream.getTracks().forEach(t=>t.stop());return;}
+        streamRef.current=stream;
+        if(videoRef.current){videoRef.current.srcObject=stream;videoRef.current.muted=true;videoRef.current.play().catch(()=>{});}
+      }catch(e){setErr("Camera unavailable. Check permissions, or upload a file instead.");}
+    })();
+    return()=>{active=false;if(streamRef.current){streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null;}};
+  },[open]);
+
+  // Tick the elapsed timer while recording.
+  useEffect(()=>{if(phase!=="recording")return;const id=setInterval(()=>setElapsed(Date.now()-startRef.current),200);return()=>clearInterval(id);},[phase]);
+
+  if(!open)return null;
+
+  const start=()=>{
+    const stream=streamRef.current;if(!stream)return;
+    chunksRef.current=[];
+    let mime="video/webm";
+    if(window.MediaRecorder){if(MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus"))mime="video/webm;codecs=vp9,opus";else if(MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus"))mime="video/webm;codecs=vp8,opus";else if(MediaRecorder.isTypeSupported("video/mp4"))mime="video/mp4";}
+    try{
+      const rec=new MediaRecorder(stream,{mimeType:mime});
+      rec.ondataavailable=e=>{if(e.data&&e.data.size>0)chunksRef.current.push(e.data);};
+      rec.onstop=()=>{const b=new Blob(chunksRef.current,{type:mime});setBlob(b);setPreviewUrl(URL.createObjectURL(b));setPhase("review");};
+      recRef.current=rec;startRef.current=Date.now();rec.start();setPhase("recording");
+    }catch(e){setErr("Recording isn't supported on this browser. Try uploading a file instead.");}
+  };
+  const stop=()=>{if(recRef.current&&recRef.current.state!=="inactive")recRef.current.stop();};
+  const retake=()=>{if(previewUrl)URL.revokeObjectURL(previewUrl);setBlob(null);setPreviewUrl(null);setPhase("idle");setElapsed(0);if(videoRef.current&&streamRef.current){videoRef.current.srcObject=streamRef.current;videoRef.current.muted=true;videoRef.current.play().catch(()=>{});}};
+  const save=async()=>{if(!blob)return;setSaving(true);await onSave(blob,elapsed);if(previewUrl)URL.revokeObjectURL(previewUrl);onClose();};
+
+  return(<div style={{position:"fixed",inset:0,zIndex:260,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={phase==="recording"?undefined:onClose}>
+    <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)"}} />
+    <div className="modal-box" onClick={e=>e.stopPropagation()} style={{position:"relative",background:"#0E0E12",borderRadius:24,padding:20,width:"90%",maxWidth:400}}>
+      <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em"}}>Video Journal</div>
+      {dateLabel&&<div style={{fontSize:15,fontWeight:600,color:"#fff",marginBottom:14,fontFamily:FN.h,fontStyle:"italic"}}>{dateLabel}</div>}
+      {err?
+        <div style={{padding:"24px 8px",textAlign:"center",color:"rgba(255,255,255,0.6)",fontSize:13,lineHeight:1.5}}>{err}</div>
+      :<>
+        <div style={{position:"relative",borderRadius:16,overflow:"hidden",background:"#000",aspectRatio:"3/4",marginBottom:14}}>
+          {phase!=="review"&&<video ref={videoRef} playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",transform:"scaleX(-1)"}} />}
+          {phase==="review"&&previewUrl&&<video src={previewUrl} controls playsInline style={{width:"100%",height:"100%",objectFit:"contain",background:"#000"}} />}
+          {phase==="recording"&&<div style={{position:"absolute",top:12,left:12,display:"flex",alignItems:"center",gap:6,background:"rgba(0,0,0,0.5)",borderRadius:20,padding:"5px 12px"}}><span style={{width:9,height:9,borderRadius:"50%",background:"#F87171",animation:"recPulse 1.2s ease-in-out infinite"}} /><span style={{fontSize:12,fontWeight:700,color:"#fff",fontFamily:FN.m}}>{fmtDur(elapsed)}</span></div>}
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"center",alignItems:"center"}}>
+          {phase==="idle"&&<button className="press" onClick={start} style={{display:"flex",alignItems:"center",gap:8,background:"#F87171",border:"none",borderRadius:30,padding:"12px 24px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.04em"}}><span style={{width:12,height:12,borderRadius:"50%",background:"#fff"}} />Record</button>}
+          {phase==="recording"&&<button className="press" onClick={stop} style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:30,padding:"12px 24px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.04em"}}><span style={{width:11,height:11,borderRadius:2,background:"#F87171"}} />Stop</button>}
+          {phase==="review"&&<>
+            <button className="press" onClick={retake} style={{background:"transparent",border:"1px solid rgba(255,255,255,0.18)",borderRadius:10,color:"rgba(255,255,255,0.6)",fontSize:12,fontWeight:600,cursor:"pointer",padding:"11px 18px"}}>Retake</button>
+            <button className="press" onClick={save} disabled={saving} style={{flex:1,background:"#34D399",border:"none",borderRadius:10,color:"#06281C",fontSize:13,fontWeight:700,cursor:"pointer",padding:"12px 18px",textTransform:"uppercase",letterSpacing:"0.04em",opacity:saving?0.6:1}}>{saving?"Saving…":"Save Entry"}</button>
+          </>}
+        </div>
+      </>}
+      {phase!=="recording"&&<button onClick={onClose} style={{display:"block",margin:"14px auto 0",background:"transparent",border:"none",color:"rgba(255,255,255,0.4)",fontSize:12,cursor:"pointer",padding:"4px 12px"}}>Close</button>}
+    </div>
+  </div>);
+}
+
 /* ═══ Icons for footer ═══ */
 const Icons={
   today:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>,
   groups:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   analytics:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
-  goals:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+  goals:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
+  journal:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>,
+  workout:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 6.5l11 11"/><path d="M21 21l-1-1"/><path d="M3 3l1 1"/><path d="M18 22l4-4"/><path d="M2 6l4-4"/><path d="M3 10l7-7"/><path d="M14 21l7-7"/></svg>,
+  budget:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
 };
 
 /* ═══ MAIN ═══ */
@@ -368,9 +443,6 @@ export default function Dashboard(){
   const[groups,setGroups]=useState([{id:"g1",name:"Workout Crew",tasks:["f_ex"],members:[{name:"You",av:"E"},{name:"Alex",av:"A"}],feed:[]}]);
   const[splits,setSplits]=useState(defSplits);
   const[settings,setSettings]=useState(defSettings);
-  const[purchased,setPurchased]=useState([]);
-  const[spentXP,setSpentXP]=useState(0);
-  const[activeTitle,setActiveTitle]=useState(null);
   const[curWkState,setCurWkState]=useState(null); // persisted workout draft
   // NEW: completion log — tracks the order you complete tasks each day, used to learn your actual routine
   // Shape: {dateKey: [{taskId, time, ordinal}]} — ordinal is the nth task you checked that day
@@ -422,19 +494,15 @@ export default function Dashboard(){
   const[structuredMode,setStructuredMode]=useState(false);
   const[gridExpanded,setGridExpanded]=useState(false); // week vs full month
   const[showFullCal,setShowFullCal]=useState(false);
-  const[showShop,setShowShop]=useState(false);
-  const[showTitles,setShowTitles]=useState(false);
   const[showRecap,setShowRecap]=useState(false);
   const[confetti,setConfetti]=useState(false);
   const[proofTask,setProofTask]=useState(null);
-  const[xpPops,setXpPops]=useState({});
   const[todaySub,setTodaySub]=useState("morning"); // morning | allday | evening
   const[editTask,setEditTask]=useState(null); // {task, source:"focus"|"todos"}
   const[editText,setEditText]=useState("");
   const[editDiff,setEditDiff]=useState("easy");
   const[editGrp,setEditGrp]=useState("morning");
   const[editProof,setEditProof]=useState(false);
-  const[shopCat,setShopCat]=useState("All");
 
   const[gSplit,setGSplit]=useState(null);const[gView,setGView]=useState("log");const[doneEx,setDoneEx]=useState({});const[nBW,setNBW]=useState("");const[addSplit,setAddSplit]=useState(false);const[nSpName,setNSpName]=useState("");const[nSpEx,setNSpEx]=useState("");
   const[bMonth,setBMonth]=useState(()=>new Date());const[selDay,setSelDay]=useState(null);const[txF,setTxF]=useState({type:"out",amount:"",desc:""});
@@ -463,10 +531,30 @@ export default function Dashboard(){
   const[showGal,setShowGal]=useState(false);
   const[selGrp,setSelGrp]=useState(null);const[mkGrp,setMkGrp]=useState(false);const[nGrpName,setNGrpName]=useState("");const[nGrpTasks,setNGrpTasks]=useState([]);
   const[modal,setModal]=useState(null);
+  // ─── Video Journal (repurposed "Groups" tab) ───
+  const[videoJournal,setVideoJournal]=useState({}); // {dateKey:[{id,note,time,duration,mime}]} — blobs live in IndexedDB
+  const[vjMonth,setVjMonth]=useState(()=>new Date());
+  const[vjSel,setVjSel]=useState(null); // selected day number
+  const[vjUrls,setVjUrls]=useState({}); // id -> object URL (rebuilt from IndexedDB)
+  const[showVjRecorder,setShowVjRecorder]=useState(false);
+  const vjFileRef=useRef(null);
+  // ─── Budget: Financial Snapshot ───
+  const[accounts,setAccounts]=useState({checking:"",savings:"",cash:"",investment:""});
+  const[subscriptions,setSubscriptions]=useState([]); // [{id,name,cost,billDay,category}]
+  const[showFinSnap,setShowFinSnap]=useState(true);
+  const[subForm,setSubForm]=useState({name:"",cost:"",billDay:"",category:""});
+  const[addSub,setAddSub]=useState(false);
+  // ─── Goal editing (monthly / weekly) ───
+  const[editGoal,setEditGoal]=useState(null); // {kind:"monthly"|"weekly", goal}
+  const[egText,setEgText]=useState("");
+  const[egNum,setEgNum]=useState("");
+  const[egDeadline,setEgDeadline]=useState("");
+  const[egSteps,setEgSteps]=useState([]);
+  // ─── Footer page swipe nav ───
+  const[navDir,setNavDir]=useState(0); // -1 left, 1 right, 0 none — drives transition direction
   const calRef=useRef(null);
 
   const now=new Date();const vk=dk(vDate);const isToday=vk===dk(now);const dc=checks[vk]||{};
-  const F=settings.features;
   const focusTasks=focusByDate[vk]||[];
   const morningT=todos.filter(t=>t.grp==="morning");
   const nightT=todos.filter(t=>t.grp==="night");
@@ -506,11 +594,6 @@ export default function Dashboard(){
     const on=dc[t.id];
     if(!on&&t.proof){setProofTask(t);return;}
     setChecks(p=>({...p,[vk]:{...(p[vk]||{}),[t.id]:!on}}));
-    if(!on&&F.xp){
-      const xpV=DIFF[t.diff]?.pts||1;
-      setXpPops(p=>({...p,[t.id]:xpV}));
-      setTimeout(()=>setXpPops(p=>{const n={...p};delete n[t.id];return n;}),900);
-    }
     if(!on){
       // Record completion order (only for today, only for morning/night tasks)
       if(isToday&&(t.grp==="morning"||t.grp==="night")){
@@ -529,16 +612,10 @@ export default function Dashboard(){
     });
   };
 
-  /* ─── Streaks & XP (only used if features on) ─── */
+  /* ─── Streaks ─── */
   const allDayTasks=useMemo(()=>{const set={};Object.keys(focusByDate).forEach(d=>{(focusByDate[d]||[]).forEach(t=>{set[t.id]=t;});});return set;},[focusByDate]);
-  const lifetimeXP=useMemo(()=>{let s=0;Object.entries(checks).forEach(([date,ch])=>{todos.forEach(t=>{if(ch[t.id])s+=DIFF[t.diff]?.pts||1;});(focusByDate[date]||[]).forEach(t=>{if(ch[t.id])s+=DIFF[t.diff]?.pts||1;});});return s;},[checks,todos,focusByDate]);
-  const totalXP=Math.max(0,lifetimeXP-spentXP);
-  const level=getLevel(lifetimeXP);const rank=getRank(level);
-  const xpCur=getXPFor(level);const xpNext=getXPFor(level+1);
-  const levelPct=xpNext>xpCur?Math.min(100,Math.round((lifetimeXP-xpCur)/(xpNext-xpCur)*100)):100;
 
   const streak=useMemo(()=>{let s=0;const d=new Date();d.setDate(d.getDate()-1);const tot=todos.length;while(todos.filter(t=>(checks[dk(d)]||{})[t.id]).length>=tot*0.5){s++;d.setDate(d.getDate()-1);}if(todos.filter(t=>(checks[dk(now)]||{})[t.id]).length>=tot*0.5)s++;return s;},[checks,todos]);
-  const longestS=useMemo(()=>{const keys=Object.keys(checks).sort();let mx=0,cu=0;for(const k of keys){if(todos.filter(t=>(checks[k]||{})[t.id]).length>=todos.length*0.5){cu++;mx=Math.max(mx,cu);}else cu=0;}return mx;},[checks,todos]);
 
   /* ─── NEW Completion metrics (equal weight 1:1) ─── */
   // For viewed date: completion rate across ALL tasks (recurring + focus)
@@ -1052,22 +1129,6 @@ export default function Dashboard(){
   },[vDate,checks,todos,focusByDate]);
   useEffect(()=>{if(calRef.current)calRef.current.scrollLeft=14*56-100;},[vk]);
 
-  /* ─── Achievement stats ─── */
-  const achieveStats=useMemo(()=>{
-    let perfectDays=0;
-    const mornIds=morningT.map(t=>t.id);
-    const nightIds=nightT.map(t=>t.id);
-    let morningPerfect=0,nightPerfect=0;
-    Object.entries(checks).forEach(([date,ch])=>{
-      if(mornIds.length>0&&mornIds.every(id=>ch[id]))morningPerfect++;
-      if(nightIds.length>0&&nightIds.every(id=>ch[id]))nightPerfect++;
-      const dayFocus=focusByDate[date]||[];
-      const all=[...todos,...dayFocus];
-      if(all.length>0&&all.every(t=>ch[t.id]))perfectDays++;
-    });
-    const totalPhotos=Object.values(photoLog).flat().length;
-    return{morningPerfect,nightPerfect,perfectDays,totalPhotos,lifetimeXP,longestStreak:longestS,groupCount:groups.length,photoStreak};
-  },[checks,todos,focusByDate,photoLog,lifetimeXP,longestS,groups,photoStreak,morningT,nightT]);
 
   /* ─── Storage — bulletproof save system ─── */
   // LOAD: read main blob + separate photoLog key
@@ -1077,14 +1138,16 @@ export default function Dashboard(){
       if(d.todos)setTodos(d.todos);if(d.focusByDate)setFocusByDate(d.focusByDate);if(d.checks)setChecks(d.checks);
       if(d.wGoals)setWGoals(d.wGoals);if(d.mGoals)setMGoals(d.mGoals);if(d.wHist)setWHist(d.wHist);
       if(d.bwLog)setBwLog(d.bwLog);if(d.txns)setTxns(d.txns);if(d.groups)setGroups(d.groups);if(d.splits)setSplits(d.splits);
-      if(d.settings)setSettings({...defSettings,...d.settings,features:{...defSettings.features,...(d.settings.features||{})}});
+      if(d.settings)setSettings({...defSettings,...d.settings});
       if(d.theme==="light"||d.theme==="dark")setTheme(d.theme);
-      if(d.purchased)setPurchased(d.purchased);if(d.spentXP)setSpentXP(d.spentXP);if(d.activeTitle)setActiveTitle(d.activeTitle);
       if(d.curWkState)setCurWkState(d.curWkState);if(d.chains)setChains(d.chains);if(d.reflections)setReflections(d.reflections);
       if(d.reviews)setReviews(d.reviews);if(d.weekPriorities)setWeekPriorities(d.weekPriorities);
       if(d.reflectDismissed)setReflectDismissed(d.reflectDismissed);if(d.reviewDismissed)setReviewDismissed(d.reviewDismissed);if(d.launchDismissed)setLaunchDismissed(d.launchDismissed);if(d.eveningClosed)setEveningClosed(d.eveningClosed);if(d.intentionPromptDismissed)setIntentionPromptDismissed(d.intentionPromptDismissed);
       if(d.completionLog)setCompletionLog(d.completionLog);if(d.activeSession)setActiveSession(d.activeSession);
       if(d.aspirations)setAspirations(d.aspirations);
+      if(d.videoJournal)setVideoJournal(d.videoJournal);
+      if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",...d.accounts});
+      if(d.subscriptions)setSubscriptions(d.subscriptions);
       // Migrate photoLog from main blob to separate key (one-time)
       if(d.photoLog&&d.photoLog.length>0){try{localStorage.setItem("dash-v18-photos",JSON.stringify(d.photoLog));}catch(e){}}
     }
@@ -1119,10 +1182,10 @@ export default function Dashboard(){
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,purchased,spentXP,activeTitle,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme]);
+  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -1202,6 +1265,67 @@ export default function Dashboard(){
   const rTx=(d,id)=>{const k=bDK(d);setTxns(p=>({...p,[k]:(p[k]||[]).filter(t=>t.id!==id)}));};
   const bTot=useMemo(()=>{let i=0,o=0;for(let d=1;d<=bDIM;d++)bGT(d).forEach(t=>{if(t.type==="in")i+=t.amount;else o+=t.amount;});return{i,o,net:i-o};},[txns,bY,bM,bDIM]);
 
+  /* ─── Financial Snapshot (account balances + subscriptions) ─── */
+  const acctTotal=useMemo(()=>["checking","savings","cash","investment"].reduce((a,k)=>a+(parseFloat(accounts[k])||0),0),[accounts]);
+  const subTotal=useMemo(()=>subscriptions.reduce((a,s)=>a+(parseFloat(s.cost)||0),0),[subscriptions]);
+  const upcomingBills=useMemo(()=>{const today=now.getDate();return subscriptions.map(s=>{const day=Math.min(31,Math.max(1,parseInt(s.billDay)||1));let du=day-today;if(du<0)du+=30;return{...s,day,daysUntil:du};}).sort((a,b)=>a.daysUntil-b.daysUntil);},[subscriptions,now]);
+  const addSubscription=()=>{if(!subForm.name.trim())return;setSubscriptions(p=>[...p,{id:uid(),name:subForm.name.trim(),cost:subForm.cost||"0",billDay:subForm.billDay||"1",category:subForm.category.trim()}]);setSubForm({name:"",cost:"",billDay:"",category:""});setAddSub(false);};
+  const removeSubscription=id=>setSubscriptions(p=>p.filter(s=>s.id!==id));
+
+  /* ─── Video Journal calendar + storage ─── */
+  const vjY=vjMonth.getFullYear(),vjM=vjMonth.getMonth(),vjDIM=new Date(vjY,vjM+1,0).getDate(),vjFD=new Date(vjY,vjM,1).getDay(),vjCM=vjY===now.getFullYear()&&vjM===now.getMonth();
+  const vjDK=d=>`${vjY}-${String(vjM+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const vjEntries=d=>videoJournal[vjDK(d)]||[];
+  // When a day is selected, hydrate object URLs for its entries from IndexedDB.
+  useEffect(()=>{
+    if(vjSel==null)return;
+    const key=vjDK(vjSel);const entries=videoJournal[key]||[];let cancelled=false;
+    entries.forEach(en=>{if(vjUrls[en.id])return;vjGet(en.id).then(blob=>{if(blob&&!cancelled){const url=URL.createObjectURL(blob);setVjUrls(p=>p[en.id]?p:{...p,[en.id]:url});}}).catch(()=>{});});
+    return()=>{cancelled=true;};
+  },[vjSel,vjMonth,videoJournal]);
+  const vjAdd=async(blob,duration)=>{
+    if(vjSel==null)return;
+    const key=vjDK(vjSel);const id=uid();
+    try{await vjPut(id,blob);}catch(e){setSaveError("Couldn't save video — storage may be full");return;}
+    const url=URL.createObjectURL(blob);
+    setVjUrls(p=>({...p,[id]:url}));
+    setVideoJournal(p=>({...p,[key]:[...(p[key]||[]),{id,time:new Date().toISOString(),duration:duration||0,note:"",mime:blob.type||"video/webm"}]}));
+  };
+  const vjUpload=e=>{const f=e.target.files?.[0];if(f)vjAdd(f,0);if(vjFileRef.current)vjFileRef.current.value="";};
+  const vjRemove=async(key,id)=>{try{await vjDel(id);}catch(e){}setVideoJournal(p=>({...p,[key]:(p[key]||[]).filter(en=>en.id!==id)}));setVjUrls(p=>{const n={...p};if(n[id])URL.revokeObjectURL(n[id]);delete n[id];return n;});};
+  const vjSetNote=(key,id,note)=>setVideoJournal(p=>({...p,[key]:(p[key]||[]).map(en=>en.id===id?{...en,note}:en)}));
+
+  /* ─── Goal editing (monthly aspirations + manual weekly) ─── */
+  const openGoalEdit=(goal,kind)=>{
+    setEditGoal({kind,goal});setEgText(goal.text||"");setEgDeadline(goal.deadline||"");setEgSteps((goal.steps||[]).map(s=>({...s})));
+    if(kind==="weekly")setEgNum(String(goal.target||""));
+    else if(goal.goalType==="habit")setEgNum(String(goal.targetDays||""));
+    else if(goal.goalType==="measurable")setEgNum(String(goal.totalHours||""));
+    else setEgNum("");
+  };
+  const saveGoalEdit=()=>{
+    if(!editGoal||!egText.trim())return;
+    const{kind,goal}=editGoal;
+    if(kind==="weekly"){const t=Math.max(1,parseInt(egNum)||goal.target||1);setWGoals(p=>p.map(g=>g.id===goal.id?{...g,text:egText.trim(),target:t}:g));}
+    else{setAspirations(p=>p.map(a=>{if(a.id!==goal.id)return a;const u={...a,text:egText.trim()};if(a.goalType==="habit")u.targetDays=Math.max(1,parseInt(egNum)||a.targetDays);else if(a.goalType==="measurable"){u.totalHours=Math.max(1,parseInt(egNum)||a.totalHours);u.deadline=egDeadline||a.deadline;}else if(a.goalType==="outcome")u.steps=egSteps.filter(s=>s.text&&s.text.trim());return u;}));}
+    setEditGoal(null);
+  };
+  const deleteGoalEdit=()=>{if(!editGoal)return;const{kind,goal}=editGoal;if(kind==="weekly")setWGoals(p=>p.filter(g=>g.id!==goal.id));else removeGoal(goal.id);setEditGoal(null);};
+
+  /* ─── Footer page navigation with swipe ─── */
+  const pageOrder=["today","groups","analytics","goals","workout","budget"];
+  const curPage=menuTab||tab||"today";
+  const goPage=(key)=>{
+    const from=pageOrder.indexOf(curPage),to=pageOrder.indexOf(key);
+    setNavDir(to>from?1:to<from?-1:0);
+    if(key==="workout"||key==="budget"){setMenuTab(key);setTab(null);}else{setTab(key);setMenuTab(null);}
+  };
+  const swipeNav=(dir)=>{const i=pageOrder.indexOf(curPage);const ni=i+dir;if(ni<0||ni>=pageOrder.length)return;goPage(pageOrder[ni]);};
+  // Page-level swipe: only fires for clearly-horizontal gestures that don't start on a swipe-to-delete row.
+  const pageTouch=useRef({x:0,y:0,active:false});
+  const onPageTouchStart=e=>{if(e.target.closest("[data-swiperow]")){pageTouch.current.active=false;return;}const t=e.touches[0];pageTouch.current={x:t.clientX,y:t.clientY,active:true};};
+  const onPageTouchEnd=e=>{if(!pageTouch.current.active)return;pageTouch.current.active=false;const t=e.changedTouches[0];const dx=t.clientX-pageTouch.current.x,dy=t.clientY-pageTouch.current.y;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.6){swipeNav(dx<0?1:-1);}};
+
   /* ─── Focus task CRUD (per-date) ─── */
   const addFocus=(t)=>setFocusByDate(p=>({...p,[vk]:[...(p[vk]||[]),t]}));
   const removeFocus=(id)=>setFocusByDate(p=>({...p,[vk]:(p[vk]||[]).filter(t=>t.id!==id)}));
@@ -1230,8 +1354,6 @@ export default function Dashboard(){
     else{setTodos(p=>[...p,{...task,grp:fGrp}]);}
     setAddForm(null);setFText("");
   };
-
-  const buyItem=item=>{if(totalXP<item.cost||purchased.includes(item.id))return;setPurchased(p=>[...p,item.id]);setSpentXP(p=>p+item.cost);};
 
   /* ─── NEW: Quick capture, reflections, sunday review ─── */
   const weekKey=(d=new Date())=>{const x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-x.getDay());return dk(x);};
@@ -1300,7 +1422,7 @@ export default function Dashboard(){
     const ts=e=>{if(!onDelete)return;setSs(e.touches[0].clientX);};
     const tm=e=>{if(ss===null)return;const dx=e.touches[0].clientX-ss;if(dx<0)setSx(Math.max(dx,-80));};
     const te=()=>{if(ss===null)return;setSs(null);if(sx<-50)setSx(-72);else setSx(0);};
-    return(<div style={{position:"relative",marginBottom:8}}>
+    return(<div data-swiperow style={{position:"relative",marginBottom:8}}>
       {onDelete&&sx<0&&<div onClick={()=>{onDelete();setSx(0);}} style={{position:"absolute",right:0,top:0,bottom:0,width:72,background:C.red,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div>}
       <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te} style={{position:"relative",padding:`${padY}px 14px`,borderRadius:10,background:bg||C.surface,border:border||`1px solid ${C.hairline}`,overflow:"hidden",transform:`translateX(${sx}px)`,transition:ss===null?"transform 0.3s ease":"none"}}>
         {children}
@@ -1324,7 +1446,7 @@ export default function Dashboard(){
     const onTouchMove=e=>{if(swipeStart===null)return;const dx=e.touches[0].clientX-swipeStart;if(dx<0)setSwipeX(Math.max(dx,-80));else if(swipeX<0)setSwipeX(Math.min(0,swipeX+dx));};
     const onTouchEnd=()=>{if(swipeStart===null)return;setSwipeStart(null);if(swipeX<-50)setSwipeX(-72);else setSwipeX(0);};
     return(
-    <div style={{position:"relative",marginBottom:big?10:8,marginLeft:link?14:0}}>
+    <div data-swiperow style={{position:"relative",marginBottom:big?10:8,marginLeft:link?14:0}}>
       {onDelete&&swipeX<0&&<div onClick={onDelete} style={{position:"absolute",right:0,top:0,bottom:0,width:72,background:C.red,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div>}
     <div className={`task-row${flash?" just-checked":""}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{position:"relative",display:"flex",alignItems:"center",gap:big?14:12,padding:big?"18px 18px":"14px 16px",borderRadius:10,background:C.surface,border:`1px solid ${isNext?C.accent:C.hairline}`,opacity:on?0.65:1,animation:isNext?"chainPulse 2.4s ease-in-out infinite":"none",overflow:"hidden",transform:`translateX(${swipeX}px)`,transition:swipeStart===null?"transform 0.3s ease, opacity 0.5s ease":"none"}}>
       {on&&<div style={{position:"absolute",inset:0,borderRadius:10,pointerEvents:"none",overflow:"hidden",borderLeft:`3px solid ${C.green}`}}>
@@ -1345,7 +1467,7 @@ export default function Dashboard(){
     </div>
     </div>);};
 
-  const mainTabs=[{k:"today",l:"Today",i:Icons.today},{k:"groups",l:"Groups",i:Icons.groups},{k:"analytics",l:"Analytics",i:Icons.analytics},{k:"goals",l:"Goals",i:Icons.goals}];
+  const mainTabs=[{k:"today",l:"Today",i:Icons.today},{k:"groups",l:"Journal",i:Icons.journal},{k:"analytics",l:"Analytics",i:Icons.analytics},{k:"goals",l:"Goals",i:Icons.goals},{k:"workout",l:"Workout",i:Icons.workout},{k:"budget",l:"Budget",i:Icons.budget}];
 
   /* ═══ RENDER ═══ */
   return(
@@ -1356,18 +1478,17 @@ export default function Dashboard(){
       {confetti&&<div style={{position:"fixed",inset:0,zIndex:300,pointerEvents:"none",overflow:"hidden"}}>{Array.from({length:30}).map((_,i)=>{const l=Math.random()*100,d=Math.random()*2+1;const c=[C.green,C.goldBright,C.blue,C.orange,"#fff"][Math.floor(Math.random()*5)];return(<div key={i} style={{position:"absolute",left:`${l}%`,top:-10,width:7,height:7,borderRadius:"50%",background:c,animation:`xpFloat ${d}s ease-out forwards`}} />);})}</div>}
 
       <ProofModal open={!!proofTask} onClose={()=>setProofTask(null)} name={proofTask?.text||""} onDone={img=>{if(proofTask)proofDone(proofTask,img);}} />
+      <VideoRecorderModal open={showVjRecorder} onClose={()=>setShowVjRecorder(false)} onSave={vjAdd} dateLabel={vjSel!=null?new Date(vjY,vjM,vjSel).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"}):""} />
 
       {/* ═══ STICKY HEADER ═══ */}
       <div style={{position:"sticky",top:0,zIndex:100,background:C.surface,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",paddingBottom:8}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px 6px"}}>
-          <button className="press" onClick={()=>setShowMenu(!showMenu)} style={{background:"transparent",border:"none",cursor:"pointer",padding:4,display:"flex",flexDirection:"column",gap:3}}><div style={{width:20,height:2,background:C.goldBright,borderRadius:1}} /><div style={{width:16,height:2,background:C.goldBright,borderRadius:1}} /><div style={{width:20,height:2,background:C.goldBright,borderRadius:1}} /></button>
+          <div style={{width:28,height:18}} aria-hidden="true" />
           {/* PROGRESS title as button → Today */}
           <button className="press" onClick={()=>{setTab("today");setMenuTab(null);}} style={{background:"transparent",border:"none",cursor:"pointer",padding:0}}>
             <span className="display" style={{fontSize:30,color:C.text,fontStyle:"italic",fontWeight:500}}>Progress</span>
           </button>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            {F.store&&<button className="press" onClick={()=>setShowShop(true)} style={{background:"transparent",border:"none",cursor:"pointer",padding:4,fontSize:16}}>🏪</button>}
-            {F.achievements&&<button className="press" onClick={()=>setShowTitles(true)} style={{background:"transparent",border:"none",cursor:"pointer",padding:4,fontSize:16}}>🏅</button>}
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <button className="press" onClick={()=>setStructuredMode(p=>!p)} style={{background:structuredMode?C.accentSoft:"transparent",border:structuredMode?`1px solid ${C.accentMed}`:"1px solid transparent",borderRadius:6,cursor:"pointer",padding:5,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s ease"}} title="Structured Mode"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="6" y="1" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="11" y="1" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="1" y="6" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="6" y="6" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="11" y="6" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="1" y="11" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="6" y="11" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="11" y="11" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/></svg></button>
               <button className="press" onClick={()=>setShowSettings(true)} style={{background:"transparent",border:"none",cursor:"pointer",padding:4}}><svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3" stroke={C.goldBright} strokeWidth="1.5"/><path d="M10 1v2M10 17v2M1 10h2M17 10h2M3.5 3.5l1.4 1.4M15.1 15.1l1.4 1.4M3.5 16.5l1.4-1.4M15.1 4.9l1.4-1.4" stroke={C.goldBright} strokeWidth="1.5" strokeLinecap="round"/></svg></button>
@@ -1375,22 +1496,6 @@ export default function Dashboard(){
           </div>
         </div>
 
-        {showMenu&&<div className="card-enter" style={{position:"absolute",left:12,top:52,background:C.surface,borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.12)",padding:4,zIndex:110,minWidth:140}}>
-          <button className="press" onClick={()=>{setMenuTab("workout");setTab(null);setShowMenu(false);}} style={{display:"block",width:"100%",textAlign:"left",background:"transparent",border:"none",padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",borderRadius:8,color:C.text}}>💪 Workout</button>
-          <button className="press" onClick={()=>{setMenuTab("budget");setTab(null);setShowMenu(false);}} style={{display:"block",width:"100%",textAlign:"left",background:"transparent",border:"none",padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",borderRadius:8,color:C.text}}>💰 Budget</button>
-        </div>}
-
-        {/* Level row — only if levels feature on */}
-        {F.levels&&<div style={{display:"flex",alignItems:"center",gap:8,padding:"0 20px 4px"}}>
-          <span style={{fontSize:16}}>{rank.icon}</span>
-          <div style={{flex:1}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-              <span style={{fontSize:10,fontWeight:700,color:rank.color}}>{rank.name} · Lv.{level}</span>
-            </div>
-            <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${levelPct}%`,background:`linear-gradient(90deg,${rank.color},${C.goldBright})`,borderRadius:2,transition:"width 0.6s"}} /></div>
-          </div>
-          {F.xp&&<span style={{fontSize:10,fontWeight:700,color:C.goldBright,background:C.goldSoft,borderRadius:6,padding:"2px 8px"}}>{totalXP}</span>}
-        </div>}
 
         {/* Calendar — % instead of XP, color gradient, click jumps */}
         <div style={{display:"flex",alignItems:"center",gap:4,padding:"0 12px"}}>
@@ -1412,7 +1517,8 @@ export default function Dashboard(){
       </div>
 
       {/* ═══ SCROLLABLE MIDDLE ═══ */}
-      <div style={{flex:1,overflowY:"auto",padding:"12px 20px 24px"}}>
+      <div onTouchStart={onPageTouchStart} onTouchEnd={onPageTouchEnd} style={{flex:1,overflowY:"auto",padding:"12px 20px 24px"}}>
+      <div key={curPage} className={navDir<0?"page-l":navDir>0?"page-r":"tab-content"}>
 
         {/* ═══ TODAY TAB ═══ */}
         {/* ═══ STRUCTURED MODE — interactive grid view ═══ */}
@@ -1682,23 +1788,43 @@ export default function Dashboard(){
 
         {/* ═══ GROUPS ═══ (unchanged behavior) */}
         {tab==="groups"&&<div className="tab-content">
-          {!selGrp&&!mkGrp&&<div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{fontWeight:700,fontSize:16,margin:0}}>My Groups</h2><button className="press" onClick={()=>setMkGrp(true)} style={btnB}>+ New</button></div>
-            {groups.map(g=>(
-              <div key={g.id} onClick={()=>setSelGrp(g.id)} className="press" style={{...card,marginBottom:10,cursor:"pointer",background:"linear-gradient(135deg,rgba(224,122,58,0.08),rgba(224,122,58,0.02))",border:"1px solid rgba(224,122,58,0.12)"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:15,fontWeight:700}}>{g.name}</div><div style={{fontSize:12,color:C.textDim,marginTop:2}}>{g.members.length} members</div></div><div style={{fontSize:24}}>→</div></div>
+          {/* ═══ VIDEO JOURNAL ═══ */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}>
+            <h2 style={{fontWeight:700,fontSize:16,margin:0,fontFamily:FN.h,fontStyle:"italic"}}>Video Journal</h2>
+            <span style={{fontSize:10,color:C.textDim,fontFamily:FN.m}}>{Object.values(videoJournal).reduce((a,v)=>a+v.length,0)} entries</span>
+          </div>
+          <div style={card}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}><button onClick={()=>{setVjMonth(new Date(vjY,vjM-1,1));setVjSel(null);}} style={btnG}>‹</button><span style={{fontSize:14,fontWeight:700}}>{vjMonth.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span><button onClick={()=>{setVjMonth(new Date(vjY,vjM+1,1));setVjSel(null);}} style={btnG}>›</button></div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,color:C.textDim,fontWeight:600}}>{d}</div>)}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>{Array.from({length:vjFD}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:vjDIM}).map((_,i)=>{const d=i+1;const isT=vjCM&&d===now.getDate();const cnt=vjEntries(d).length;const sel=vjSel===d;return(<div key={d} onClick={()=>setVjSel(sel?null:d)} style={{aspectRatio:"1",borderRadius:8,cursor:"pointer",padding:3,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:sel?C.accentMed:cnt>0?C.accentSoft:C.surfaceDim,border:isT?`2px solid ${C.accent}`:cnt>0?`1.5px solid ${C.accentMed}`:"1.5px solid transparent",transition:"all 0.2s ease"}}><span style={{fontSize:12,fontWeight:isT?800:500,color:isT?C.accent:C.text}}>{d}</span>{cnt>0&&<span style={{display:"flex",alignItems:"center",gap:2,marginTop:1}}><span style={{width:4,height:4,borderRadius:"50%",background:C.accent}}/><span style={{fontSize:8,fontWeight:700,color:C.accent,fontFamily:FN.m}}>{cnt}</span></span>}</div>);})}</div>
+
+            {vjSel&&(()=>{const key=vjDK(vjSel);const entries=videoJournal[key]||[];const dateLabel=new Date(vjY,vjM,vjSel).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});return(
+              <div style={{marginTop:14,borderTop:`1px solid ${C.surfaceDim}`,paddingTop:14}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                  <div style={{fontSize:14,fontWeight:700}}>{dateLabel}</div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button className="press" onClick={()=>setShowVjRecorder(true)} style={{display:"flex",alignItems:"center",gap:6,background:C.accent,border:"none",borderRadius:8,padding:"8px 12px",color:C.btnText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em"}}><span style={{width:9,height:9,borderRadius:"50%",background:C.btnText}}/>Record</button>
+                    <button className="press" onClick={()=>vjFileRef.current?.click()} style={{...btnG,padding:"8px 12px",fontSize:11}}>↑ Upload</button>
+                  </div>
+                </div>
+                <input ref={vjFileRef} type="file" accept="video/*" onChange={vjUpload} style={{display:"none"}} />
+                {entries.length===0&&<div style={{textAlign:"center",padding:"24px 12px",color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>No entries yet. Record or upload to capture this day.</div>}
+                {entries.map(en=>{const url=vjUrls[en.id];return(
+                  <div key={en.id} style={{background:C.surfaceDim,borderRadius:12,padding:10,marginBottom:10,border:`1px solid ${C.hairline}`}}>
+                    <div style={{borderRadius:10,overflow:"hidden",background:"#000",marginBottom:8}}>
+                      {url?<video src={url} controls playsInline style={{width:"100%",maxHeight:340,display:"block",background:"#000"}} />:<div style={{aspectRatio:"16/9",display:"flex",alignItems:"center",justifyContent:"center",color:C.textDim,fontSize:12}}>Loading video…</div>}
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                      <span style={{fontSize:10,color:C.textDim,fontFamily:FN.m}}>{new Date(en.time).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}{en.duration?` · ${fmtDur(en.duration)}`:""}</span>
+                      <button onClick={()=>vjRemove(key,en.id)} style={{marginLeft:"auto",background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:FN.b,display:"flex",alignItems:"center",gap:4}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.red} strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>Delete</button>
+                    </div>
+                    <input value={en.note||""} onChange={e=>vjSetNote(key,en.id,e.target.value)} placeholder="Add a note or caption…" style={{...inp,padding:"9px 12px",fontSize:12}} />
+                  </div>
+                );})}
               </div>
-            ))}
-          </div>}
-          {mkGrp&&<div><button className="press" onClick={()=>{setMkGrp(false);setNGrpName("");setNGrpTasks([]);}} style={{...btnG,marginBottom:14}}>← Back</button><div style={card}><div style={lbl}>Create Group</div><input value={nGrpName} onChange={e=>setNGrpName(e.target.value)} placeholder="Group name..." style={{...inp,marginBottom:14}} /><div style={{fontSize:12,fontWeight:600,color:C.textSec,marginBottom:8}}>Link proof tasks:</div>{[...todos,...focusTasks].filter(t=>t.proof).map(t=>(<div key={t.id} onClick={()=>setNGrpTasks(p=>p.includes(t.id)?p.filter(x=>x!==t.id):[...p,t.id])} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",marginBottom:4,borderRadius:10,cursor:"pointer",background:nGrpTasks.includes(t.id)?C.blueMed:C.surfaceDim}}><div style={{width:18,height:18,borderRadius:5,border:`2px solid ${nGrpTasks.includes(t.id)?C.blue:"rgba(0,0,0,0.1)"}`,background:nGrpTasks.includes(t.id)?C.blue:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:800}}>{nGrpTasks.includes(t.id)&&"✓"}</div><span style={{fontSize:13,fontWeight:500,flex:1}}>{t.text}</span></div>))}<button className="press" onClick={()=>{if(!nGrpName.trim())return;setGroups(p=>[...p,{id:uid(),name:nGrpName.trim(),tasks:nGrpTasks,members:[{name:"You",av:"E"}],feed:[]}]);setNGrpName("");setNGrpTasks([]);setMkGrp(false);}} style={{...btnB,width:"100%",marginTop:14}}>Create</button></div></div>}
-          {selGrp&&groups.find(x=>x.id===selGrp)&&<div>
-            <button className="press" onClick={()=>setSelGrp(null)} style={{...btnG,marginBottom:14}}>← Back</button>
-            <div style={{...card,marginBottom:14}}><div style={lbl}>Activity Feed</div>
-              {(groups.find(x=>x.id===selGrp).feed||[]).length===0&&<div style={{textAlign:"center",padding:16,color:C.textDim,fontSize:12}}>Complete linked tasks to see activity</div>}
-              {(groups.find(x=>x.id===selGrp).feed||[]).slice(0,20).map((f,i)=>(<div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"8px 12px",marginBottom:4,borderRadius:10,background:C.surfaceDim}}><div style={{width:28,height:28,borderRadius:"50%",background:C.blue,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>E</div><div style={{flex:1}}><div><span style={{fontSize:12,fontWeight:600}}>{f.user}</span><span style={{fontSize:12,color:C.textDim}}> completed </span><span style={{fontSize:12,fontWeight:600,color:C.blue}}>{f.task}</span></div>{f.img&&<div style={{width:80,height:80,borderRadius:8,overflow:"hidden",marginTop:6}}><img src={f.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} /></div>}</div></div>))}
-            </div>
-            <div style={card}><div style={lbl}>Members</div>{groups.find(x=>x.id===selGrp).members.map((m,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0"}}><div style={{width:32,height:32,borderRadius:"50%",background:C.blue,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700}}>{m.av}</div><span style={{fontSize:13,fontWeight:600,flex:1}}>{m.name}</span></div>))}</div>
-          </div>}
+            );})()}
+          </div>
+          <div style={{textAlign:"center",fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:12,lineHeight:1.5,padding:"0 8px"}}>Tap a date to record or upload. Videos are stored privately on this device.</div>
         </div>}
 
         {/* ═══ ANALYTICS ═══ (simplified) */}
@@ -1835,6 +1961,7 @@ export default function Dashboard(){
                     </div>
                   </div>
                   {a.goalType==="habit"&&a.monthsAtTarget>=3&&<button onClick={()=>graduateGoal(a.id)} className="press" style={{background:C.accent,border:"none",borderRadius:6,padding:"5px 10px",color:C.btnText,fontSize:9,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",cursor:"pointer"}}>Graduate</button>}
+                  <button onClick={()=>openGoalEdit(a,"monthly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px",flexShrink:0}}>edit</button>
                 </div>
                 {(a.goalType==="habit"||a.goalType==="measurable")&&<div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>=80?C.greenBright:pct>=50?C.accent:C.red,borderRadius:2,transition:"width 0.5s ease"}}/></div>}
                 {a.goalType==="outcome"&&<div style={{marginTop:6}}>{(a.steps||[]).map((s,si)=>(<div key={s.id||si} onClick={()=>setAspirations(p=>p.map(g=>g.id===a.id?{...g,steps:g.steps.map((st,i)=>i===si?{...st,done:!st.done}:st)}:g))} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",cursor:"pointer",borderTop:si>0?`1px solid ${C.hairline}`:"none"}}>
@@ -1864,6 +1991,7 @@ export default function Dashboard(){
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <span style={{fontSize:13,fontWeight:600,color:C.text}}>{g.text}</span>
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <button onClick={()=>openGoalEdit(g,"weekly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px"}}>edit</button>
                     <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?{...x,current:Math.max(0,(x.current||0)-1)}:x))} style={{...btnG,padding:"3px 10px",fontSize:12}}>−</button>
                     <span style={{fontFamily:FN.m,fontSize:12,fontWeight:700,minWidth:40,textAlign:"center"}}>{g.current||0}/{g.target}</span>
                     <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?{...x,current:(x.current||0)+1}:x))} style={{...btnG,padding:"3px 10px",fontSize:12}}>+</button>
@@ -1893,6 +2021,7 @@ export default function Dashboard(){
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontSize:13,fontWeight:500,flex:1,color:C.text}}>{t.text}</span>
                 <span style={{fontSize:9,fontWeight:700,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 6px",fontFamily:FN.m}}>{DIFF[t.diff].label}</span>
+                <button onClick={()=>openEdit(t,"focus")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b}}>edit</button>
               </div>
             </SwipeRow>))}
             </div>}
@@ -2110,6 +2239,71 @@ export default function Dashboard(){
 
         {/* ═══ BUDGET ═══ */}
         {menuTab==="budget"&&<div className="tab-content">
+          {/* ═══ FINANCIAL SNAPSHOT ═══ */}
+          <div style={{...card,marginBottom:14,padding:0,overflow:"hidden"}}>
+            <button onClick={()=>setShowFinSnap(s=>!s)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",background:"transparent",border:"none",cursor:"pointer",padding:"16px 18px",textAlign:"left"}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em"}}>Financial Snapshot</div>
+                <div style={{fontSize:20,fontWeight:700,color:acctTotal>=0?C.green:C.red,fontFamily:FN.m,marginTop:3}}>${acctTotal.toFixed(2)}<span style={{fontSize:11,color:C.textDim,fontWeight:600,fontFamily:FN.b,marginLeft:6}}>net available</span></div>
+              </div>
+              <span style={{fontSize:14,color:C.textDim,transform:showFinSnap?"rotate(180deg)":"none",transition:"transform 0.2s ease"}}>▾</span>
+            </button>
+            {showFinSnap&&<div style={{padding:"0 18px 18px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+                <div style={{background:C.surfaceDim,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>Monthly Subscriptions</div><div style={{fontSize:16,fontWeight:700,color:C.text,fontFamily:FN.m,marginTop:2}}>${subTotal.toFixed(2)}</div></div>
+                <div style={{background:C.surfaceDim,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>Next Bill</div><div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:3}}>{upcomingBills[0]?`${upcomingBills[0].name} · $${(parseFloat(upcomingBills[0].cost)||0).toFixed(2)}`:"—"}</div>{upcomingBills[0]&&<div style={{fontSize:9,color:C.accent,fontFamily:FN.m,marginTop:1}}>{upcomingBills[0].daysUntil===0?"due today":`in ${upcomingBills[0].daysUntil}d`}</div>}</div>
+              </div>
+
+              {/* Account balances */}
+              <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Account Balances</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:18}}>
+                {[{k:"checking",l:"Checking"},{k:"savings",l:"Savings"},{k:"cash",l:"Cash"},{k:"investment",l:"Investment"}].map(a=>(
+                  <div key={a.k} style={{background:C.surfaceDim,borderRadius:10,padding:"8px 10px"}}>
+                    <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>{a.l}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:2}}><span style={{fontSize:13,color:C.textDim,fontFamily:FN.m}}>$</span><input type="number" step="0.01" value={accounts[a.k]} onChange={e=>setAccounts(p=>({...p,[a.k]:e.target.value}))} placeholder="0.00" style={{background:"transparent",border:"none",outline:"none",color:C.text,fontSize:14,fontWeight:700,fontFamily:FN.m,width:"100%",padding:0}} /></div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Subscriptions */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em"}}>Subscriptions</div>
+                {!addSub&&<button onClick={()=>setAddSub(true)} style={{...btnG,padding:"4px 10px",fontSize:10}}>+ Add</button>}
+              </div>
+              {subscriptions.length===0&&!addSub&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",padding:"6px 0 10px"}}>No subscriptions tracked yet.</div>}
+              {subscriptions.map(s=>(
+                <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",marginBottom:5,borderRadius:10,background:C.surfaceDim}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:C.text}}>{s.name}{s.category&&<span style={{fontSize:9,color:C.textDim,background:C.surfaceHi,borderRadius:4,padding:"1px 6px",marginLeft:6,fontWeight:600}}>{s.category}</span>}</div>
+                    <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>Bills on the {s.billDay}{["th","st","nd","rd"][(parseInt(s.billDay)%10>3||[11,12,13].includes(parseInt(s.billDay)%100))?0:parseInt(s.billDay)%10]}</div>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(s.cost)||0).toFixed(2)}</span>
+                  <button onClick={()=>removeSubscription(s.id)} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:15}}>×</button>
+                </div>
+              ))}
+              {addSub&&<div style={{background:C.surfaceDim,borderRadius:12,padding:12,marginTop:6,border:`1px solid ${C.hairline}`}}>
+                <input value={subForm.name} onChange={e=>setSubForm(p=>({...p,name:e.target.value}))} placeholder="Name (e.g. Netflix)" style={{...inp,marginBottom:8}} autoFocus />
+                <div style={{display:"flex",gap:8,marginBottom:8}}>
+                  <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Monthly $</div><input type="number" step="0.01" value={subForm.cost} onChange={e=>setSubForm(p=>({...p,cost:e.target.value}))} placeholder="0.00" style={{...inp,textAlign:"center",fontFamily:FN.m}} /></div>
+                  <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Bill Day</div><input type="number" min="1" max="31" value={subForm.billDay} onChange={e=>setSubForm(p=>({...p,billDay:e.target.value}))} placeholder="1" style={{...inp,textAlign:"center",fontFamily:FN.m}} /></div>
+                </div>
+                <input value={subForm.category} onChange={e=>setSubForm(p=>({...p,category:e.target.value}))} placeholder="Category (optional)" style={{...inp,marginBottom:10}} />
+                <div style={{display:"flex",gap:8}}><button onClick={addSubscription} style={{...btnB,flex:1}}>Add</button><button onClick={()=>{setAddSub(false);setSubForm({name:"",cost:"",billDay:"",category:""});}} style={btnG}>Cancel</button></div>
+              </div>}
+
+              {/* Upcoming bills */}
+              {upcomingBills.length>0&&<div style={{marginTop:18}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Upcoming Bills</div>
+                {upcomingBills.slice(0,4).map(b=>(
+                  <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0"}}>
+                    <div style={{width:34,textAlign:"center"}}><div style={{fontSize:9,color:C.accent,fontWeight:700,fontFamily:FN.m}}>{b.daysUntil===0?"NOW":`${b.daysUntil}d`}</div></div>
+                    <span style={{flex:1,fontSize:12,fontWeight:600,color:C.text}}>{b.name}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(b.cost)||0).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>}
+            </div>}
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>{[{l:"Income",v:`$${bTot.i.toFixed(2)}`,c:C.green},{l:"Expenses",v:`$${bTot.o.toFixed(2)}`,c:C.red},{l:"Net",v:`${bTot.net>=0?"+":""}$${bTot.net.toFixed(2)}`,c:bTot.net>=0?C.green:C.red}].map((s,i)=>(<div key={i} style={{...card,padding:12}}><div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>{s.l}</div><div style={{fontSize:14,fontWeight:700,color:s.c}}>{s.v}</div></div>))}</div>
           <div style={card}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}><button onClick={()=>setBMonth(new Date(bY,bM-1,1))} style={btnG}>‹</button><span style={{fontSize:14,fontWeight:700}}>{bMonth.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span><button onClick={()=>setBMonth(new Date(bY,bM+1,1))} style={btnG}>›</button></div>
@@ -2119,6 +2313,7 @@ export default function Dashboard(){
           </div>
           <div style={{...card,marginTop:12}}><div style={lbl}>Breakdown</div><div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:30}}><ResponsiveContainer width={180} height={180}><PieChart><Pie data={[{name:"Income",value:Math.max(bTot.i,0.01)},{name:"Expenses",value:Math.max(bTot.o,0.01)}]} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={3} dataKey="value" stroke="none"><Cell fill={C.green} /><Cell fill={C.red} /></Pie><Tooltip content={<Tip />} /></PieChart></ResponsiveContainer><div>{[{l:"Income",v:`$${bTot.i.toFixed(2)}`,c:C.green},{l:"Expenses",v:`$${bTot.o.toFixed(2)}`,c:C.red}].map((s,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><div style={{width:10,height:10,borderRadius:3,background:s.c}} /><div><div style={{fontSize:11,color:C.textDim}}>{s.l}</div><div style={{fontSize:14,fontWeight:700,color:s.c}}>{s.v}</div></div></div>))}</div></div></div>
         </div>}
+      </div>
       </div>
 
       {/* ═══ BOTTOM TAB BAR with icons ═══ */}
@@ -2152,34 +2347,17 @@ export default function Dashboard(){
         );
       })()}
 
-      <div style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 14px",gap:4}}>
-        {mainTabs.map(t=>{const on=tab===t.k&&!menuTab;return(
-          <button key={t.k} onClick={()=>{setTab(t.k);setMenuTab(null);}} className="press" style={{flex:1,border:"none",borderRadius:10,padding:"10px 0",cursor:"pointer",textAlign:"center",background:"transparent",color:on?C.accent:C.textDim,fontSize:10,fontFamily:FN.b,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+      <div style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 6px",gap:2}}>
+        {mainTabs.map(t=>{const on=curPage===t.k;return(
+          <button key={t.k} onClick={()=>goPage(t.k)} className="press" style={{flex:1,minWidth:0,border:"none",borderRadius:10,padding:"8px 0",cursor:"pointer",textAlign:"center",background:"transparent",color:on?C.accent:C.textDim,fontSize:9,fontFamily:FN.b,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.02em",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>{t.i}</span>
-            <span>{t.l}</span>
+            <span style={{whiteSpace:"nowrap"}}>{t.l}</span>
           </button>
         );})}
       </div>
 
-      {/* ═══ SETTINGS (with feature toggles) ═══ */}
+      {/* ═══ SETTINGS ═══ */}
       <Overlay open={showSettings} onClose={()=>setShowSettings(false)} title="Settings">
-        <div style={{marginBottom:18}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Feature Toggles</div>
-          <div style={{fontSize:11,color:C.textDim,marginBottom:12}}>Enable advanced gamification features.</div>
-          {[
-            {k:"xp",l:"XP System",d:"Earn XP per task, see xp on rows"},
-            {k:"levels",l:"Levels & Ranks",d:"Level bar + rank badge in header"},
-            {k:"store",l:"XP Shop",d:"Spend XP on cosmetics & power-ups"},
-            {k:"achievements",l:"Achievements",d:"Unlock titles from milestones"},
-            {k:"dailyChallenges",l:"Daily Challenges",d:"Random daily challenge card"},
-          ].map(f=>(
-            <div key={f.k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:`1px solid ${C.surfaceDim}`}}>
-              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{f.l}</div><div style={{fontSize:10,color:C.textDim,marginTop:2}}>{f.d}</div></div>
-              <button onClick={()=>setSettings(p=>({...p,features:{...p.features,[f.k]:!p.features[f.k]}}))} style={{...pill(F[f.k],C.green),padding:"6px 20px"}}>{F[f.k]?"ON":"OFF"}</button>
-            </div>
-          ))}
-        </div>
-
         {/* ─── THEME TOGGLE ─── */}
         <div style={{marginBottom:22,padding:"14px 16px",background:C.surfaceDim,borderRadius:12,border:`1px solid ${C.hairline}`}}>
           <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.04em"}}>Appearance</div>
@@ -2201,11 +2379,6 @@ export default function Dashboard(){
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Night Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.nightStart} onChange={e=>setSettings(p=>({...p,nightStart:parseInt(e.target.value)||18}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.nightEnd} onChange={e=>setSettings(p=>({...p,nightEnd:parseInt(e.target.value)||23}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Reflection Prompt Time</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" min="0" max="23" value={settings.reflectHour} onChange={e=>setSettings(p=>({...p,reflectHour:parseInt(e.target.value)||21}))} style={{...numI,width:60}} /><span style={{fontSize:11,color:C.textDim,fontFamily:FN.m}}>:00 — surfaces "End of day" card after this hour</span></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Review Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,reviewDay:i}))} style={{...pill(settings.reviewDay===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:`1px solid ${C.surfaceDim}`}}><span style={{fontSize:13,fontWeight:600}}>Notifications</span><button onClick={()=>setSettings(p=>({...p,notifs:!p.notifs}))} style={{...pill(settings.notifs,C.green),padding:"6px 20px"}}>{settings.notifs?"ON":"OFF"}</button></div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:`1px solid ${C.surfaceDim}`}}><span style={{fontSize:13,fontWeight:600}}>Vibrations</span><button onClick={()=>setSettings(p=>({...p,vibrate:!p.vibrate}))} style={{...pill(settings.vibrate,C.green),padding:"6px 20px"}}>{settings.vibrate?"ON":"OFF"}</button></div>
-
-        {F.achievements&&<div style={{marginTop:16,padding:"14px",background:C.goldSoft,borderRadius:12}}><button onClick={()=>{setShowSettings(false);setShowTitles(true);}} style={{...btnB,width:"100%",background:C.goldBright,color:"#1A1D2E"}}>🏅 View Achievements</button></div>}
-        {F.store&&<div style={{marginTop:10,padding:"14px",background:C.blueSoft,borderRadius:12}}><button onClick={()=>{setShowSettings(false);setShowShop(true);}} style={{...btnB,width:"100%"}}>🏪 Open Shop</button></div>}
 
         {/* Full Monthly View */}
         <div style={{marginTop:16,padding:"14px",background:C.surfaceDim,borderRadius:12,border:`1px solid ${C.hairline}`}}>
@@ -2241,22 +2414,6 @@ export default function Dashboard(){
         </div>
       </Overlay>
 
-      {/* Shop (only if toggled on) */}
-      <Overlay open={showShop} onClose={()=>setShowShop(false)} title="XP Shop" wide>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,padding:"12px 16px",background:C.goldSoft,borderRadius:12}}><span style={{fontSize:20}}>{rank.icon}</span><div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{rank.name} · Level {level}</div></div><div style={{fontSize:18,fontWeight:800,color:C.goldBright}}>{totalXP} XP</div></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{SHOP_ITEMS.map(item=>{const owned=purchased.includes(item.id);const can=totalXP>=item.cost&&!owned;return(<div key={item.id} style={{...card,padding:14,textAlign:"center",opacity:owned?0.6:1}}><div style={{fontSize:28,marginBottom:6}}>{item.icon}</div><div style={{fontSize:12,fontWeight:700,marginBottom:2}}>{item.name}</div><div style={{fontSize:10,color:C.textDim,marginBottom:8,minHeight:24}}>{item.desc}</div>{owned?<div style={{fontSize:11,fontWeight:700,color:C.green}}>✓ Owned</div>:<button className="press" onClick={()=>buyItem(item)} style={{...btnB,width:"100%",padding:"8px 0",fontSize:11,opacity:can?1:0.4,background:can?C.blue:C.textDim,cursor:can?"pointer":"default"}}>{item.cost} XP</button>}</div>);})}</div>
-      </Overlay>
-
-      {/* Titles */}
-      <Overlay open={showTitles} onClose={()=>setShowTitles(false)} title="Achievements">
-        <div style={{fontSize:12,color:C.textDim,marginBottom:16}}>Earn titles through achievements.</div>
-        {ACHIEVEMENTS.map(a=>{const unlocked=a.check(achieveStats);return(<div key={a.id} onClick={unlocked?()=>setActiveTitle(activeTitle===a.id?null:a.id):undefined} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:12,background:activeTitle===a.id?C.goldSoft:unlocked?C.greenSoft:C.surfaceDim,cursor:unlocked?"pointer":"default",opacity:unlocked?1:0.5}}>
-          <span style={{fontSize:24}}>{a.icon}</span>
-          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{a.title}</div><div style={{fontSize:11,color:C.textDim}}>{a.desc}</div></div>
-          {unlocked?<span style={{fontSize:11,fontWeight:700,color:activeTitle===a.id?C.goldBright:C.green}}>{activeTitle===a.id?"ACTIVE":"✓"}</span>:<span style={{fontSize:10,color:C.textDim}}>🔒</span>}
-        </div>);})}
-      </Overlay>
-
       {/* Edit Task */}
       <Overlay open={!!editTask} onClose={()=>setEditTask(null)} title={`Edit ${editTask?.source==="focus"?"Focus":"Task"}`}>
         {editTask?.source==="focus"&&<div style={{fontSize:11,color:C.textDim,marginBottom:12,padding:"8px 12px",background:C.orangeSoft,borderRadius:8}}>⚠️ Editing only affects {fd(vDate)} — other days are independent.</div>}
@@ -2265,6 +2422,16 @@ export default function Dashboard(){
         {editTask?.source!=="focus"&&<div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Group</div><div style={{display:"flex",gap:4}}>{["morning","night","general"].map(g=>(<button key={g} onClick={()=>setEditGrp(g)} style={{...pill(editGrp===g),flex:1,textTransform:"capitalize"}}>{g}</button>))}</div></div>}
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Photo Proof</div><div style={{display:"flex",gap:4}}><button onClick={()=>setEditProof(false)} style={{...pill(!editProof),flex:1}}>📷 No</button><button onClick={()=>setEditProof(true)} style={{...pill(editProof,C.blue),flex:1}}>📸 Yes</button></div></div>
         <div style={{display:"flex",gap:8}}><button className="press" onClick={saveEdit} style={{...btnB,flex:1,background:C.green}}>Save</button><button onClick={deleteEditTask} style={{...btnG,color:C.red}}>Delete</button></div>
+      </Overlay>
+
+      {/* Goal edit (monthly aspirations + manual weekly) */}
+      <Overlay open={!!editGoal} onClose={()=>setEditGoal(null)} title={editGoal?.kind==="weekly"?"Edit Weekly Goal":"Edit Goal"}>
+        <div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Name</div><input value={egText} onChange={e=>setEgText(e.target.value)} style={{...inp,fontSize:15}} /></div>
+        {editGoal?.kind==="weekly"&&<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Target</div><input type="number" min="1" value={egNum} onChange={e=>setEgNum(e.target.value)} style={numI} /></div>}
+        {editGoal?.kind==="monthly"&&editGoal?.goal?.goalType==="habit"&&<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Target Days / Month</div><input type="number" min="1" max="31" value={egNum} onChange={e=>setEgNum(e.target.value)} style={numI} /></div>}
+        {editGoal?.kind==="monthly"&&editGoal?.goal?.goalType==="measurable"&&<><div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Total Hours</div><input type="number" min="1" value={egNum} onChange={e=>setEgNum(e.target.value)} style={numI} /></div><div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Deadline</div><input type="date" value={egDeadline} onChange={e=>setEgDeadline(e.target.value)} style={{...inp,fontFamily:FN.m}} /></div></>}
+        {editGoal?.kind==="monthly"&&editGoal?.goal?.goalType==="outcome"&&<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Steps</div>{egSteps.map((s,si)=>(<div key={s.id||si} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}><input value={s.text||""} onChange={e=>setEgSteps(p=>p.map((x,i)=>i===si?{...x,text:e.target.value}:x))} placeholder={`Step ${si+1}`} style={{...inp,flex:1,padding:"9px 12px"}} /><button onClick={()=>setEgSteps(p=>p.filter((_,i)=>i!==si))} style={{...btnG,color:C.red,padding:"6px 10px"}}>×</button></div>))}<button onClick={()=>setEgSteps(p=>[...p,{id:uid(),text:"",done:false}])} style={{width:"100%",background:"transparent",border:`1px dashed ${C.hairline}`,borderRadius:8,padding:9,color:C.textDim,fontSize:11,fontWeight:600,cursor:"pointer",marginTop:2,textTransform:"uppercase",letterSpacing:"0.06em"}}>+ Add step</button></div>}
+        <div style={{display:"flex",gap:8}}><button className="press" onClick={saveGoalEdit} style={{...btnB,flex:1,background:C.green}}>Save</button><button onClick={deleteGoalEdit} style={{...btnG,color:C.red}}>Delete</button></div>
       </Overlay>
 
       {/* Weekly Recap — with chart */}
