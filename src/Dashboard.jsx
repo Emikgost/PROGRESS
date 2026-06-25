@@ -162,7 +162,7 @@ const spClr={upper:"#4A82D4",lower:"#2A9D5C",pull:"#E07A3A",push:"#D04545",legs:
 const seedWH=[{id:"h6",date:"2026-03-15",split:"upper",exercises:[{name:"Bench Press",sets:[{w:50,r:10},{w:60,r:6}]},{name:"Lat Pull Down",sets:[{w:54,r:8},{w:59,r:7}]}]}];
 const seedBW=[{date:"2025-10-01",weight:72.5},{date:"2026-01-01",weight:74.5},{date:"2026-03-01",weight:75.2},{date:"2026-03-29",weight:75.8}];
 const seedTx={"2026-03-01":[{id:"t14",type:"out",amount:26.5,desc:"Sunday"}],"2026-03-06":[{id:"t16",type:"in",amount:30,desc:"Income"}]};
-const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0};
+const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000};
 
 /* ═══ REFLECTION PROMPTS — rotate based on day quality ═══ */
 const REFLECT_PROMPTS={
@@ -415,6 +415,20 @@ function VideoRecorderModal({open,onClose,onSave,dateLabel}){
   </div>);
 }
 
+/* ═══ BUDGET LEDGER HELPERS ═══ */
+const ACCT_META=[
+  {key:"checking",label:"Debit Card",icon:"💳"},
+  {key:"savings",label:"Savings",icon:"🏦"},
+  {key:"credit",label:"Credit Card",icon:"🧾"},
+  {key:"investment",label:"Investments",icon:"📈"},
+];
+// Lerp between two hex colors at t∈[0,1], returns an rgb() string.
+const lerpHex=(a,b,t)=>{const ai=parseInt(a.slice(1),16),bi=parseInt(b.slice(1),16);
+  const ar=(ai>>16)&255,ag=(ai>>8)&255,ab=ai&255,br=(bi>>16)&255,bg=(bi>>8)&255,bb=bi&255;
+  return`rgb(${Math.round(ar+(br-ar)*t)},${Math.round(ag+(bg-ag)*t)},${Math.round(ab+(bb-ab)*t)})`;};
+// t=0 → red, t=0.5 → yellow, t=1 → green. Used for both Net Worth (direct) and Debt (inverted) gradients.
+const gradColor=t=>{t=Math.max(0,Math.min(1,t));return t<0.5?lerpHex("#F87171","#FBBF24",t*2):lerpHex("#FBBF24","#34D399",(t-0.5)*2);};
+
 /* ═══ Icons for footer ═══ */
 const Icons={
   today:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>,
@@ -497,7 +511,8 @@ export default function Dashboard(){
   const[showRecap,setShowRecap]=useState(false);
   const[confetti,setConfetti]=useState(false);
   const[proofTask,setProofTask]=useState(null);
-  const[todaySub,setTodaySub]=useState("morning"); // morning | allday | evening
+  const[todaySub,setTodaySub]=useState("morning"); // morning | evening | focus
+  const[focusCollapsed,setFocusCollapsed]=useState({}); // {goalId:true} — collapsed goal cards in Today→Focus (default expanded)
   const[editTask,setEditTask]=useState(null); // {task, source:"focus"|"todos"}
   const[editText,setEditText]=useState("");
   const[editDiff,setEditDiff]=useState("easy");
@@ -505,7 +520,8 @@ export default function Dashboard(){
   const[editProof,setEditProof]=useState(false);
 
   const[gSplit,setGSplit]=useState(null);const[gView,setGView]=useState("log");const[doneEx,setDoneEx]=useState({});const[nBW,setNBW]=useState("");const[addSplit,setAddSplit]=useState(false);const[nSpName,setNSpName]=useState("");const[nSpEx,setNSpEx]=useState("");
-  const[bMonth,setBMonth]=useState(()=>new Date());const[selDay,setSelDay]=useState(null);const[txF,setTxF]=useState({type:"out",amount:"",desc:""});
+  const[bMonth,setBMonth]=useState(()=>new Date());const[selDay,setSelDay]=useState(null);const[txF,setTxF]=useState({type:"out",amount:"",desc:"",account:"",toAccount:""});
+  const[editingTx,setEditingTx]=useState(null); // {day,id} of the transaction currently loaded into txF, or null when adding new
   const[gTab,setGTab]=useState("focus");
   // Unified task-add form state (camera+diff+grp upfront)
   const[addForm,setAddForm]=useState(null); // {target:"focus"|"morning"|"night"|"general"}
@@ -539,11 +555,27 @@ export default function Dashboard(){
   const[showVjRecorder,setShowVjRecorder]=useState(false);
   const vjFileRef=useRef(null);
   // ─── Budget: Financial Snapshot ───
-  const[accounts,setAccounts]=useState({checking:"",savings:"",cash:"",investment:""});
+  const[accounts,setAccounts]=useState({checking:"",savings:"",cash:"",investment:"",credit:""});
   const[subscriptions,setSubscriptions]=useState([]); // [{id,name,cost,billDay,category}]
   const[showFinSnap,setShowFinSnap]=useState(true);
   const[subForm,setSubForm]=useState({name:"",cost:"",billDay:"",category:""});
   const[addSub,setAddSub]=useState(false);
+  // ─── Weekly goal creation (mirrors monthly's outcome step builder) ───
+  const[showAddWeekly,setShowAddWeekly]=useState(false);
+  const[nWkText,setNWkText]=useState("");
+  const[nWkTarget,setNWkTarget]=useState("");
+  const[nWkSteps,setNWkSteps]=useState(["","",""]);
+  // ─── Focus productivity log: {dateKey: count} — counts Daily Tasks + Weekly/Monthly step completions.
+  // Deliberately separate from `checks` (habit tracking) so habit and focus metrics can never be combined. ───
+  const[focusCompletionLog,setFocusCompletionLog]=useState({});
+  // ─── PDF / report export wizard ───
+  const[showExport,setShowExport]=useState(false);
+  const[exportStep,setExportStep]=useState(1);
+  const[exportSections,setExportSections]=useState({analytics:true,workouts:false,goals:false,budget:false});
+  const[exportRange,setExportRange]=useState("30");
+  const[exportCustomStart,setExportCustomStart]=useState("");
+  const[exportCustomEnd,setExportCustomEnd]=useState("");
+
   // ─── Goal editing (monthly / weekly) ───
   const[editGoal,setEditGoal]=useState(null); // {kind:"monthly"|"weekly", goal}
   const[egText,setEgText]=useState("");
@@ -603,6 +635,9 @@ export default function Dashboard(){
         setGroups(p=>p.map(g=>g.tasks.includes(t.id)?{...g,feed:[{user:"You",task:t.text,time:new Date().toISOString(),type:"complete"},...(g.feed||[]).slice(0,49)]}:g));
       });
     }
+    // Daily/focus tasks (created via the Focus flow) have no `grp` — recurring habit todos always do.
+    // Logging this separately from `checks` keeps Focus productivity stats independent of habit consistency stats.
+    if(!t.grp&&isToday)logFocusCompletion(on?-1:1);
   };
   const proofDone=(t,img)=>{
     setChecks(p=>({...p,[vk]:{...(p[vk]||{}),[t.id]:true}}));
@@ -610,21 +645,25 @@ export default function Dashboard(){
     groups.filter(g=>g.tasks.includes(t.id)).forEach(()=>{
       setGroups(p=>p.map(g=>g.tasks.includes(t.id)?{...g,feed:[{user:"You",task:t.text,time:new Date().toISOString(),type:"proof",img},...(g.feed||[]).slice(0,49)]}:g));
     });
+    if(!t.grp&&isToday)logFocusCompletion(1);
   };
 
   /* ─── Streaks ─── */
   const allDayTasks=useMemo(()=>{const set={};Object.keys(focusByDate).forEach(d=>{(focusByDate[d]||[]).forEach(t=>{set[t.id]=t;});});return set;},[focusByDate]);
 
-  const streak=useMemo(()=>{let s=0;const d=new Date();d.setDate(d.getDate()-1);const tot=todos.length;while(todos.filter(t=>(checks[dk(d)]||{})[t.id]).length>=tot*0.5){s++;d.setDate(d.getDate()-1);}if(todos.filter(t=>(checks[dk(now)]||{})[t.id]).length>=tot*0.5)s++;return s;},[checks,todos]);
+  // Habits = recurring routine todos + graduated habit-tracker items. Inlined (rather than referencing the
+  // `habits` memo declared further below) so these formulas don't depend on declaration order.
+  const streak=useMemo(()=>{const hb=[...todos,...aspirations.filter(a=>a.graduated)];const tot=hb.length;if(tot===0)return 0;let s=0;const d=new Date();d.setDate(d.getDate()-1);while(hb.filter(t=>(checks[dk(d)]||{})[t.id]).length>=tot*0.5){s++;d.setDate(d.getDate()-1);}if(hb.filter(t=>(checks[dk(now)]||{})[t.id]).length>=tot*0.5)s++;return s;},[checks,todos,aspirations]);
+  const longestHabitStreak=useMemo(()=>{const hb=[...todos,...aspirations.filter(a=>a.graduated)];const tot=hb.length;if(tot===0)return 0;const keys=Object.keys(checks).sort();let mx=0,cu=0;for(const k of keys){if(hb.filter(t=>(checks[k]||{})[t.id]).length>=tot*0.5){cu++;mx=Math.max(mx,cu);}else cu=0;}return mx;},[checks,todos,aspirations]);
 
-  /* ─── NEW Completion metrics (equal weight 1:1) ─── */
-  // For viewed date: completion rate across ALL tasks (recurring + focus)
+  /* ─── Today Completion — HABITS ONLY (per spec). Daily Tasks, Weekly/Monthly goal steps are Focus,
+     and are deliberately excluded so the Today screen measures consistency, not productivity. ─── */
   const todayCompletion=useMemo(()=>{
-    const all=[...todos,...focusTasks];
+    const all=[...todos,...aspirations.filter(a=>a.graduated)];
     if(all.length===0)return{done:0,total:0,pct:0};
     const done=all.filter(t=>dc[t.id]).length;
     return{done,total:all.length,pct:Math.round(done/all.length*100)};
-  },[todos,focusTasks,dc]);
+  },[todos,aspirations,dc]);
 
   /* ─── ASPIRATION PROGRESS — compute this month's hits and on-pace status per aspiration ─── */
   // Each aspiration of type "recurring" auto-surfaces as a focus task. We treat the aspiration
@@ -702,15 +741,88 @@ export default function Dashboard(){
     return aspirations.filter(a=>a.status==="active").map(a=>{
       if(a.graduated&&a.goalType!=="established")return null; // graduated habits don't need focus
       const hitToday=!!(checks[dk(now)]||{})[a.id];
-      if(a.goalType==="measurable")return{id:a.id,text:`${a.text} — study session`,goalId:a.id,goalType:a.goalType,hitToday};
-      if(a.goalType==="outcome"){const next=(a.steps||[]).find(s=>!s.done);return next?{id:a.id,text:next.text,goalId:a.id,goalType:a.goalType,hitToday}:null;}
-      if(a.goalType==="habit"||a.goalType==="established")return{id:a.id,text:a.dailyAction||a.text,goalId:a.id,goalType:a.goalType,hitToday,graduated:a.graduated,implementationIntention:a.implementationIntention};
+      if(a.goalType==="measurable")return{id:a.id,text:`${a.text} — study session`,goalId:a.id,goalType:a.goalType,hitToday,parentText:a.text};
+      if(a.goalType==="outcome"){const next=(a.steps||[]).find(s=>!s.done);return next?{id:a.id,stepId:next.id,text:next.text,goalId:a.id,goalType:a.goalType,hitToday,parentText:a.text}:null;}
+      if(a.goalType==="habit"||a.goalType==="established")return{id:a.id,text:a.dailyAction||a.text,goalId:a.id,goalType:a.goalType,hitToday,graduated:a.graduated,implementationIntention:a.implementationIntention,parentText:a.text};
       return null;
     }).filter(Boolean);
   },[aspirations,checks,now]);
 
   // Habits — graduated items
   const habits=useMemo(()=>aspirations.filter(a=>a.graduated),[aspirations]);
+
+  /* ─── FOCUS vs HABITS — these are deliberately separate systems (per spec) and never share a completion score. ───
+     Monthly Goals (Focus) = active goalDerivedFocus items, excluding "established" overrides (those are
+     immediately-graduated habits and already live in the Habits tab — counting them here too would double-count
+     the same action as both a habit and a focus item). */
+  const monthlyGoalFocus=useMemo(()=>goalDerivedFocus.filter(f=>f.goalType!=="established"),[goalDerivedFocus]);
+
+  // Bumps (or un-bumps) today's focus-productivity counter. Kept entirely separate from `checks` (habit data)
+  // so Habit Analytics and Focus Analytics can never be derived from the same source.
+  const logFocusCompletion=(delta)=>setFocusCompletionLog(p=>({...p,[dk(now)]:Math.max(0,(p[dk(now)]||0)+delta)}));
+
+  // Completing a Monthly Goal's active step: for outcome-type goals this actually marks the STEP done
+  // (which auto-advances `goalDerivedFocus` to the next step on next render — fixing the old bug where
+  // checking it off here never advanced anything). For habit/measurable/established types, the daily
+  // action is tracked the same way habits are (via `checks`), since there's no discrete "step" to advance.
+  const completeMonthlyFocus=(item)=>{
+    const wasHit=item.goalType==="outcome"?false:item.hitToday;
+    if(item.goalType==="outcome"&&item.stepId){
+      setAspirations(p=>p.map(a=>a.id===item.goalId?{...a,steps:(a.steps||[]).map(s=>s.id===item.stepId?{...s,done:!s.done}:s)}:a));
+    }else{
+      const on=!!(checks[dk(now)]||{})[item.id];
+      if(!on)flashChecked(item.id);
+      setChecks(p=>({...p,[dk(now)]:{...(p[dk(now)]||{}),[item.id]:!on}}));
+    }
+    logFocusCompletion(wasHit?-1:1);
+  };
+
+  /* ─── Weekly Goals — same outcome-style step model as Monthly, plus the legacy counter style kept for back-compat ─── */
+  const weeklyActiveStep=g=>(g.steps||[]).find(s=>!s.done)||null;
+  const weeklyFocusItems=useMemo(()=>{
+    return wGoals.map(g=>{
+      if(g.steps&&g.steps.length>0){
+        const next=weeklyActiveStep(g);
+        return next?{id:g.id,stepId:next.id,text:next.text,goalId:g.id,parentText:g.text,kind:"step"}:null;
+      }
+      return{id:g.id,text:g.text,goalId:g.id,parentText:g.text,kind:"counter",current:g.current||0,target:g.target||1};
+    }).filter(Boolean);
+  },[wGoals]);
+  const completeWeeklyFocus=(item)=>{
+    if(item.kind==="step"){
+      setWGoals(p=>p.map(g=>g.id===item.goalId?{...g,steps:(g.steps||[]).map(s=>s.id===item.stepId?{...s,done:!s.done}:s)}:g));
+      logFocusCompletion(1);
+    }else{
+      setWGoals(p=>p.map(g=>g.id===item.goalId?{...g,current:(g.current||0)+1}:g));
+      logFocusCompletion(1);
+    }
+  };
+  const addWeeklyGoal=()=>{
+    if(!nWkText.trim())return;
+    const steps=nWkSteps.filter(s=>s.trim()).map(s=>({id:uid(),text:s.trim(),done:false}));
+    const goal=steps.length>0
+      ?{id:uid(),text:nWkText.trim(),steps}
+      :{id:uid(),text:nWkText.trim(),target:Math.max(1,parseInt(nWkTarget)||1),current:0};
+    setWGoals(p=>[...p,goal]);
+    setNWkText("");setNWkTarget("");setNWkSteps(["","",""]);setShowAddWeekly(false);
+  };
+
+  /* ─── TODAY → FOCUS: full-goal cards (expandable dropdowns of steps / occurrence checkboxes). ───
+     Completed goals are filtered out so they disappear once everything inside them is checked off. */
+  const weeklyFocusGoals=useMemo(()=>wGoals.map(g=>{
+    if(g.steps&&g.steps.length>0){const done=g.steps.filter(s=>s.done).length;return{id:g.id,text:g.text,kind:"steps",steps:g.steps,done,total:g.steps.length,complete:done>=g.steps.length};}
+    const current=g.current||0,target=g.target||1;return{id:g.id,text:g.text,kind:"count",current,target,complete:current>=target};
+  }).filter(g=>!g.complete),[wGoals]);
+  const monthlyFocusGoals=useMemo(()=>aspirations.filter(a=>a.status==="active"&&!a.graduated&&a.goalType!=="established").map(a=>{
+    if(a.goalType==="outcome"){const steps=a.steps||[];const done=steps.filter(s=>s.done).length;return{id:a.id,text:a.text,kind:"steps",steps,done,total:steps.length,complete:steps.length>0&&done>=steps.length};}
+    const hit=!!(checks[dk(now)]||{})[a.id];
+    return{id:a.id,text:a.text,kind:"action",actionText:a.dailyAction||(a.goalType==="measurable"?`${a.text} — study session`:a.text),implementationIntention:a.implementationIntention,complete:hit};
+  }).filter(g=>!g.complete),[aspirations,checks,now]);
+
+  const toggleWeeklyStep=(goalId,stepId)=>{const g=wGoals.find(x=>x.id===goalId);const s=g&&(g.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setWGoals(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);};
+  const setWeeklyCount=(goalId,newCount)=>{const g=wGoals.find(x=>x.id===goalId);if(!g)return;const tgt=g.target||1;const nc=Math.max(0,Math.min(tgt,newCount));logFocusCompletion(nc-(g.current||0));setWGoals(p=>p.map(x=>x.id===goalId?{...x,current:nc}:x));};
+  const toggleMonthlyStep=(goalId,stepId)=>{const a=aspirations.find(x=>x.id===goalId);const s=a&&(a.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setAspirations(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);};
+  const toggleMonthlyAction=(goalId)=>{const on=!!(checks[dk(now)]||{})[goalId];if(!on)flashChecked(goalId);setChecks(p=>({...p,[dk(now)]:{...(p[dk(now)]||{}),[goalId]:!on}}));logFocusCompletion(on?-1:1);};
 
   // Graduation check — runs when aspirationProgress updates
   // If a habit-type goal has been at ≥80% of target for 3+ months, offer graduation
@@ -774,17 +886,6 @@ export default function Dashboard(){
   },[checks,todos,focusByDate,vDate]);
 
   // Avg focus task completion per day
-  const focusAvgPct=useMemo(()=>{
-    let sum=0,days=0;
-    Object.keys(focusByDate).forEach(k=>{
-      const f=focusByDate[k]||[];
-      if(f.length===0)return;
-      const ch=checks[k]||{};
-      const done=f.filter(t=>ch[t.id]).length;
-      sum+=(done/f.length)*100;days++;
-    });
-    return days>0?Math.round(sum/days):0;
-  },[focusByDate,checks]);
 
   // Per-habit rates for Strong/Weak
   const hRates=useMemo(()=>{
@@ -804,6 +905,27 @@ export default function Dashboard(){
   },[checks,vDate,todos]);
   const sortedH=useMemo(()=>Object.values(hRates).sort((a,b)=>b.rate-a.rate),[hRates]);
   const weakHabits=useMemo(()=>sortedH.filter(h=>h.rate<40).slice(-5).reverse(),[sortedH]);
+
+  /* ═══ HABIT ANALYTICS — consistency only. Never mixed with Focus metrics below. ═══ */
+  const habitPctForDate=(k)=>{const all=[...todos,...aspirations.filter(a=>a.graduated)];if(all.length===0)return 0;const ch=checks[k]||{};return Math.round(all.filter(t=>ch[t.id]).length/all.length*100);};
+  const habitToday=todayCompletion.pct;
+  const habitWeekly=useMemo(()=>{let sum=0;for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-i);sum+=habitPctForDate(dk(d));}return Math.round(sum/7);},[checks,todos,aspirations,now]);
+  const habitMonthly=useMemo(()=>{const dom=now.getDate();let sum=0;for(let i=1;i<=dom;i++){sum+=habitPctForDate(dk(new Date(now.getFullYear(),now.getMonth(),i)));}return Math.round(sum/dom);},[checks,todos,aspirations,now]);
+  const habitPrevWeekly=useMemo(()=>{let sum=0;for(let i=7;i<14;i++){const d=new Date(now);d.setDate(d.getDate()-i);sum+=habitPctForDate(dk(d));}return Math.round(sum/7);},[checks,todos,aspirations,now]);
+  const habitTrendDelta=habitWeekly-habitPrevWeekly;
+  const habitTrendArrow=habitTrendDelta>2?"↑":habitTrendDelta<-2?"↓":"→";
+  const habitTrendColor=habitTrendDelta>2?C.green:habitTrendDelta<-2?C.red:C.textDim;
+  const habitConsistency14d=useMemo(()=>{const out=[];for(let i=13;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);out.push({date:`${d.getMonth()+1}/${d.getDate()}`,pct:habitPctForDate(dk(d))});}return out;},[checks,todos,aspirations,now]);
+
+  /* ═══ FOCUS ANALYTICS — productivity only (items completed per day), never a completion %. ═══ */
+  const focusToday=focusCompletionLog[dk(now)]||0;
+  const focusWeeklyAvg=useMemo(()=>{let sum=0;for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-i);sum+=focusCompletionLog[dk(d)]||0;}return Math.round((sum/7)*10)/10;},[focusCompletionLog,now]);
+  const focusMonthlyAvg=useMemo(()=>{const dom=now.getDate();let sum=0;for(let i=1;i<=dom;i++){sum+=focusCompletionLog[dk(new Date(now.getFullYear(),now.getMonth(),i))]||0;}return Math.round((sum/dom)*10)/10;},[focusCompletionLog,now]);
+  const focusTotalThisMonth=useMemo(()=>{const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;return Object.entries(focusCompletionLog).filter(([k])=>k.startsWith(ym)).reduce((a,[,v])=>a+v,0);},[focusCompletionLog,now]);
+  const focusBestDay=useMemo(()=>Object.values(focusCompletionLog).reduce((a,v)=>Math.max(a,v),0),[focusCompletionLog]);
+  const focusBestWeek=useMemo(()=>{const keys=Object.keys(focusCompletionLog).sort();let best=0;for(let i=0;i<keys.length;i++){const start=new Date(keys[i]);let sum=0;for(let d=0;d<7;d++){const k=dk(new Date(start.getFullYear(),start.getMonth(),start.getDate()+d));sum+=focusCompletionLog[k]||0;}best=Math.max(best,sum);}return best;},[focusCompletionLog]);
+  const focusBestMonth=useMemo(()=>{const byMonth={};Object.entries(focusCompletionLog).forEach(([k,v])=>{const ym=k.slice(0,7);byMonth[ym]=(byMonth[ym]||0)+v;});return Object.values(byMonth).reduce((a,v)=>Math.max(a,v),0);},[focusCompletionLog]);
+  const focusTrend14d=useMemo(()=>{const out=[];for(let i=13;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);out.push({date:`${d.getMonth()+1}/${d.getDate()}`,items:focusCompletionLog[dk(d)]||0});}return out;},[focusCompletionLog,now]);
 
   // Weekly recap (in terms of completion %)
   const weekRecap=useMemo(()=>{
@@ -904,11 +1026,88 @@ export default function Dashboard(){
   // Recommendation — single actionable next step
   const recommendation=useMemo(()=>{
     if(weakHabits.length>0)return `Tomorrow: prioritize ${weakHabits[0].name}.`;
-    if(focusAvgPct<50)return "Tomorrow: complete at least 3 focus tasks.";
+    if(focusWeeklyAvg<2)return "Tomorrow: knock out at least 2 focus items.";
     if(winRate===0)return "Tomorrow: aim for one task before noon to build momentum.";
-    if(todayCompletion.pct<50&&todayCompletion.total>0)return `${todayCompletion.total-todayCompletion.done} tasks left today. Pick one, do it now.`;
+    if(todayCompletion.pct<50&&todayCompletion.total>0)return `${todayCompletion.total-todayCompletion.done} habits left today. Pick one, do it now.`;
     return "Keep doing what's working. Small wins compound.";
-  },[weakHabits,focusAvgPct,winRate,todayCompletion]);
+  },[weakHabits,focusWeeklyAvg,winRate,todayCompletion]);
+
+  /* ═══ PDF EXPORT — builds a branded, print-ready report and hands it to the browser's PDF engine. ═══
+     Client-side + dependency-free so it works the same on Vercel as locally. */
+  const generateExport=()=>{
+    // Resolve the selected timeframe into a [start,end] window.
+    const today=new Date();let start,end=new Date(today),rangeLabel;
+    if(exportRange==="7"){start=new Date(today);start.setDate(start.getDate()-6);rangeLabel="Last 7 Days";}
+    else if(exportRange==="30"){start=new Date(today);start.setDate(start.getDate()-29);rangeLabel="Last 30 Days";}
+    else if(exportRange==="month"){start=new Date(today.getFullYear(),today.getMonth(),1);rangeLabel=today.toLocaleDateString("en-US",{month:"long",year:"numeric"});}
+    else{start=exportCustomStart?new Date(exportCustomStart):new Date(today.getFullYear(),today.getMonth(),1);end=exportCustomEnd?new Date(exportCustomEnd):new Date(today);rangeLabel=`${fd(start)} – ${fd(end)}`;}
+    const inRange=k=>{const d=new Date(k);return d>=new Date(dk(start))&&d<=new Date(dk(end));};
+    const dayCount=Math.max(1,Math.round((new Date(dk(end))-new Date(dk(start)))/86400000)+1);
+
+    // Habits
+    const habitAll=[...todos,...aspirations.filter(a=>a.graduated)];
+    let habitSum=0,habitDays=0;
+    Object.keys(checks).filter(inRange).forEach(k=>{if(habitAll.length===0)return;const ch=checks[k]||{};habitSum+=habitAll.filter(t=>ch[t.id]).length/habitAll.length*100;habitDays++;});
+    const habitAvg=habitDays>0?Math.round(habitSum/habitDays):0;
+    // Focus
+    const focusEntries=Object.entries(focusCompletionLog).filter(([k])=>inRange(k));
+    const focusTotal=focusEntries.reduce((a,[,v])=>a+v,0);
+    const focusAvg=Math.round((focusTotal/dayCount)*10)/10;
+    const focusBest=focusEntries.reduce((a,[,v])=>Math.max(a,v),0);
+
+    const esc=s=>String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+    const acc="#D97706",ink="#1A2238",dim="#6B7280",line="#E5E0D5";
+    const card=(label,val,sub,color)=>`<div style="flex:1;min-width:120px;border:1px solid ${line};border-radius:12px;padding:16px 18px;background:#fff"><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:${dim};font-weight:700;margin-bottom:8px">${esc(label)}</div><div style="font-size:30px;font-weight:800;color:${color||ink};line-height:1">${esc(val)}</div>${sub?`<div style="font-size:11px;color:${dim};margin-top:4px">${esc(sub)}</div>`:""}</div>`;
+    const sectionTitle=t=>`<h2 style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:${acc};border-bottom:2px solid ${acc};padding-bottom:6px;margin:34px 0 16px">${esc(t)}</h2>`;
+    const bar=(label,pct,color)=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;color:${ink};margin-bottom:4px"><span>${esc(label)}</span><span style="font-weight:700;color:${color||acc}">${pct}%</span></div><div style="height:7px;background:${line};border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.min(100,pct)}%;background:${color||acc};border-radius:4px"></div></div></div>`;
+
+    let body="";
+    // Habit + Focus live under "analytics"
+    if(exportSections.analytics){
+      body+=sectionTitle("Habit Analytics · Consistency");
+      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">${card("Completion",habitAvg+"%",rangeLabel,"#059669")}${card("Current Streak",streak+"d")}${card("Longest Streak",longestHabitStreak+"d")}</div>`;
+      const strong=sortedH.filter(h=>h.rate>=50).slice(0,5);
+      if(strong.length)body+=`<div style="margin-top:14px">${strong.map(h=>bar(h.name,h.rate,"#059669")).join("")}</div>`;
+      body+=sectionTitle("Focus Analytics · Productivity");
+      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap">${card("Total Completed",focusTotal,rangeLabel,"#2563EB")}${card("Daily Average",focusAvg,"items / day","#2563EB")}${card("Best Day",focusBest,"items")}</div>`;
+    }
+    if(exportSections.goals){
+      body+=sectionTitle("Goals");
+      const outcomeGoals=aspirations.filter(a=>a.goalType==="outcome"&&!a.graduated);
+      const wkStep=wGoals.filter(g=>g.steps&&g.steps.length>0);
+      if(outcomeGoals.length===0&&wkStep.length===0)body+=`<p style="color:${dim};font-size:13px">No step-based goals in progress.</p>`;
+      wkStep.forEach(g=>{const done=g.steps.filter(s=>s.done).length;body+=bar("Weekly · "+g.text,Math.round(done/g.steps.length*100),"#EA580C");});
+      outcomeGoals.forEach(a=>{const tot=(a.steps||[]).length,done=(a.steps||[]).filter(s=>s.done).length;body+=bar("Monthly · "+a.text,tot>0?Math.round(done/tot*100):0,"#7C3AED");});
+    }
+    if(exportSections.workouts){
+      body+=sectionTitle("Workouts");
+      const ws=wHist.filter(w=>inRange(dk(new Date(w.date))));
+      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap">${card("Sessions",ws.length,rangeLabel)}${card("Total Sets",ws.reduce((a,w)=>a+w.exercises.reduce((x,e)=>x+e.sets.length,0),0))}${card("Current Weight",(bwLog.length?bwLog[bwLog.length-1].weight:0)+"kg")}</div>`;
+      if(ws.length)body+=`<table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:12px"><tr style="text-align:left;color:${dim};border-bottom:1px solid ${line}"><th style="padding:6px 4px">Date</th><th>Split</th><th>Exercises</th><th>Sets</th></tr>${ws.slice(0,12).map(w=>`<tr style="border-bottom:1px solid ${line}"><td style="padding:6px 4px">${esc(fd(w.date))}</td><td style="text-transform:uppercase">${esc(w.split)}</td><td>${w.exercises.length}</td><td>${w.exercises.reduce((a,e)=>a+e.sets.length,0)}</td></tr>`).join("")}</table>`;
+    }
+    if(exportSections.budget){
+      body+=sectionTitle("Budget");
+      const nw=acctNow.checking+acctNow.savings+acctNow.investment;
+      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap">${card("Net Worth","$"+nw.toFixed(2),null,"#059669")}${card("Debt","$"+Math.max(0,acctNow.credit).toFixed(2),null,"#DC2626")}</div>`;
+      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">${ACCT_META.map(a=>card(a.label,"$"+(acctNow[a.key]||0).toFixed(2))).join("")}</div>`;
+    }
+
+    const html=`<!doctype html><html><head><meta charset="utf-8"><title>Progress Report — ${esc(rangeLabel)}</title>
+<style>@page{margin:48px 40px}@media print{.noprint{display:none}}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:${ink};margin:0;padding:40px;background:#fff}
+.hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${acc};padding-bottom:18px;margin-bottom:8px}
+.foot{position:fixed;bottom:14px;left:0;right:0;text-align:center;font-size:9px;color:${dim}}</style></head>
+<body>
+<div class="hd"><div><div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:${acc};font-weight:800">Progress</div><div style="font-size:26px;font-weight:800;font-style:italic;margin-top:2px">Personal Report</div></div>
+<div style="text-align:right;font-size:11px;color:${dim}"><div style="font-weight:700;color:${ink};font-size:13px">${esc(rangeLabel)}</div><div>Generated ${esc(new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}))}</div></div></div>
+${body}
+<div class="foot">Progress · Personal Productivity Report · ${esc(rangeLabel)}</div>
+<div class="noprint" style="margin-top:40px;text-align:center"><button onclick="window.print()" style="background:${acc};color:#fff;border:none;border-radius:8px;padding:12px 28px;font-size:14px;font-weight:700;cursor:pointer">Save as PDF</button></div>
+<script>setTimeout(function(){window.print();},400);</script>
+</body></html>`;
+    const w=window.open("","_blank");
+    if(w){w.document.write(html);w.document.close();}
+    setShowExport(false);
+  };
 
   /* ─── MORNING LAUNCH MESSAGE — first-hour framing generator ─── */
   // Returns a single Fraunces-italic sentence that frames today. Generated from actual data.
@@ -1146,8 +1345,9 @@ export default function Dashboard(){
       if(d.completionLog)setCompletionLog(d.completionLog);if(d.activeSession)setActiveSession(d.activeSession);
       if(d.aspirations)setAspirations(d.aspirations);
       if(d.videoJournal)setVideoJournal(d.videoJournal);
-      if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",...d.accounts});
+      if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",credit:"",...d.accounts});
       if(d.subscriptions)setSubscriptions(d.subscriptions);
+      if(d.focusCompletionLog)setFocusCompletionLog(d.focusCompletionLog);
       // Migrate photoLog from main blob to separate key (one-time)
       if(d.photoLog&&d.photoLog.length>0){try{localStorage.setItem("dash-v18-photos",JSON.stringify(d.photoLog));}catch(e){}}
     }
@@ -1182,10 +1382,10 @@ export default function Dashboard(){
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions]);
+  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -1257,16 +1457,64 @@ export default function Dashboard(){
   const sessionElapsed=activeSession?Math.floor((Date.now()-activeSession.startTime)/1000):0;
   const fmtTime=s=>{const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h>0?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`;};
 
-  /* ─── Budget ─── */
+  /* ─── Budget: calendar plumbing ─── */
   const bY=bMonth.getFullYear(),bM=bMonth.getMonth(),bDIM=new Date(bY,bM+1,0).getDate(),bFD=new Date(bY,bM,1).getDay(),bCM=bY===now.getFullYear()&&bM===now.getMonth();
   const bDK=d=>`${bY}-${String(bM+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-  const bGT=d=>txns[bDK(d)]||[];const bGN=d=>bGT(d).reduce((a,t)=>a+(t.type==="in"?t.amount:-t.amount),0);
-  const aTx=()=>{if(!txF.amount||!selDay)return;const k=bDK(selDay);setTxns(p=>({...p,[k]:[...(p[k]||[]),{id:uid(),type:txF.type,amount:parseFloat(txF.amount),desc:txF.desc||""}]}));setTxF({type:"out",amount:"",desc:""});};
-  const rTx=(d,id)=>{const k=bDK(d);setTxns(p=>({...p,[k]:(p[k]||[]).filter(t=>t.id!==id)}));};
-  const bTot=useMemo(()=>{let i=0,o=0;for(let d=1;d<=bDIM;d++)bGT(d).forEach(t=>{if(t.type==="in")i+=t.amount;else o+=t.amount;});return{i,o,net:i-o};},[txns,bY,bM,bDIM]);
+  const bGT=d=>txns[bDK(d)]||[];
+  // Net cash-flow for a day — transfers are excluded since they move money between accounts rather than in/out overall.
+  const bGN=d=>bGT(d).reduce((a,t)=>t.type==="in"?a+t.amount:t.type==="out"?a-t.amount:a,0);
 
-  /* ─── Financial Snapshot (account balances + subscriptions) ─── */
-  const acctTotal=useMemo(()=>["checking","savings","cash","investment"].reduce((a,k)=>a+(parseFloat(accounts[k])||0),0),[accounts]);
+  /* ─── Ledger: every account balance is opening balance + every transaction that ever touched it. ───
+     Balances are NEVER stored directly — they're always derived here, so editing or deleting any past
+     transaction automatically keeps every total correct. */
+  const allTx=useMemo(()=>Object.entries(txns).flatMap(([date,arr])=>(arr||[]).map(t=>({...t,date}))),[txns]);
+  const computeBalances=cutoffKey=>{
+    const bal={checking:parseFloat(accounts.checking)||0,savings:parseFloat(accounts.savings)||0,credit:parseFloat(accounts.credit)||0,investment:parseFloat(accounts.investment)||0};
+    for(const t of allTx){
+      if(cutoffKey&&t.date>cutoffKey)continue;
+      if(t.type==="transfer"){
+        if(bal[t.account]!==undefined)bal[t.account]-=t.amount;
+        // Paying a credit card down REDUCES debt rather than adding a deposit to it.
+        if(bal[t.toAccount]!==undefined)bal[t.toAccount]+=(t.toAccount==="credit"?-t.amount:t.amount);
+      }else if(bal[t.account]!==undefined){
+        // For the credit account, "in" (a refund/credit) reduces debt and "out" (a purchase) increases it.
+        const sign=t.account==="credit"?-1:1;
+        bal[t.account]+=(t.type==="in"?sign:-sign)*t.amount;
+      }
+    }
+    return bal;
+  };
+  const acctNow=useMemo(()=>computeBalances(null),[allTx,accounts]);
+  const acct30Ago=useMemo(()=>computeBalances(dk(new Date(Date.now()-30*86400000))),[allTx,accounts]);
+  const netWorth=acctNow.checking+acctNow.savings+acctNow.investment;
+  const debt=Math.max(0,acctNow.credit);
+  const netWorthGoal=parseFloat(settings.netWorthGoal)||1000;
+  const debtThreshold=parseFloat(settings.debtWarningThreshold)||1000;
+  const netWorthColor=gradColor(netWorth<=0?0:Math.min(1,netWorth/netWorthGoal));
+  const debtColor=gradColor(1-Math.min(1,debt/Math.max(1,debtThreshold)));
+
+  /* ─── Add / edit / delete a ledger transaction (the only way balances ever change) ─── */
+  const txValid=!!txF.amount&&parseFloat(txF.amount)>0&&!!txF.account&&(txF.type!=="transfer"||(!!txF.toAccount&&txF.toAccount!==txF.account));
+  const aTx=()=>{
+    if(!txValid||!selDay)return;
+    const k=bDK(selDay);
+    const rec={id:editingTx?.id||uid(),type:txF.type,amount:parseFloat(txF.amount),desc:txF.desc||"",account:txF.account,...(txF.type==="transfer"?{toAccount:txF.toAccount}:{})};
+    setTxns(p=>{
+      if(editingTx){ // moving (or keeping) the edited record into the currently-selected day, removed from wherever it was
+        const without={...p,[editingTx.day]:(p[editingTx.day]||[]).filter(t=>t.id!==editingTx.id)};
+        return{...without,[k]:[...(without[k]||[]),rec]};
+      }
+      return{...p,[k]:[...(p[k]||[]),rec]};
+    });
+    setTxF({type:"out",amount:"",desc:"",account:"",toAccount:""});setEditingTx(null);
+  };
+  const rTx=(d,id)=>{const k=bDK(d);setTxns(p=>({...p,[k]:(p[k]||[]).filter(t=>t.id!==id)}));if(editingTx?.day===k&&editingTx?.id===id)cancelEditTx();};
+  const startEditTx=(d,t)=>{setEditingTx({day:bDK(d),id:t.id});setTxF({type:t.type,amount:String(t.amount),desc:t.desc||"",account:t.account||"",toAccount:t.toAccount||""});};
+  const cancelEditTx=()=>{setEditingTx(null);setTxF({type:"out",amount:"",desc:"",account:"",toAccount:""});};
+  // Income/expense totals for the month — transfers are excluded since they're neither income nor a true expense.
+  const bTot=useMemo(()=>{let i=0,o=0;for(let d=1;d<=bDIM;d++)bGT(d).forEach(t=>{if(t.type==="in")i+=t.amount;else if(t.type==="out")o+=t.amount;});return{i,o,net:i-o};},[txns,bY,bM,bDIM]);
+
+  /* ─── Subscriptions ─── */
   const subTotal=useMemo(()=>subscriptions.reduce((a,s)=>a+(parseFloat(s.cost)||0),0),[subscriptions]);
   const upcomingBills=useMemo(()=>{const today=now.getDate();return subscriptions.map(s=>{const day=Math.min(31,Math.max(1,parseInt(s.billDay)||1));let du=day-today;if(du<0)du+=30;return{...s,day,daysUntil:du};}).sort((a,b)=>a.daysUntil-b.daysUntil);},[subscriptions,now]);
   const addSubscription=()=>{if(!subForm.name.trim())return;setSubscriptions(p=>[...p,{id:uid(),name:subForm.name.trim(),cost:subForm.cost||"0",billDay:subForm.billDay||"1",category:subForm.category.trim()}]);setSubForm({name:"",cost:"",billDay:"",category:""});setAddSub(false);};
@@ -1640,7 +1888,7 @@ export default function Dashboard(){
         {tab==="today"&&!structuredMode&&(()=>{
           const mPct=morningT.length>0?Math.round(morningT.filter(t=>dc[t.id]).length/morningT.length*100):0;
           const ePct=nightT.length>0?Math.round(nightT.filter(t=>dc[t.id]).length/nightT.length*100):0;
-          const empties={morning:"The day hasn't started yet.",allday:"What are you actually going to do today?",evening:"Nothing to close out. Rest, or add something worth doing."};
+          const empties={morning:"The day hasn't started yet.",focus:"What are you actually going to do today?",evening:"Nothing to close out. Rest, or add something worth doing."};
           return(<div className="tab-content" style={{paddingBottom:140}}>
           {/* ═══ RECOVERY CARD — replaces launch card after a rough day ═══ */}
           {recoveryData&&(()=>{
@@ -1737,12 +1985,12 @@ export default function Dashboard(){
 
           {/* Section 1: Living banner — reacts to your day */}
           <div style={{height:180,borderRadius:14,overflow:"hidden",marginBottom:18,border:`1px solid ${C.hairline}`}}>
-            <BannerScene mode={recoveryData?"morning":todaySub==="morning"?"morning":todaySub==="allday"?"day":"evening"} dayPct={recoveryData?0:todayCompletion.pct} morningPct={recoveryData?0:mPct} eveningPct={recoveryData?0:ePct} />
+            <BannerScene mode={recoveryData?"morning":todaySub==="morning"?"morning":todaySub==="focus"?"day":"evening"} dayPct={recoveryData?0:todayCompletion.pct} morningPct={recoveryData?0:mPct} eveningPct={recoveryData?0:ePct} />
           </div>
 
           {/* Section 2: Big tab selector */}
           <div style={{display:"flex",gap:0,marginBottom:22,borderBottom:`1px solid ${C.hairline}`}}>
-            {[{k:"morning",l:"Morning"},{k:"allday",l:"All Day"},{k:"evening",l:"Evening"}].map(s=>{const on=todaySub===s.k;return(
+            {[{k:"morning",l:"Morning"},{k:"evening",l:"Evening"},{k:"focus",l:"Focus"}].map(s=>{const on=todaySub===s.k;return(
               <button key={s.k} onClick={()=>setTodaySub(s.k)} style={{flex:1,padding:"16px 8px",background:"transparent",border:"none",borderBottom:on?`2px solid ${C.accent}`:"2px solid transparent",cursor:"pointer",color:on?C.text:C.textDim,fontFamily:FN.b,fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s ease",marginBottom:-1}}>{s.l}</button>
             );})}
           </div>
@@ -1751,34 +1999,93 @@ export default function Dashboard(){
             {morningT.length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.morning}</div>}
             {morningTSorted.map(t=><TRow key={t.id} t={t} />)}
           </div>}
-          {todaySub==="allday"&&<div>
-            {focusTasks.length===0&&goalDerivedFocus.filter(g=>!g.hitToday).length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.allday}</div>}
-            {/* Goal-derived focus tasks — auto-surfaced from the goals system */}
-            {goalDerivedFocus.map(a=>{
-              const on=!!(dc[a.id]);const flash=justChecked[a.id];
-              const handleCheck=()=>{if(!on){flashChecked(a.id);}setChecks(p=>({...p,[vk]:{...(p[vk]||{}),[a.id]:!on}}));};
-              const prog=aspirationProgress.find(x=>x.id===a.goalId);
-              return(
-                <div key={a.id} style={{position:"relative",marginBottom:10}}>
-                  <div className={`task-row${flash?" just-checked":""}`} style={{position:"relative",display:"flex",alignItems:"center",gap:14,padding:"18px 18px",borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,opacity:on?0.65:1,overflow:"hidden",transition:"opacity 0.5s ease"}}>
-                    {on&&<div style={{position:"absolute",inset:0,borderRadius:10,pointerEvents:"none",overflow:"hidden",borderLeft:`3px solid ${C.green}`}}>
-                      {!flash&&<div style={{position:"absolute",inset:0,background:theme==="light"?"rgba(5,150,105,0.10)":"rgba(52,211,153,0.18)"}}/>}
-                      {flash&&<div className="sweep-fill" style={{background:theme==="light"?"rgba(5,150,105,0.14)":"rgba(52,211,153,0.24)"}}/>}
-                    </div>}
-                    {/* Amber dot — marks this as goal-derived */}
-                    <div style={{position:"relative",zIndex:2,width:4,height:4,borderRadius:"50%",background:C.accent,flexShrink:0,boxShadow:`0 0 6px ${C.accent}`}}/>
-                    <div onClick={handleCheck} style={{position:"relative",zIndex:2,width:22,height:22,borderRadius:4,flexShrink:0,border:`1.5px solid ${on?C.greenBright:C.textDim}`,background:on?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:13,fontWeight:800,cursor:"pointer",transition:"all 0.3s ease"}}>{on&&"✓"}</div>
-                    <div onClick={handleCheck} style={{position:"relative",zIndex:2,flex:1,cursor:"pointer",display:"flex",flexDirection:"column",gap:a.implementationIntention?3:0}}>
-                      {a.implementationIntention&&<span style={{fontSize:8,fontFamily:FN.m,color:C.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.12em",opacity:on?0.5:0.85}}>{a.implementationIntention}</span>}
-                      <span style={{fontSize:20,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:on?C.textDim:C.text,transition:"color 0.4s ease"}}>{a.text}</span>
-                    </div>
-                    <span style={{position:"relative",zIndex:2,fontSize:9,fontFamily:FN.m,color:prog?.onPace?C.green:C.red,fontWeight:700,letterSpacing:"0.06em"}}>{prog?`${prog.daysHit}/${prog.target}`:""}</span>
+          {todaySub==="focus"&&(()=>{
+            const dailyTasks=focusTasks.filter(t=>!dc[t.id]); // one-and-done: complete and disappear
+            const weeklyGoals=weeklyFocusGoals;
+            const monthlyGoals=monthlyFocusGoals;
+            const FOCUS_BLUE="#60A5FA",FOCUS_ORANGE="#FB923C",FOCUS_PURPLE="#A78BFA";
+            const SectionHeader=({title,color,count})=>(
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,marginTop:18}}>
+                <div style={{width:8,height:8,borderRadius:2,background:color}}/>
+                <span style={{fontSize:11,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.1em"}}>{title}</span>
+                <span style={{fontSize:9,fontFamily:FN.m,color:C.textDim,fontWeight:700}}>{count}</span>
+              </div>
+            );
+            // Expandable goal card with a dropdown of step / occurrence checkboxes
+            const GoalCard=({goal,color,badge,summary,children})=>{
+              const collapsed=focusCollapsed[goal.id];
+              return(<div style={{marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${color}`,overflow:"hidden"}}>
+                <div onClick={()=>setFocusCollapsed(p=>({...p,[goal.id]:!p[goal.id]}))} style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",cursor:"pointer"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:9,fontFamily:FN.m,color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>{badge}</div>
+                    <div style={{fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:C.text,overflow:"hidden",textOverflow:"ellipsis"}}>{goal.text}</div>
                   </div>
+                  <span style={{fontSize:11,fontFamily:FN.m,fontWeight:700,color,flexShrink:0}}>{summary}</span>
+                  <span style={{fontSize:12,color:C.textDim,transform:collapsed?"none":"rotate(180deg)",transition:"transform 0.2s ease",flexShrink:0}}>▾</span>
                 </div>
-              );
-            })}
-            {focusTasks.map(t=><TRow key={t.id} t={t} big />)}
-          </div>}
+                {!collapsed&&<div style={{padding:"0 16px 12px"}}>{children}</div>}
+              </div>);
+            };
+            const StepRow=({done,active,text,onToggle,color,flashKey})=>{const flash=justChecked[flashKey];return(
+              <div onClick={onToggle} className={flash?"just-checked":""} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",cursor:"pointer",borderTop:`1px solid ${C.hairline}`}}>
+                <div style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${done?C.greenBright:active?color:C.textDim}`,background:done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:10,fontWeight:800,flexShrink:0}}>{done&&"✓"}</div>
+                <span style={{fontSize:13,color:done?C.textDim:C.text,textDecoration:done?"line-through":"none",fontWeight:active&&!done?700:400,flex:1}}>{text}</span>
+                {active&&!done&&<span style={{fontSize:8,fontFamily:FN.m,color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Next</span>}
+              </div>);
+            };
+            const empty=dailyTasks.length===0&&weeklyGoals.length===0&&monthlyGoals.length===0;
+            return(<div>
+              {empty&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.focus}</div>}
+
+              {/* Section 1 — Daily Tasks (highest priority) */}
+              {dailyTasks.length>0&&<>
+                <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length}/>
+                {dailyTasks.map(t=><TRow key={t.id} t={t} big />)}
+              </>}
+
+              {/* Section 2 — Weekly Goals (second priority): checkbox dropdowns */}
+              {weeklyGoals.length>0&&<>
+                <SectionHeader title="Weekly Goals" color={FOCUS_ORANGE} count={weeklyGoals.length}/>
+                {weeklyGoals.map(goal=>{
+                  if(goal.kind==="steps"){
+                    const activeId=goal.steps.find(s=>!s.done)?.id;
+                    return(<GoalCard key={goal.id} goal={goal} color={FOCUS_ORANGE} badge="Weekly" summary={`${goal.done}/${goal.total}`}>
+                      {goal.steps.map(s=><StepRow key={s.id} done={s.done} active={s.id===activeId} text={s.text} color={FOCUS_ORANGE} flashKey={s.id} onToggle={()=>toggleWeeklyStep(goal.id,s.id)} />)}
+                    </GoalCard>);
+                  }
+                  return(<GoalCard key={goal.id} goal={goal} color={FOCUS_ORANGE} badge="Weekly" summary={`${goal.current}/${goal.target}`}>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8,paddingTop:12,borderTop:`1px solid ${C.hairline}`}}>
+                      {Array.from({length:goal.target}).map((_,i)=>{const checked=i<goal.current;return(
+                        <div key={i} onClick={()=>setWeeklyCount(goal.id,checked?i:i+1)} style={{width:36,height:36,borderRadius:8,border:`1.5px solid ${checked?C.greenBright:C.textDim}`,background:checked?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:checked?C.btnText:C.textDim,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:FN.m,transition:"all 0.2s ease"}}>{checked?"✓":i+1}</div>
+                      );})}
+                    </div>
+                  </GoalCard>);
+                })}
+              </>}
+
+              {/* Section 3 — Monthly Goals (third priority): outcome = step dropdown, habit/measurable = single daily checkbox */}
+              {monthlyGoals.length>0&&<>
+                <SectionHeader title="Monthly Goals" color={FOCUS_PURPLE} count={monthlyGoals.length}/>
+                {monthlyGoals.map(goal=>{
+                  if(goal.kind==="steps"){
+                    const activeId=goal.steps.find(s=>!s.done)?.id;
+                    return(<GoalCard key={goal.id} goal={goal} color={FOCUS_PURPLE} badge="Monthly" summary={`${goal.done}/${goal.total}`}>
+                      {goal.steps.map(s=><StepRow key={s.id} done={s.done} active={s.id===activeId} text={s.text} color={FOCUS_PURPLE} flashKey={s.id} onToggle={()=>toggleMonthlyStep(goal.id,s.id)} />)}
+                    </GoalCard>);
+                  }
+                  // habit / measurable daily action — single checkbox row (no sub-steps to expand)
+                  const flash=justChecked[goal.id];
+                  return(<div key={goal.id} onClick={()=>toggleMonthlyAction(goal.id)} className={`task-row${flash?" just-checked":""}`} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 18px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${FOCUS_PURPLE}`,cursor:"pointer"}}>
+                    <div style={{width:22,height:22,borderRadius:4,flexShrink:0,border:`1.5px solid ${C.textDim}`,display:"flex",alignItems:"center",justifyContent:"center"}}/>
+                    <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:2}}>
+                      <span style={{fontSize:9,fontFamily:FN.m,color:FOCUS_PURPLE,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Monthly{goal.implementationIntention?` · ${goal.implementationIntention}`:""}</span>
+                      <span style={{fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:C.text}}>{goal.actionText}</span>
+                    </div>
+                  </div>);
+                })}
+              </>}
+            </div>);
+          })()}
           {todaySub==="evening"&&<div>
             {nightT.length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.evening}</div>}
             {nightTSorted.map(t=><TRow key={t.id} t={t} />)}
@@ -1829,6 +2136,14 @@ export default function Dashboard(){
 
         {/* ═══ ANALYTICS ═══ (simplified) */}
         {tab==="analytics"&&<div className="tab-content">
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <h2 style={{fontWeight:700,fontSize:18,margin:0,fontFamily:FN.h,fontStyle:"italic"}}>Analytics Hub</h2>
+            <button onClick={()=>{setExportStep(1);setShowExport(true);}} className="press" style={{...btnB,display:"flex",alignItems:"center",gap:6}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export
+            </button>
+          </div>
+
           {/* WEEKLY INSIGHT — actionable, dynamic, top of analytics */}
           <div style={{...card,marginBottom:14,padding:"18px 20px",borderLeft:`3px solid ${C.accent}`,background:`linear-gradient(135deg,${C.accentSoft},${C.surface})`}}>
             <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>This Week · Insight</div>
@@ -1839,10 +2154,60 @@ export default function Dashboard(){
             </div>
           </div>
 
+          {/* ═══ HABIT ANALYTICS — consistency ═══ */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{width:8,height:8,borderRadius:2,background:C.green}}/>
+            <span style={{fontSize:12,fontWeight:800,color:C.green,textTransform:"uppercase",letterSpacing:"0.1em"}}>Habit Analytics</span>
+            <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>consistency</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+            {[{l:"Today",v:habitToday},{l:"Weekly",v:habitWeekly},{l:"Monthly",v:habitMonthly}].map((s,i)=>(<div key={i} style={{...card,padding:"16px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{s.l}</div><div className="hero-num" style={{fontSize:26,color:pC(s.v),lineHeight:1}}>{s.v}<span style={{fontSize:12,color:C.textDim}}>%</span></div></div>))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+            <div style={{...card,padding:"14px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Streak</div><div style={{fontSize:20,fontWeight:800,color:streak>=7?C.green:streak>=3?C.accent:C.text,fontFamily:FN.m}}>{streak}<span style={{fontSize:10,color:C.textDim}}>d</span></div></div>
+            <div style={{...card,padding:"14px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Longest</div><div style={{fontSize:20,fontWeight:800,color:C.text,fontFamily:FN.m}}>{longestHabitStreak}<span style={{fontSize:10,color:C.textDim}}>d</span></div></div>
+            <div style={{...card,padding:"14px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Trend</div><div style={{fontSize:20,fontWeight:800,color:habitTrendColor,fontFamily:FN.m}}>{habitTrendArrow}{habitTrendDelta>0?"+":""}{habitTrendDelta}<span style={{fontSize:10,color:C.textDim}}>%</span></div></div>
+          </div>
+          <div style={{...card,marginBottom:18}}>
+            <div style={lbl}>Consistency · Last 14 Days</div>
+            <ResponsiveContainer width="100%" height={140}><LineChart data={habitConsistency14d}><CartesianGrid strokeDasharray="3 3" stroke={C.surfaceDim} vertical={false}/><XAxis dataKey="date" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} interval={2}/><YAxis domain={[0,100]} tick={{fill:C.textDim,fontSize:10}} axisLine={false} tickLine={false} width={28}/><Tooltip content={<Tip />}/><Line type="monotone" dataKey="pct" stroke={C.green} strokeWidth={2} dot={false} name="%"/></LineChart></ResponsiveContainer>
+          </div>
+
+          {/* ═══ FOCUS ANALYTICS — productivity (items/day, never %) ═══ */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{width:8,height:8,borderRadius:2,background:"#60A5FA"}}/>
+            <span style={{fontSize:12,fontWeight:800,color:"#60A5FA",textTransform:"uppercase",letterSpacing:"0.1em"}}>Focus Analytics</span>
+            <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>productivity</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+            <div style={{...card,padding:"16px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Today</div><div className="hero-num" style={{fontSize:26,color:C.text,lineHeight:1}}>{focusToday}</div><div style={{fontSize:8,color:C.textDim,fontFamily:FN.m,marginTop:2}}>completed</div></div>
+            <div style={{...card,padding:"16px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Weekly</div><div className="hero-num" style={{fontSize:26,color:"#60A5FA",lineHeight:1}}>{focusWeeklyAvg}</div><div style={{fontSize:8,color:C.textDim,fontFamily:FN.m,marginTop:2}}>items/day</div></div>
+            <div style={{...card,padding:"16px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Monthly</div><div className="hero-num" style={{fontSize:26,color:"#60A5FA",lineHeight:1}}>{focusMonthlyAvg}</div><div style={{fontSize:8,color:C.textDim,fontFamily:FN.m,marginTop:2}}>items/day</div></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            <div style={{...card,padding:"14px 16px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Total This Month</div><div style={{fontSize:22,fontWeight:800,color:C.text,fontFamily:FN.m}}>{focusTotalThisMonth}<span style={{fontSize:11,color:C.textDim,fontWeight:500}}> items</span></div></div>
+            <div style={{...card,padding:"14px 16px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Best Day</div><div style={{fontSize:22,fontWeight:800,color:C.green,fontFamily:FN.m}}>{focusBestDay}<span style={{fontSize:11,color:C.textDim,fontWeight:500}}> items</span></div></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            <div style={{...card,padding:"14px 16px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Best Week</div><div style={{fontSize:22,fontWeight:800,color:C.text,fontFamily:FN.m}}>{focusBestWeek}<span style={{fontSize:11,color:C.textDim,fontWeight:500}}> items</span></div></div>
+            <div style={{...card,padding:"14px 16px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Best Month</div><div style={{fontSize:22,fontWeight:800,color:C.text,fontFamily:FN.m}}>{focusBestMonth}<span style={{fontSize:11,color:C.textDim,fontWeight:500}}> items</span></div></div>
+          </div>
+          <div style={{...card,marginBottom:18}}>
+            <div style={lbl}>Productivity · Items Completed Per Day</div>
+            <ResponsiveContainer width="100%" height={140}><BarChart data={focusTrend14d}><CartesianGrid strokeDasharray="3 3" stroke={C.surfaceDim} vertical={false}/><XAxis dataKey="date" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} interval={2}/><YAxis allowDecimals={false} tick={{fill:C.textDim,fontSize:10}} axisLine={false} tickLine={false} width={24}/><Tooltip content={<Tip />}/><Bar dataKey="items" fill="#60A5FA" radius={[3,3,0,0]} name="items"/></BarChart></ResponsiveContainer>
+          </div>
+
+          {/* ═══ GOAL PROGRESS — completed steps ÷ total ═══ */}
+          {(aspirations.filter(a=>a.goalType==="outcome"&&!a.graduated).length>0||wGoals.some(g=>g.steps&&g.steps.length>0))&&<div style={{...card,marginBottom:18}}>
+            <div style={lbl}>Goal Progress</div>
+            {wGoals.filter(g=>g.steps&&g.steps.length>0).map(g=>{const done=g.steps.filter(s=>s.done).length;const pct=Math.round(done/g.steps.length*100);return(<div key={g.id} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:C.text}}><span style={{fontSize:8,color:"#FB923C",fontWeight:700,textTransform:"uppercase",marginRight:6}}>Weekly</span>{g.text}</span><span style={{fontSize:11,fontFamily:FN.m,fontWeight:700,color:C.accent}}>{done}/{g.steps.length} · {pct}%</span></div><div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:"#FB923C",borderRadius:2}}/></div></div>);})}
+            {aspirations.filter(a=>a.goalType==="outcome"&&!a.graduated).map(a=>{const done=(a.steps||[]).filter(s=>s.done).length;const tot=(a.steps||[]).length;const pct=tot>0?Math.round(done/tot*100):0;return(<div key={a.id} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:C.text}}><span style={{fontSize:8,color:"#A78BFA",fontWeight:700,textTransform:"uppercase",marginRight:6}}>Monthly</span>{a.text}</span><span style={{fontSize:11,fontFamily:FN.m,fontWeight:700,color:C.accent}}>{done}/{tot} · {pct}%</span></div><div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:"#A78BFA",borderRadius:2}}/></div></div>);})}
+          </div>}
+
           {/* Top metric cards: Completion, Focus — now with trend indicators */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
             <div style={{...card,padding:"22px 18px"}}>
-              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:12}}>Completion</div>
+              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:12}}>Habit Month Avg</div>
               <div className="hero-num" style={{fontSize:48,color:C.text,lineHeight:1}}>{monthCompletionAvg}<span style={{fontSize:20,color:C.textDim}}>%</span></div>
               <div style={{fontSize:10,color:C.textDim,marginTop:8,fontFamily:FN.m,display:"flex",alignItems:"center",gap:6}}>
                 <span>month avg</span>
@@ -1964,10 +2329,11 @@ export default function Dashboard(){
                   <button onClick={()=>openGoalEdit(a,"monthly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px",flexShrink:0}}>edit</button>
                 </div>
                 {(a.goalType==="habit"||a.goalType==="measurable")&&<div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>=80?C.greenBright:pct>=50?C.accent:C.red,borderRadius:2,transition:"width 0.5s ease"}}/></div>}
-                {a.goalType==="outcome"&&<div style={{marginTop:6}}>{(a.steps||[]).map((s,si)=>(<div key={s.id||si} onClick={()=>setAspirations(p=>p.map(g=>g.id===a.id?{...g,steps:g.steps.map((st,i)=>i===si?{...st,done:!st.done}:st)}:g))} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",cursor:"pointer",borderTop:si>0?`1px solid ${C.hairline}`:"none"}}>
-                  <div style={{width:16,height:16,borderRadius:3,border:`1.5px solid ${s.done?C.greenBright:C.textDim}`,background:s.done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:9,fontWeight:800,flexShrink:0}}>{s.done&&"✓"}</div>
-                  <span style={{fontSize:12,color:s.done?C.textDim:C.text,textDecoration:s.done?"line-through":"none"}}>{s.text}</span>
-                </div>))}</div>}
+                {a.goalType==="outcome"&&(()=>{const total=(a.steps||[]).length;const done=(a.steps||[]).filter(s=>s.done).length;const sp=total>0?Math.round(done/total*100):0;const activeId=(a.steps||[]).find(s=>!s.done)?.id;return(<><div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",marginBottom:6}}><div style={{height:"100%",width:`${sp}%`,background:sp>=100?C.greenBright:C.accent,borderRadius:2,transition:"width 0.5s ease"}}/></div><div>{(a.steps||[]).map((s,si)=>{const isActive=s.id===activeId;return(<div key={s.id||si} onClick={()=>{const turningOn=!s.done;setAspirations(p=>p.map(g=>g.id===a.id?{...g,steps:g.steps.map((st,i)=>i===si?{...st,done:!st.done}:st)}:g));logFocusCompletion(turningOn?1:-1);}} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",cursor:"pointer",borderTop:si>0?`1px solid ${C.hairline}`:"none"}}>
+                  <div style={{width:16,height:16,borderRadius:3,border:`1.5px solid ${s.done?C.greenBright:isActive?C.accent:C.textDim}`,background:s.done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:9,fontWeight:800,flexShrink:0}}>{s.done&&"✓"}</div>
+                  <span style={{fontSize:12,color:s.done?C.textDim:C.text,textDecoration:s.done?"line-through":"none",fontWeight:isActive?700:400}}>{s.text}</span>
+                  {isActive&&<span style={{fontSize:8,fontFamily:FN.m,color:C.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginLeft:"auto"}}>Active</span>}
+                </div>);})}</div></>);})()}
               </SwipeRow>
             );})}
             <button onClick={()=>setShowGoalCreator(true)} style={{width:"100%",background:"transparent",border:`1px dashed ${C.hairline}`,borderRadius:10,padding:14,color:C.textDim,fontSize:11,fontWeight:600,cursor:"pointer",marginTop:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>+ Create a Goal</button>
@@ -1975,7 +2341,42 @@ export default function Dashboard(){
 
           {/* ─── WEEKLY (auto-derived) ─── */}
           {gTab==="weekly"&&<div>
-            {weeklyTargets.length===0&&<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>Add monthly goals first — weekly targets derive automatically.</div>}
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>{!showAddWeekly&&<button onClick={()=>setShowAddWeekly(true)} className="press" style={btnB}>+ New Weekly Goal</button>}</div>
+            {showAddWeekly&&<div style={{...card,marginBottom:16}}>
+              <input value={nWkText} onChange={e=>setNWkText(e.target.value)} placeholder="e.g. Create Presentation" style={{...inp,marginBottom:10,fontSize:14,fontFamily:FN.h,fontStyle:"italic"}} autoFocus/>
+              <div style={{fontSize:11,fontWeight:600,color:C.textDim,marginBottom:8}}>Optional — ordered steps (active step auto-advances when checked off):</div>
+              {nWkSteps.map((s,i)=>(<input key={i} value={s} onChange={e=>{const n=[...nWkSteps];n[i]=e.target.value;setNWkSteps(n);}} placeholder={`Step ${i+1}...`} style={{...inp,marginBottom:8}}/>))}
+              {nWkSteps.length<5&&<button onClick={()=>setNWkSteps(p=>[...p,""])} style={{...btnG,width:"100%",fontSize:10,marginBottom:10}}>+ Add step</button>}
+              <div style={{fontSize:11,fontWeight:600,color:C.textDim,marginBottom:8}}>— or, if no steps, a weekly target count:</div>
+              <input type="number" min="1" value={nWkTarget} onChange={e=>setNWkTarget(e.target.value)} placeholder="e.g. 4 (times this week)" style={{...numI,width:"100%",marginBottom:12}}/>
+              <div style={{display:"flex",gap:8}}><button onClick={addWeeklyGoal} disabled={!nWkText.trim()} style={{...btnB,flex:1,opacity:nWkText.trim()?1:0.4}}>Create</button><button onClick={()=>{setShowAddWeekly(false);setNWkText("");setNWkTarget("");setNWkSteps(["","",""]);}} style={btnG}>Cancel</button></div>
+            </div>}
+
+            {wGoals.length===0&&!showAddWeekly&&<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>No weekly goals yet — create one above.</div>}
+            {wGoals.map(g=>{
+              const active=weeklyActiveStep(g);
+              const hasSteps=g.steps&&g.steps.length>0;
+              const pct=hasSteps?Math.round((g.steps.filter(s=>s.done).length/g.steps.length)*100):Math.min(100,((g.current||0)/(g.target||1))*100);
+              return(
+              <SwipeRow key={g.id} onDelete={()=>setWGoals(p=>p.filter(x=>x.id!==g.id))} bg={C.surface} padY={12}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <span style={{fontSize:13,fontWeight:600,color:C.text}}>{g.text}</span>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    {!hasSteps&&<button onClick={()=>openGoalEdit(g,"weekly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px"}}>edit</button>}
+                    {hasSteps?<span style={{fontFamily:FN.m,fontSize:11,fontWeight:700,color:C.accent}}>{pct}%</span>:<>
+                      <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?{...x,current:Math.max(0,(x.current||0)-1)}:x))} style={{...btnG,padding:"3px 10px",fontSize:12}}>−</button>
+                      <span style={{fontFamily:FN.m,fontSize:12,fontWeight:700,minWidth:40,textAlign:"center"}}>{g.current||0}/{g.target}</span>
+                      <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?{...x,current:(x.current||0)+1}:x))} style={{...btnG,padding:"3px 10px",fontSize:12}}>+</button>
+                    </>}
+                  </div>
+                </div>
+                {hasSteps&&<div style={{fontSize:11,color:C.textDim,padding:"4px 0",fontFamily:FN.b}}>{active?<>Active step: <span style={{color:"#FB923C",fontWeight:600}}>{active.text}</span></>:<span style={{color:C.green,fontWeight:600}}>All steps complete ✓</span>}</div>}
+                <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",marginTop:4}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:C.accent,borderRadius:2,transition:"width 0.5s ease"}}/></div>
+              </SwipeRow>
+            );})}
+
+            {/* Auto-derived weekly pacing forecast from monthly goals (read-only — these steps are completed via the Monthly goal itself) */}
+            {weeklyTargets.length>0&&<div style={{marginTop:20}}><div style={{...lbl,marginBottom:8}}>Weekly Pace — from Monthly Goals</div>
             {weeklyTargets.map(w=>(<div key={w.goalId} style={{...card,padding:16,marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
                 <span style={{fontSize:13,fontWeight:600,color:C.text}}>{w.text}</span>
@@ -1984,37 +2385,27 @@ export default function Dashboard(){
               {w.type==="steps"&&w.steps&&w.steps.map((s,i)=>(<div key={s.id||i} style={{fontSize:11,color:C.textDim,padding:"4px 0",borderTop:i>0?`1px solid ${C.hairline}`:"none"}}>→ {s.text}</div>))}
               <div style={{fontSize:9,color:C.textDim,fontFamily:FN.m,marginTop:6}}>Auto-derived from monthly goal</div>
             </div>))}
-            {/* Legacy weekly goals */}
-            {wGoals.length>0&&<div style={{marginTop:16}}><div style={{...lbl,marginBottom:8}}>Manual Weekly Goals</div>
-            {wGoals.map(g=>{const pct=Math.min(100,((g.current||0)/g.target)*100);return(
-              <SwipeRow key={g.id} onDelete={()=>setWGoals(p=>p.filter(x=>x.id!==g.id))} bg={C.surface} padY={12}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <span style={{fontSize:13,fontWeight:600,color:C.text}}>{g.text}</span>
-                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                    <button onClick={()=>openGoalEdit(g,"weekly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px"}}>edit</button>
-                    <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?{...x,current:Math.max(0,(x.current||0)-1)}:x))} style={{...btnG,padding:"3px 10px",fontSize:12}}>−</button>
-                    <span style={{fontFamily:FN.m,fontSize:12,fontWeight:700,minWidth:40,textAlign:"center"}}>{g.current||0}/{g.target}</span>
-                    <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?{...x,current:(x.current||0)+1}:x))} style={{...btnG,padding:"3px 10px",fontSize:12}}>+</button>
-                  </div>
-                </div>
-                <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:C.accent,borderRadius:2,transition:"width 0.5s ease"}}/></div>
-              </SwipeRow>
-            );})}
             </div>}
           </div>}
 
-          {/* ─── FOCUS (auto-derived daily tasks) ─── */}
+          {/* ─── FOCUS — only the active step for every Weekly and Monthly goal, with parent context ─── */}
           {gTab==="focus"&&<div>
-            <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginBottom:14}}>These surface automatically on your Today tab. Check them off there.</div>
-            {goalDerivedFocus.length===0&&<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>No active goals generating daily tasks.</div>}
-            {goalDerivedFocus.map(f=>{const a=aspirations.find(x=>x.id===f.goalId);return(
-              <div key={f.id} style={{...card,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:10,background:f.hitToday?C.greenSoft:C.surface,border:`1px solid ${f.hitToday?C.greenMed:C.hairline}`}}>
-                <div style={{width:4,height:4,borderRadius:"50%",background:C.accent,boxShadow:`0 0 6px ${C.accent}`}}/>
-                <span style={{fontSize:13,fontWeight:500,flex:1,color:f.hitToday?C.textDim:C.text,textDecoration:f.hitToday?"line-through":"none"}}>{f.text}</span>
-                {f.hitToday&&<span style={{fontSize:9,fontFamily:FN.m,color:C.green,fontWeight:700}}>Done today</span>}
-                {!f.hitToday&&<span style={{fontSize:9,fontFamily:FN.m,color:C.textDim}}>{a?.goalType}</span>}
+            <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginBottom:14}}>These surface automatically on your Today tab too. Check them off here or there — auto-advances to the next step.</div>
+            {weeklyFocusItems.length===0&&monthlyGoalFocus.length===0&&<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>No active goal steps right now.</div>}
+            {weeklyFocusItems.filter(i=>i.kind==="step").map(item=>(
+              <div key={item.id} onClick={()=>completeWeeklyFocus(item)} style={{...card,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:10,cursor:"pointer",borderLeft:"3px solid #FB923C"}}>
+                <div style={{width:4,height:4,borderRadius:"50%",background:"#FB923C",flexShrink:0}}/>
+                <span style={{fontSize:13,fontWeight:500,flex:1,color:C.text}}><span style={{color:C.textDim,fontWeight:600}}>({item.parentText})</span> {item.text}</span>
+                <span style={{fontSize:9,fontFamily:FN.m,color:C.textDim}}>weekly</span>
               </div>
-            );})}
+            ))}
+            {monthlyGoalFocus.map(f=>(
+              <div key={f.id} onClick={()=>completeMonthlyFocus(f)} style={{...card,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:10,cursor:"pointer",borderLeft:"3px solid #A78BFA",background:f.hitToday?C.greenSoft:C.surface,opacity:f.hitToday?0.6:1}}>
+                <div style={{width:4,height:4,borderRadius:"50%",background:"#A78BFA",flexShrink:0}}/>
+                <span style={{fontSize:13,fontWeight:500,flex:1,color:f.hitToday?C.textDim:C.text,textDecoration:f.hitToday?"line-through":"none"}}><span style={{color:C.textDim,fontWeight:600}}>({f.parentText})</span> {f.text}</span>
+                {f.hitToday?<span style={{fontSize:9,fontFamily:FN.m,color:C.green,fontWeight:700}}>Done today</span>:<span style={{fontSize:9,fontFamily:FN.m,color:C.textDim}}>monthly</span>}
+              </div>
+            ))}
             {/* Manual focus tasks for today */}
             {focusTasks.length>0&&<div style={{marginTop:16}}><div style={{...lbl,marginBottom:8}}>Manual Focus — {fd(vDate)}</div>
             {focusTasks.map(t=>(<SwipeRow key={t.id} onDelete={()=>removeFocus(t.id)} bg={C.surface} padY={11}>
@@ -2239,77 +2630,146 @@ export default function Dashboard(){
 
         {/* ═══ BUDGET ═══ */}
         {menuTab==="budget"&&<div className="tab-content">
-          {/* ═══ FINANCIAL SNAPSHOT ═══ */}
+          {/* ═══ NET WORTH / DEBT ═══ */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            <div style={{...card,padding:14,background:`linear-gradient(135deg, ${netWorthColor}26, ${netWorthColor}0A)`,border:`1px solid ${netWorthColor}50`}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Net Worth</div>
+              <div style={{fontSize:21,fontWeight:800,color:netWorthColor,fontFamily:FN.m}}>${netWorth.toFixed(2)}</div>
+              <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",marginTop:8}}><div style={{height:"100%",width:`${Math.min(100,Math.max(0,netWorth/netWorthGoal*100))}%`,background:netWorthColor,borderRadius:2,transition:"width 0.4s ease"}} /></div>
+            </div>
+            <div style={{...card,padding:14,background:`linear-gradient(135deg, ${debtColor}26, ${debtColor}0A)`,border:`1px solid ${debtColor}50`}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Debt</div>
+              <div style={{fontSize:21,fontWeight:800,color:debtColor,fontFamily:FN.m}}>${debt.toFixed(2)}</div>
+              <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",marginTop:8}}><div style={{height:"100%",width:`${Math.min(100,Math.max(0,debt/debtThreshold*100))}%`,background:debtColor,borderRadius:2,transition:"width 0.4s ease"}} /></div>
+            </div>
+          </div>
+
+          {/* ═══ ACCOUNT GRID (2×2 — every balance is derived from the ledger below, never typed in directly) ═══ */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            {ACCT_META.map(a=>{
+              const bal=acctNow[a.key],trend=bal-acct30Ago[a.key],trendGood=a.key==="credit"?trend<=0:trend>=0;
+              return(<div key={a.key} style={{...card,padding:"12px 14px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}><span style={{fontSize:15}}>{a.icon}</span><span style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{a.label}</span></div>
+                <div style={{fontSize:16,fontWeight:700,color:a.key==="credit"&&bal>0?C.red:C.text,fontFamily:FN.m}}>${bal.toFixed(2)}</div>
+                {Math.abs(trend)>=0.01&&<div style={{fontSize:9,fontWeight:600,color:trendGood?C.green:C.red,fontFamily:FN.m,marginTop:2}}>{trend>=0?"↑":"↓"}${Math.abs(trend).toFixed(2)}<span style={{color:C.textDim,fontWeight:500}}> /30d</span></div>}
+              </div>);
+            })}
+          </div>
+
+          {/* ═══ Starting balances — entered once; every dollar after this comes from the ledger ═══ */}
           <div style={{...card,marginBottom:14,padding:0,overflow:"hidden"}}>
-            <button onClick={()=>setShowFinSnap(s=>!s)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",background:"transparent",border:"none",cursor:"pointer",padding:"16px 18px",textAlign:"left"}}>
-              <div>
-                <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em"}}>Financial Snapshot</div>
-                <div style={{fontSize:20,fontWeight:700,color:acctTotal>=0?C.green:C.red,fontFamily:FN.m,marginTop:3}}>${acctTotal.toFixed(2)}<span style={{fontSize:11,color:C.textDim,fontWeight:600,fontFamily:FN.b,marginLeft:6}}>net available</span></div>
-              </div>
-              <span style={{fontSize:14,color:C.textDim,transform:showFinSnap?"rotate(180deg)":"none",transition:"transform 0.2s ease"}}>▾</span>
+            <button onClick={()=>setShowFinSnap(s=>!s)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",background:"transparent",border:"none",cursor:"pointer",padding:"12px 16px",textAlign:"left"}}>
+              <span style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em"}}>Starting Balances</span>
+              <span style={{fontSize:13,color:C.textDim,transform:showFinSnap?"rotate(180deg)":"none",transition:"transform 0.2s ease"}}>▾</span>
             </button>
-            {showFinSnap&&<div style={{padding:"0 18px 18px"}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
-                <div style={{background:C.surfaceDim,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>Monthly Subscriptions</div><div style={{fontSize:16,fontWeight:700,color:C.text,fontFamily:FN.m,marginTop:2}}>${subTotal.toFixed(2)}</div></div>
-                <div style={{background:C.surfaceDim,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>Next Bill</div><div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:3}}>{upcomingBills[0]?`${upcomingBills[0].name} · $${(parseFloat(upcomingBills[0].cost)||0).toFixed(2)}`:"—"}</div>{upcomingBills[0]&&<div style={{fontSize:9,color:C.accent,fontFamily:FN.m,marginTop:1}}>{upcomingBills[0].daysUntil===0?"due today":`in ${upcomingBills[0].daysUntil}d`}</div>}</div>
-              </div>
-
-              {/* Account balances */}
-              <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Account Balances</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:18}}>
-                {[{k:"checking",l:"Checking"},{k:"savings",l:"Savings"},{k:"cash",l:"Cash"},{k:"investment",l:"Investment"}].map(a=>(
-                  <div key={a.k} style={{background:C.surfaceDim,borderRadius:10,padding:"8px 10px"}}>
-                    <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>{a.l}</div>
-                    <div style={{display:"flex",alignItems:"center",gap:2}}><span style={{fontSize:13,color:C.textDim,fontFamily:FN.m}}>$</span><input type="number" step="0.01" value={accounts[a.k]} onChange={e=>setAccounts(p=>({...p,[a.k]:e.target.value}))} placeholder="0.00" style={{background:"transparent",border:"none",outline:"none",color:C.text,fontSize:14,fontWeight:700,fontFamily:FN.m,width:"100%",padding:0}} /></div>
+            {showFinSnap&&<div style={{padding:"0 16px 16px"}}>
+              <div style={{fontSize:10,color:C.textDim,marginBottom:10,lineHeight:1.5}}>What each account held before you started tracking. Every transaction below updates the totals above automatically — these fields don't need touching again.</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {ACCT_META.map(a=>(
+                  <div key={a.key} style={{background:C.surfaceDim,borderRadius:10,padding:"8px 10px"}}>
+                    <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>{a.label}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:2}}><span style={{fontSize:13,color:C.textDim,fontFamily:FN.m}}>$</span><input type="number" step="0.01" value={accounts[a.key]} onChange={e=>setAccounts(p=>({...p,[a.key]:e.target.value}))} placeholder="0.00" style={{background:"transparent",border:"none",outline:"none",color:C.text,fontSize:14,fontWeight:700,fontFamily:FN.m,width:"100%",padding:0}} /></div>
                   </div>
                 ))}
               </div>
-
-              {/* Subscriptions */}
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em"}}>Subscriptions</div>
-                {!addSub&&<button onClick={()=>setAddSub(true)} style={{...btnG,padding:"4px 10px",fontSize:10}}>+ Add</button>}
-              </div>
-              {subscriptions.length===0&&!addSub&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",padding:"6px 0 10px"}}>No subscriptions tracked yet.</div>}
-              {subscriptions.map(s=>(
-                <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",marginBottom:5,borderRadius:10,background:C.surfaceDim}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:C.text}}>{s.name}{s.category&&<span style={{fontSize:9,color:C.textDim,background:C.surfaceHi,borderRadius:4,padding:"1px 6px",marginLeft:6,fontWeight:600}}>{s.category}</span>}</div>
-                    <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>Bills on the {s.billDay}{["th","st","nd","rd"][(parseInt(s.billDay)%10>3||[11,12,13].includes(parseInt(s.billDay)%100))?0:parseInt(s.billDay)%10]}</div>
-                  </div>
-                  <span style={{fontSize:13,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(s.cost)||0).toFixed(2)}</span>
-                  <button onClick={()=>removeSubscription(s.id)} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:15}}>×</button>
-                </div>
-              ))}
-              {addSub&&<div style={{background:C.surfaceDim,borderRadius:12,padding:12,marginTop:6,border:`1px solid ${C.hairline}`}}>
-                <input value={subForm.name} onChange={e=>setSubForm(p=>({...p,name:e.target.value}))} placeholder="Name (e.g. Netflix)" style={{...inp,marginBottom:8}} autoFocus />
-                <div style={{display:"flex",gap:8,marginBottom:8}}>
-                  <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Monthly $</div><input type="number" step="0.01" value={subForm.cost} onChange={e=>setSubForm(p=>({...p,cost:e.target.value}))} placeholder="0.00" style={{...inp,textAlign:"center",fontFamily:FN.m}} /></div>
-                  <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Bill Day</div><input type="number" min="1" max="31" value={subForm.billDay} onChange={e=>setSubForm(p=>({...p,billDay:e.target.value}))} placeholder="1" style={{...inp,textAlign:"center",fontFamily:FN.m}} /></div>
-                </div>
-                <input value={subForm.category} onChange={e=>setSubForm(p=>({...p,category:e.target.value}))} placeholder="Category (optional)" style={{...inp,marginBottom:10}} />
-                <div style={{display:"flex",gap:8}}><button onClick={addSubscription} style={{...btnB,flex:1}}>Add</button><button onClick={()=>{setAddSub(false);setSubForm({name:"",cost:"",billDay:"",category:""});}} style={btnG}>Cancel</button></div>
-              </div>}
-
-              {/* Upcoming bills */}
-              {upcomingBills.length>0&&<div style={{marginTop:18}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Upcoming Bills</div>
-                {upcomingBills.slice(0,4).map(b=>(
-                  <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0"}}>
-                    <div style={{width:34,textAlign:"center"}}><div style={{fontSize:9,color:C.accent,fontWeight:700,fontFamily:FN.m}}>{b.daysUntil===0?"NOW":`${b.daysUntil}d`}</div></div>
-                    <span style={{flex:1,fontSize:12,fontWeight:600,color:C.text}}>{b.name}</span>
-                    <span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(b.cost)||0).toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>}
             </div>}
           </div>
+
+          {/* ═══ Subscriptions ═══ */}
+          <div style={{...card,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em"}}>Subscriptions</div>
+              {!addSub&&<button onClick={()=>setAddSub(true)} style={{...btnG,padding:"4px 10px",fontSize:10}}>+ Add</button>}
+            </div>
+            {subscriptions.length===0&&!addSub&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",padding:"6px 0 10px"}}>No subscriptions tracked yet.</div>}
+            {subscriptions.map(s=>(
+              <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",marginBottom:5,borderRadius:10,background:C.surfaceDim}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:C.text}}>{s.name}{s.category&&<span style={{fontSize:9,color:C.textDim,background:C.surfaceHi,borderRadius:4,padding:"1px 6px",marginLeft:6,fontWeight:600}}>{s.category}</span>}</div>
+                  <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>Bills on the {s.billDay}{["th","st","nd","rd"][(parseInt(s.billDay)%10>3||[11,12,13].includes(parseInt(s.billDay)%100))?0:parseInt(s.billDay)%10]}</div>
+                </div>
+                <span style={{fontSize:13,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(s.cost)||0).toFixed(2)}</span>
+                <button onClick={()=>removeSubscription(s.id)} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:15}}>×</button>
+              </div>
+            ))}
+            {addSub&&<div style={{background:C.surfaceDim,borderRadius:12,padding:12,marginTop:6,border:`1px solid ${C.hairline}`}}>
+              <input value={subForm.name} onChange={e=>setSubForm(p=>({...p,name:e.target.value}))} placeholder="Name (e.g. Netflix)" style={{...inp,marginBottom:8}} autoFocus />
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Monthly $</div><input type="number" step="0.01" value={subForm.cost} onChange={e=>setSubForm(p=>({...p,cost:e.target.value}))} placeholder="0.00" style={{...inp,textAlign:"center",fontFamily:FN.m}} /></div>
+                <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Bill Day</div><input type="number" min="1" max="31" value={subForm.billDay} onChange={e=>setSubForm(p=>({...p,billDay:e.target.value}))} placeholder="1" style={{...inp,textAlign:"center",fontFamily:FN.m}} /></div>
+              </div>
+              <input value={subForm.category} onChange={e=>setSubForm(p=>({...p,category:e.target.value}))} placeholder="Category (optional)" style={{...inp,marginBottom:10}} />
+              <div style={{display:"flex",gap:8}}><button onClick={addSubscription} style={{...btnB,flex:1}}>Add</button><button onClick={()=>{setAddSub(false);setSubForm({name:"",cost:"",billDay:"",category:""});}} style={btnG}>Cancel</button></div>
+            </div>}
+            {upcomingBills.length>0&&<div style={{marginTop:18}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Upcoming Bills</div>
+              {upcomingBills.slice(0,4).map(b=>(
+                <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0"}}>
+                  <div style={{width:34,textAlign:"center"}}><div style={{fontSize:9,color:C.accent,fontWeight:700,fontFamily:FN.m}}>{b.daysUntil===0?"NOW":`${b.daysUntil}d`}</div></div>
+                  <span style={{flex:1,fontSize:12,fontWeight:600,color:C.text}}>{b.name}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(b.cost)||0).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>}
+          </div>
+
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>{[{l:"Income",v:`$${bTot.i.toFixed(2)}`,c:C.green},{l:"Expenses",v:`$${bTot.o.toFixed(2)}`,c:C.red},{l:"Net",v:`${bTot.net>=0?"+":""}$${bTot.net.toFixed(2)}`,c:bTot.net>=0?C.green:C.red}].map((s,i)=>(<div key={i} style={{...card,padding:12}}><div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>{s.l}</div><div style={{fontSize:14,fontWeight:700,color:s.c}}>{s.v}</div></div>))}</div>
+
+          {/* ═══ Cash In / Cash Out / Transfer ledger calendar ═══ */}
           <div style={card}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}><button onClick={()=>setBMonth(new Date(bY,bM-1,1))} style={btnG}>‹</button><span style={{fontSize:14,fontWeight:700}}>{bMonth.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span><button onClick={()=>setBMonth(new Date(bY,bM+1,1))} style={btnG}>›</button></div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,color:C.textDim,fontWeight:600}}>{d}</div>)}</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>{Array.from({length:bFD}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:bDIM}).map((_,i)=>{const d=i+1;const isT=bCM&&d===now.getDate();const net=bGN(d);const has=bGT(d).length>0;const sel=selDay===d;return(<div key={d} onClick={()=>setSelDay(sel?null:d)} style={{aspectRatio:"1",borderRadius:8,cursor:"pointer",padding:3,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:sel?C.blueMed:has?(net>=0?C.greenSoft:C.redSoft):C.surfaceDim,border:isT?`2px solid ${C.blue}`:"1.5px solid transparent"}}><span style={{fontSize:12,fontWeight:isT?800:500,color:isT?C.blue:C.text}}>{d}</span>{has&&<span style={{fontSize:7,fontWeight:700,color:net>=0?C.green:C.red}}>{net>=0?"+":""}{net.toFixed(0)}</span>}</div>);})}</div>
-            {selDay&&<div style={{marginTop:14,borderTop:`1px solid ${C.surfaceDim}`,paddingTop:14}}><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>{new Date(bY,bM,selDay).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})}</div>{bGT(selDay).map(tx=>(<div key={tx.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",marginBottom:3,borderRadius:8,background:tx.type==="in"?C.greenSoft:C.redSoft}}><span style={{fontSize:11,fontWeight:700,color:tx.type==="in"?C.greenBright:C.red,width:14}}>{tx.type==="in"?"+":"−"}</span><span style={{flex:1,fontSize:12}}>{tx.desc||"Transaction"}</span><span style={{fontSize:12,fontWeight:700,color:tx.type==="in"?C.greenBright:C.red}}>${tx.amount.toFixed(2)}</span><button onClick={()=>rTx(selDay,tx.id)} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:13}}>×</button></div>))}<div style={{display:"flex",gap:6,marginTop:8,alignItems:"center"}}><div style={{display:"flex",borderRadius:8,overflow:"hidden",border:`1px solid ${C.surfaceDim}`}}><button onClick={()=>setTxF(p=>({...p,type:"in"}))} style={{padding:"7px 12px",border:"none",cursor:"pointer",fontSize:11,fontWeight:600,background:txF.type==="in"?C.greenBright:"transparent",color:txF.type==="in"?"#fff":C.textDim}}>In</button><button onClick={()=>setTxF(p=>({...p,type:"out"}))} style={{padding:"7px 12px",border:"none",cursor:"pointer",fontSize:11,fontWeight:600,background:txF.type==="out"?C.red:"transparent",color:txF.type==="out"?"#fff":C.textDim}}>Out</button></div><input type="number" step="0.01" value={txF.amount} onChange={e=>setTxF(p=>({...p,amount:e.target.value}))} placeholder="$" style={{...inp,width:65,padding:"7px 8px",textAlign:"center"}} /><input value={txF.desc} onChange={e=>setTxF(p=>({...p,desc:e.target.value}))} placeholder="Desc" style={{...inp,flex:1,padding:"7px 10px"}} onKeyDown={e=>{if(e.key==="Enter")aTx();}} /><button onClick={aTx} style={{...btnB,padding:"7px 14px",fontSize:11}}>Add</button></div></div>}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>{Array.from({length:bFD}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:bDIM}).map((_,i)=>{const d=i+1;const isT=bCM&&d===now.getDate();const dayTxs=bGT(d);const hasFlow=dayTxs.some(t=>t.type!=="transfer");const hasXfer=dayTxs.some(t=>t.type==="transfer");const net=bGN(d);const sel=selDay===d;return(<div key={d} onClick={()=>setSelDay(sel?null:d)} style={{aspectRatio:"1",borderRadius:8,cursor:"pointer",padding:3,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:sel?C.blueMed:hasFlow?(net>=0?C.greenSoft:C.redSoft):hasXfer?C.accentSoft:C.surfaceDim,border:isT?`2px solid ${C.blue}`:"1.5px solid transparent"}}><span style={{fontSize:12,fontWeight:isT?800:500,color:isT?C.blue:C.text}}>{d}</span>{hasFlow&&<span style={{fontSize:7,fontWeight:700,color:net>=0?C.green:C.red}}>{net>=0?"+":""}{net.toFixed(0)}</span>}{!hasFlow&&hasXfer&&<span style={{fontSize:7,fontWeight:700,color:C.accent}}>⇄</span>}</div>);})}</div>
+
+            {selDay&&<div style={{marginTop:14,borderTop:`1px solid ${C.surfaceDim}`,paddingTop:14}}>
+              <div style={{fontSize:14,fontWeight:700,marginBottom:10}}>{new Date(bY,bM,selDay).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})}</div>
+              {bGT(selDay).length===0&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",padding:"2px 0 10px"}}>No transactions yet.</div>}
+              {bGT(selDay).map(tx=>{
+                const isXfer=tx.type==="transfer";
+                const fromLbl=ACCT_META.find(a=>a.key===tx.account)?.label||"—";
+                const toLbl=isXfer?(ACCT_META.find(a=>a.key===tx.toAccount)?.label||"—"):null;
+                const clr=isXfer?C.accent:tx.type==="in"?C.greenBright:C.red;
+                const bg=editingTx?.id===tx.id?C.blueMed:isXfer?C.accentSoft:tx.type==="in"?C.greenSoft:C.redSoft;
+                return(<div key={tx.id} onClick={()=>startEditTx(selDay,tx)} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",marginBottom:3,borderRadius:8,background:bg,cursor:"pointer"}}>
+                  <span style={{fontSize:11,fontWeight:700,color:clr,width:14,flexShrink:0}}>{isXfer?"⇄":tx.type==="in"?"+":"−"}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12}}>{tx.desc||(isXfer?"Transfer":"Transaction")}</div>
+                    <div style={{fontSize:9,color:C.textDim,fontFamily:FN.m,marginTop:1}}>{isXfer?`${fromLbl} → ${toLbl}`:fromLbl}</div>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:700,color:clr,flexShrink:0}}>${tx.amount.toFixed(2)}</span>
+                  <button onClick={e=>{e.stopPropagation();rTx(selDay,tx.id);}} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:13,flexShrink:0}}>×</button>
+                </div>);
+              })}
+
+              <div style={{marginTop:10,background:C.surfaceDim,borderRadius:10,padding:10}}>
+                {editingTx&&<div style={{fontSize:10,color:C.accent,fontWeight:700,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Editing transaction</span><button onClick={cancelEditTx} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:10,fontWeight:600}}>Cancel</button></div>}
+                <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:`1px solid ${C.hairline}`,marginBottom:8}}>
+                  {["in","out","transfer"].map(tp=>(<button key={tp} onClick={()=>setTxF(p=>({...p,type:tp,toAccount:tp==="transfer"?p.toAccount:""}))} style={{flex:1,padding:"7px 0",border:"none",cursor:"pointer",fontSize:10,fontWeight:700,textTransform:"uppercase",background:txF.type===tp?(tp==="in"?C.greenBright:tp==="out"?C.red:C.accent):"transparent",color:txF.type===tp?"#fff":C.textDim}}>{tp==="in"?"In":tp==="out"?"Out":"Transfer"}</button>))}
+                </div>
+                {txF.type!=="transfer"?
+                  <select value={txF.account} onChange={e=>setTxF(p=>({...p,account:e.target.value}))} style={{...inp,marginBottom:8,padding:"9px 12px",fontSize:12}}>
+                    <option value="">Select account…</option>
+                    {ACCT_META.map(a=>(<option key={a.key} value={a.key}>{a.label}</option>))}
+                  </select>
+                :<div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
+                    <select value={txF.account} onChange={e=>setTxF(p=>({...p,account:e.target.value}))} style={{...inp,flex:1,padding:"9px 8px",fontSize:11}}>
+                      <option value="">From…</option>
+                      {ACCT_META.map(a=>(<option key={a.key} value={a.key}>{a.label}</option>))}
+                    </select>
+                    <span style={{color:C.textDim,fontSize:12,flexShrink:0}}>→</span>
+                    <select value={txF.toAccount} onChange={e=>setTxF(p=>({...p,toAccount:e.target.value}))} style={{...inp,flex:1,padding:"9px 8px",fontSize:11}}>
+                      <option value="">To…</option>
+                      {ACCT_META.filter(a=>a.key!==txF.account).map(a=>(<option key={a.key} value={a.key}>{a.label}</option>))}
+                    </select>
+                  </div>}
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <input type="number" step="0.01" value={txF.amount} onChange={e=>setTxF(p=>({...p,amount:e.target.value}))} placeholder="$" style={{...inp,width:68,padding:"9px 6px",textAlign:"center"}} />
+                  <input value={txF.desc} onChange={e=>setTxF(p=>({...p,desc:e.target.value}))} placeholder="Desc (optional)" style={{...inp,flex:1,padding:"9px 10px"}} onKeyDown={e=>{if(e.key==="Enter"&&txValid)aTx();}} />
+                  <button onClick={aTx} disabled={!txValid} style={{...btnB,padding:"9px 14px",fontSize:11,opacity:txValid?1:0.4,cursor:txValid?"pointer":"default",flexShrink:0}}>{editingTx?"Save":"Add"}</button>
+                </div>
+                {!txValid&&(txF.amount||txF.account||txF.toAccount)&&<div style={{fontSize:9,color:C.red,marginTop:6}}>{!txF.account?"Select an account to continue.":txF.type==="transfer"&&(!txF.toAccount||txF.toAccount===txF.account)?"Choose a different destination account.":"Enter an amount greater than 0."}</div>}
+              </div>
+            </div>}
           </div>
           <div style={{...card,marginTop:12}}><div style={lbl}>Breakdown</div><div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:30}}><ResponsiveContainer width={180} height={180}><PieChart><Pie data={[{name:"Income",value:Math.max(bTot.i,0.01)},{name:"Expenses",value:Math.max(bTot.o,0.01)}]} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={3} dataKey="value" stroke="none"><Cell fill={C.green} /><Cell fill={C.red} /></Pie><Tooltip content={<Tip />} /></PieChart></ResponsiveContainer><div>{[{l:"Income",v:`$${bTot.i.toFixed(2)}`,c:C.green},{l:"Expenses",v:`$${bTot.o.toFixed(2)}`,c:C.red}].map((s,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><div style={{width:10,height:10,borderRadius:3,background:s.c}} /><div><div style={{fontSize:11,color:C.textDim}}>{s.l}</div><div style={{fontSize:14,fontWeight:700,color:s.c}}>{s.v}</div></div></div>))}</div></div></div>
         </div>}
@@ -2379,6 +2839,11 @@ export default function Dashboard(){
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Night Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.nightStart} onChange={e=>setSettings(p=>({...p,nightStart:parseInt(e.target.value)||18}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.nightEnd} onChange={e=>setSettings(p=>({...p,nightEnd:parseInt(e.target.value)||23}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Reflection Prompt Time</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" min="0" max="23" value={settings.reflectHour} onChange={e=>setSettings(p=>({...p,reflectHour:parseInt(e.target.value)||21}))} style={{...numI,width:60}} /><span style={{fontSize:11,color:C.textDim,fontFamily:FN.m}}>:00 — surfaces "End of day" card after this hour</span></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Review Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,reviewDay:i}))} style={{...pill(settings.reviewDay===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
+
+        <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Budget Thresholds</div>
+        <div style={{fontSize:10,color:C.textDim,marginBottom:10,lineHeight:1.5}}>Controls where the Net Worth and Debt cards shift between red, yellow, and green.</div>
+        <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Net Worth Goal — green at</div><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:C.textDim,fontSize:13}}>$</span><input type="number" min="1" value={settings.netWorthGoal} onChange={e=>setSettings(p=>({...p,netWorthGoal:e.target.value}))} style={{...numI,width:90}} /></div></div>
+        <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Debt Warning — red at</div><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:C.textDim,fontSize:13}}>$</span><input type="number" min="1" value={settings.debtWarningThreshold} onChange={e=>setSettings(p=>({...p,debtWarningThreshold:e.target.value}))} style={{...numI,width:90}} /></div></div>
 
         {/* Full Monthly View */}
         <div style={{marginTop:16,padding:"14px",background:C.surfaceDim,borderRadius:12,border:`1px solid ${C.hairline}`}}>
@@ -2468,6 +2933,37 @@ export default function Dashboard(){
           <div style={{...card,padding:14,textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:C.orange}}>{weekRecap.best}%</div><div style={{fontSize:11,color:C.textDim}}>Best Day</div></div>
           <div style={{...card,padding:14,textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:weekLabelColor}}>{weekLabel}</div><div style={{fontSize:11,color:C.textDim}}>Overall</div></div>
         </div>
+      </Overlay>
+
+      {/* ═══ EXPORT WIZARD ═══ */}
+      <Overlay open={showExport} onClose={()=>setShowExport(false)} title="Export Report">
+        {exportStep===1&&<div>
+          <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:4}}>Which sections?</div>
+          <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>Select one or more to include.</div>
+          {[{k:"analytics",l:"Analytics",d:"Habit consistency + focus productivity"},{k:"workouts",l:"Workouts",d:"Sessions, sets, bodyweight"},{k:"goals",l:"Goals",d:"Weekly & monthly progress"},{k:"budget",l:"Budget",d:"Net worth, debt, accounts"}].map(s=>{const on=exportSections[s.k];return(
+            <div key={s.k} onClick={()=>setExportSections(p=>({...p,[s.k]:!p[s.k]}))} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:10,cursor:"pointer",background:on?C.accentSoft:C.surfaceDim,border:`1px solid ${on?C.accentMed:C.hairline}`}}>
+              <div style={{width:20,height:20,borderRadius:5,border:`1.5px solid ${on?C.accent:C.textDim}`,background:on?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:11,fontWeight:800,flexShrink:0}}>{on&&"✓"}</div>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{s.l}</div><div style={{fontSize:10,color:C.textDim,marginTop:1}}>{s.d}</div></div>
+            </div>);})}
+          <button onClick={()=>setExportStep(2)} disabled={!Object.values(exportSections).some(Boolean)} style={{...btnB,width:"100%",marginTop:10,opacity:Object.values(exportSections).some(Boolean)?1:0.4}}>Next</button>
+        </div>}
+        {exportStep===2&&<div>
+          <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:14}}>Timeframe</div>
+          {[{k:"7",l:"Last 7 Days"},{k:"30",l:"Last 30 Days"},{k:"month",l:"This Month"},{k:"custom",l:"Custom Range"}].map(r=>{const on=exportRange===r.k;return(
+            <div key={r.k} onClick={()=>setExportRange(r.k)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:10,cursor:"pointer",background:on?C.accentSoft:C.surfaceDim,border:`1px solid ${on?C.accentMed:C.hairline}`}}>
+              <div style={{width:18,height:18,borderRadius:"50%",border:`1.5px solid ${on?C.accent:C.textDim}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{on&&<div style={{width:9,height:9,borderRadius:"50%",background:C.accent}}/>}</div>
+              <span style={{fontSize:13,fontWeight:600,color:C.text}}>{r.l}</span>
+            </div>);})}
+          {exportRange==="custom"&&<div style={{display:"flex",gap:8,marginTop:8,marginBottom:4}}>
+            <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:4,textTransform:"uppercase"}}>From</div><input type="date" value={exportCustomStart} onChange={e=>setExportCustomStart(e.target.value)} style={{...inp,fontFamily:FN.m,fontSize:12}}/></div>
+            <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:4,textTransform:"uppercase"}}>To</div><input type="date" value={exportCustomEnd} onChange={e=>setExportCustomEnd(e.target.value)} style={{...inp,fontFamily:FN.m,fontSize:12}}/></div>
+          </div>}
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            <button onClick={()=>setExportStep(1)} style={btnG}>Back</button>
+            <button onClick={generateExport} style={{...btnB,flex:1}}>Generate PDF</button>
+          </div>
+          <div style={{fontSize:10,color:C.textDim,marginTop:10,lineHeight:1.5,textAlign:"center"}}>Opens a print-ready report — choose "Save as PDF" in the print dialog.</div>
+        </div>}
       </Overlay>
 
       {/* ═══ ACTIVE WORKOUT SESSION — fullscreen focus mode (hidden when minimized) ═══ */}
