@@ -429,6 +429,29 @@ const lerpHex=(a,b,t)=>{const ai=parseInt(a.slice(1),16),bi=parseInt(b.slice(1),
 // t=0 → red, t=0.5 → yellow, t=1 → green. Used for both Net Worth (direct) and Debt (inverted) gradients.
 const gradColor=t=>{t=Math.max(0,Math.min(1,t));return t<0.5?lerpHex("#F87171","#FBBF24",t*2):lerpHex("#FBBF24","#34D399",(t-0.5)*2);};
 
+/* ═══ DRAG-TO-REORDER LIST — pointer-based so it works for both mouse and touch ═══ */
+function DragReorderList({items,onReorder}){
+  const[seq,setSeq]=useState(()=>items.map(i=>i.id));
+  const[dragId,setDragId]=useState(null);
+  const draggingRef=useRef(null);
+  // Re-sync from props whenever the list changes — but never mid-drag, or it would fight the user.
+  useEffect(()=>{if(!draggingRef.current)setSeq(items.map(i=>i.id));},[items]);
+  const byId={};items.forEach(i=>{byId[i.id]=i;});
+  const reorder=(overId)=>{const id=draggingRef.current;if(!id||id===overId)return;setSeq(prev=>{const a=[...prev];const from=a.indexOf(id),to=a.indexOf(overId);if(from<0||to<0||from===to)return prev;a.splice(from,1);a.splice(to,0,id);return a;});};
+  const down=(e,id)=>{draggingRef.current=id;setDragId(id);try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}};
+  const move=(e)=>{if(!draggingRef.current)return;const el=typeof document!=="undefined"&&document.elementFromPoint(e.clientX,e.clientY);const row=el&&el.closest&&el.closest("[data-rid]");if(row){const oid=row.getAttribute("data-rid");if(oid)reorder(oid);}};
+  const up=()=>{if(!draggingRef.current)return;draggingRef.current=null;setDragId(null);setSeq(s=>{onReorder(s);return s;});};
+  return(<div>{seq.map(id=>{const it=byId[id];if(!it)return null;const active=dragId===id;const d=it.diff&&DIFF[it.diff];return(
+    <div key={id} data-rid={id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${active?C.accent:C.hairline}`,boxShadow:active?"0 8px 22px rgba(0,0,0,0.20)":"none",opacity:active?0.97:1,transform:active?"scale(1.01)":"none",transition:active?"none":"box-shadow 0.2s ease, transform 0.2s ease"}}>
+      <div onPointerDown={e=>down(e,id)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} title="Drag to reorder" style={{touchAction:"none",cursor:"grab",padding:"6px 4px",display:"flex",flexDirection:"column",gap:3,flexShrink:0}}>
+        {[0,1,2].map(r=>(<div key={r} style={{display:"flex",gap:3}}><span style={{width:3,height:3,borderRadius:"50%",background:C.textDim}}/><span style={{width:3,height:3,borderRadius:"50%",background:C.textDim}}/></div>))}
+      </div>
+      {d&&<div style={{width:4,height:22,borderRadius:2,background:d.color,flexShrink:0}}/>}
+      <span style={{flex:1,fontSize:13,fontWeight:500,color:C.text}}>{it.text}</span>
+      {d&&<span style={{fontSize:9,fontWeight:700,fontFamily:FN.m,color:d.color,background:d.bg,borderRadius:4,padding:"2px 7px",flexShrink:0}}>{d.label}</span>}
+    </div>);})}</div>);
+}
+
 /* ═══ Icons for footer ═══ */
 const Icons={
   today:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>,
@@ -513,6 +536,8 @@ export default function Dashboard(){
   const[proofTask,setProofTask]=useState(null);
   const[todaySub,setTodaySub]=useState("morning"); // morning | evening | focus
   const[focusCollapsed,setFocusCollapsed]=useState({}); // {goalId:true} — collapsed goal cards in Today→Focus (default expanded)
+  const[reorderMode,setReorderMode]=useState(false); // Today: drag-to-reorder habits
+  const[habitOrder,setHabitOrder]=useState({}); // {taskId: index} — manual habit order, overrides smart-learned order
   const[editTask,setEditTask]=useState(null); // {task, source:"focus"|"todos"}
   const[editText,setEditText]=useState("");
   const[editDiff,setEditDiff]=useState("easy");
@@ -611,15 +636,17 @@ export default function Dashboard(){
     Object.keys(stats).forEach(id=>{rank[id]=stats[id].total/stats[id].count;});
     return rank;
   },[completionLog]);
-  // Sort tasks by learned order. Tasks with data come first in their learned order.
-  // Tasks without data keep their original relative order at the bottom.
+  // Sort tasks: manual drag order wins; anything not manually placed falls back to the smart-learned order.
   const sortByLearned=(tasks)=>{
-    const withData=tasks.filter(t=>learnedOrder[t.id]!==undefined).sort((a,b)=>learnedOrder[a.id]-learnedOrder[b.id]);
-    const withoutData=tasks.filter(t=>learnedOrder[t.id]===undefined);
-    return[...withData,...withoutData];
+    const manual=tasks.filter(t=>habitOrder[t.id]!==undefined).sort((a,b)=>habitOrder[a.id]-habitOrder[b.id]);
+    const rest=tasks.filter(t=>habitOrder[t.id]===undefined);
+    const restSorted=[...rest.filter(t=>learnedOrder[t.id]!==undefined).sort((a,b)=>learnedOrder[a.id]-learnedOrder[b.id]),...rest.filter(t=>learnedOrder[t.id]===undefined)];
+    return[...manual,...restSorted];
   };
-  const morningTSorted=useMemo(()=>sortByLearned(morningT),[morningT,learnedOrder]);
-  const nightTSorted=useMemo(()=>sortByLearned(nightT),[nightT,learnedOrder]);
+  // Persist a new manual sequence for a group (indices only need to be monotonic within each filtered group).
+  const applyHabitOrder=(ids)=>setHabitOrder(prev=>{const m={...prev};ids.forEach((id,i)=>{m[id]=i;});return m;});
+  const morningTSorted=useMemo(()=>sortByLearned(morningT),[morningT,learnedOrder,habitOrder]);
+  const nightTSorted=useMemo(()=>sortByLearned(nightT),[nightT,learnedOrder,habitOrder]);
 
   /* ─── Toggle ─── */
   const toggle=t=>{
@@ -1348,6 +1375,7 @@ ${body}
       if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",credit:"",...d.accounts});
       if(d.subscriptions)setSubscriptions(d.subscriptions);
       if(d.focusCompletionLog)setFocusCompletionLog(d.focusCompletionLog);
+      if(d.habitOrder)setHabitOrder(d.habitOrder);
       // Migrate photoLog from main blob to separate key (one-time)
       if(d.photoLog&&d.photoLog.length>0){try{localStorage.setItem("dash-v18-photos",JSON.stringify(d.photoLog));}catch(e){}}
     }
@@ -1382,10 +1410,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog]);
+  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -1709,7 +1737,9 @@ ${body}
         {link.index<link.total-1&&<div style={{flex:1,width:2,background:C.accent,opacity:0.5}}/>}
       </div>}
       <div onClick={()=>handleCheck(t)} style={{position:"relative",zIndex:2,width:big?22:20,height:big?22:20,borderRadius:4,flexShrink:0,border:`1.5px solid ${on?C.greenBright:C.textDim}`,background:on?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:big?13:11,fontWeight:800,cursor:"pointer",transition:"all 0.3s ease"}}>{on&&"✓"}</div>
+      {t.diff&&DIFF[t.diff]&&<div style={{position:"relative",zIndex:2,width:4,height:big?26:20,borderRadius:2,background:DIFF[t.diff].color,flexShrink:0,opacity:on?0.4:1}}/>}
       <span onClick={()=>handleCheck(t)} style={{position:"relative",zIndex:2,flex:1,fontSize:big?15:13,fontWeight:500,fontFamily:big?FN.h:FN.b,fontStyle:big?"italic":"normal",color:on?C.textDim:C.text,cursor:"pointer",transition:"color 0.4s ease"}}>{t.text}</span>
+      {t.diff&&DIFF[t.diff]&&<span style={{position:"relative",zIndex:2,fontSize:9,fontWeight:700,fontFamily:FN.m,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 7px",flexShrink:0,opacity:on?0.5:1}}>{DIFF[t.diff].label}</span>}
       {t.proof&&<svg style={{position:"relative",zIndex:2}} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>}
       {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}} style={{position:"relative",zIndex:2,background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 6px"}}>edit</button>}
     </div>
@@ -1973,16 +2003,6 @@ ${body}
             <button onClick={e=>{e.stopPropagation();setReviewDismissed(p=>({...p,[curWeekKey]:true}));}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:18,cursor:"pointer",padding:6}}>×</button>
           </div>}
 
-          {/* End-of-day reflection surface */}
-          {reflectReady&&<div onClick={startReflect} className="press" style={{marginBottom:14,padding:"16px 18px",background:C.surface,borderRadius:12,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${C.green}`,cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
-            <div className="hero-num" style={{fontSize:28,color:C.green}}>·</div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>End of day</div>
-              <div className="display" style={{fontSize:15,fontStyle:"italic",color:C.text}}>Reflect · 30 sec</div>
-            </div>
-            <button onClick={e=>{e.stopPropagation();setReflectDismissed(p=>({...p,[todayK]:true}));}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:18,cursor:"pointer",padding:6}}>×</button>
-          </div>}
-
           {/* Section 1: Living banner — reacts to your day */}
           <div style={{height:180,borderRadius:14,overflow:"hidden",marginBottom:18,border:`1px solid ${C.hairline}`}}>
             <BannerScene mode={recoveryData?"morning":todaySub==="morning"?"morning":todaySub==="focus"?"day":"evening"} dayPct={recoveryData?0:todayCompletion.pct} morningPct={recoveryData?0:mPct} eveningPct={recoveryData?0:ePct} />
@@ -1997,7 +2017,10 @@ ${body}
 
           {todaySub==="morning"&&<div>
             {morningT.length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.morning}</div>}
-            {morningTSorted.map(t=><TRow key={t.id} t={t} />)}
+            {morningT.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setReorderMode(m=>!m)} style={{background:reorderMode?C.accent:"transparent",border:`1px solid ${reorderMode?C.accent:C.hairline}`,color:reorderMode?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{reorderMode?"Done":"⇅ Reorder"}</button></div>}
+            {reorderMode&&morningT.length>1
+              ?<DragReorderList items={morningTSorted} onReorder={applyHabitOrder} />
+              :morningTSorted.map(t=><TRow key={t.id} t={t} />)}
           </div>}
           {todaySub==="focus"&&(()=>{
             const dailyTasks=focusTasks.filter(t=>!dc[t.id]); // one-and-done: complete and disappear
@@ -2088,7 +2111,10 @@ ${body}
           })()}
           {todaySub==="evening"&&<div>
             {nightT.length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.evening}</div>}
-            {nightTSorted.map(t=><TRow key={t.id} t={t} />)}
+            {nightT.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setReorderMode(m=>!m)} style={{background:reorderMode?C.accent:"transparent",border:`1px solid ${reorderMode?C.accent:C.hairline}`,color:reorderMode?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{reorderMode?"Done":"⇅ Reorder"}</button></div>}
+            {reorderMode&&nightT.length>1
+              ?<DragReorderList items={nightTSorted} onReorder={applyHabitOrder} />
+              :nightTSorted.map(t=><TRow key={t.id} t={t} />)}
           </div>}
 
         </div>);})()}
@@ -2837,7 +2863,6 @@ ${body}
         <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Time Ranges</div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Morning Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.morningStart} onChange={e=>setSettings(p=>({...p,morningStart:parseInt(e.target.value)||5}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.morningEnd} onChange={e=>setSettings(p=>({...p,morningEnd:parseInt(e.target.value)||12}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Night Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.nightStart} onChange={e=>setSettings(p=>({...p,nightStart:parseInt(e.target.value)||18}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.nightEnd} onChange={e=>setSettings(p=>({...p,nightEnd:parseInt(e.target.value)||23}))} style={{...numI,width:60}} /></div></div>
-        <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Reflection Prompt Time</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" min="0" max="23" value={settings.reflectHour} onChange={e=>setSettings(p=>({...p,reflectHour:parseInt(e.target.value)||21}))} style={{...numI,width:60}} /><span style={{fontSize:11,color:C.textDim,fontFamily:FN.m}}>:00 — surfaces "End of day" card after this hour</span></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Review Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,reviewDay:i}))} style={{...pill(settings.reviewDay===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
 
         <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Budget Thresholds</div>
