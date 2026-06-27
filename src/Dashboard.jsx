@@ -537,6 +537,7 @@ export default function Dashboard(){
   const[todaySub,setTodaySub]=useState("morning"); // morning | evening | focus
   const[focusCollapsed,setFocusCollapsed]=useState({}); // {goalId:true} — collapsed goal cards in Today→Focus (default expanded)
   const[reorderMode,setReorderMode]=useState(false); // Today: drag-to-reorder habits
+  const[focusQuick,setFocusQuick]=useState(""); // inline "add focus/daily task" composer text
   const[habitOrder,setHabitOrder]=useState({}); // {taskId: index} — manual habit order, overrides smart-learned order
   const[editTask,setEditTask]=useState(null); // {task, source:"focus"|"todos"}
   const[editText,setEditText]=useState("");
@@ -747,13 +748,15 @@ export default function Dashboard(){
   const weeklyTargets=useMemo(()=>{
     return aspirations.filter(a=>a.status==="active"&&!a.graduated).map(a=>{
       if(a.goalType==="measurable"){
+        const remaining=Math.max(0,(a.totalHours||0)-(a.hoursLogged||0));
+        if(remaining<=0)return null; // goal met — disappears from the weekly funnel
         const deadlineDate=new Date(a.deadline||dk(now));
         const weeksLeft=Math.max(1,Math.ceil((deadlineDate-now)/(7*24*60*60*1000)));
-        const remaining=Math.max(0,(a.totalHours||0)-(a.hoursLogged||0));
         return{goalId:a.id,text:a.text,type:"hours",target:Math.round(remaining/weeksLeft*10)/10,unit:"hrs",parentGoal:a};
       }
       if(a.goalType==="outcome"){
         const pending=(a.steps||[]).filter(s=>!s.done);
+        if(pending.length===0)return null; // all steps done — disappears from the weekly funnel
         return{goalId:a.id,text:a.text,type:"steps",target:Math.min(pending.length,3),steps:pending.slice(0,3),parentGoal:a};
       }
       if(a.goalType==="habit"){
@@ -867,15 +870,10 @@ export default function Dashboard(){
   const demoteGoal=(id)=>{setAspirations(p=>p.map(a=>a.id===id?{...a,graduated:false,monthsAtTarget:0}:a));};
   const removeGoal=(id)=>{setAspirations(p=>p.filter(a=>a.id!==id));};
 
-  /* ─── LEGACY IMPLEMENTATION INTENTION PROMPT ─── */
-  // Finds habit-type goals that were created before the intention field existed and haven't been
-  // prompted yet. Queues them one at a time via intentionPromptFor. User sees a single overlay
-  // asking "when do you actually do this?" — can fill it in or dismiss permanently.
-  useEffect(()=>{
-    if(intentionPromptFor)return; // already showing one
-    const legacy=aspirations.find(a=>a.goalType==="habit"&&!a.implementationIntention&&!intentionPromptDismissed[a.id]);
-    if(legacy)setIntentionPromptFor(legacy);
-  },[aspirations,intentionPromptDismissed,intentionPromptFor]);
+  /* ─── LEGACY IMPLEMENTATION INTENTION PROMPT — auto-popup disabled (no more nudges) ─── */
+  // The overlay no longer surfaces on its own. Implementation intentions can still be set
+  // when editing a goal directly; this just stops the periodic prompt from interrupting.
+  // (Effect intentionally left as a no-op.)
 
   const saveIntentionPrompt=()=>{
     if(!intentionPromptFor)return;
@@ -1922,88 +1920,12 @@ ${body}
           const ePct=nightT.length>0?Math.round(nightT.filter(t=>dc[t.id]).length/nightT.length*100):0;
           const empties={morning:"The day hasn't started yet.",focus:"What are you actually going to do today?",evening:"Nothing to close out. Rest, or add something worth doing."};
           return(<div className="tab-content" style={{paddingBottom:140}}>
-          {/* ═══ RECOVERY CARD — replaces launch card after a rough day ═══ */}
-          {recoveryData&&(()=>{
-            const sh=recoveryData.startHere;
-            const startHereCheck=()=>{
-              if(!sh)return;
-              flashChecked(sh.id);
-              const vk=dk(now);
-              setChecks(p=>({...p,[vk]:{...(p[vk]||{}),[sh.id]:true}}));
-            };
-            return(<div style={{marginBottom:14,padding:"20px 22px",background:`linear-gradient(135deg,${C.accentSoft},${C.surface})`,borderRadius:14,border:`1px solid ${C.accentMed}`,position:"relative",animation:"launchFade 0.8s ease"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-                <div style={{fontSize:9,color:C.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.16em"}}>Fresh start · {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][now.getDay()]}</div>
-                <button onClick={dismissLaunch} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:16,padding:0,lineHeight:1,opacity:0.6}}>×</button>
-              </div>
-              <div className="display" style={{fontSize:17,fontStyle:"italic",color:C.text,lineHeight:1.4,marginBottom:sh?16:4}}>{recoveryData.headline}</div>
-              {sh&&<button onClick={startHereCheck} className="press" style={{width:"100%",padding:"16px 18px",background:C.accent,border:"none",borderRadius:12,color:C.btnText,cursor:"pointer",fontFamily:FN.b,textAlign:"left",display:"flex",alignItems:"center",gap:14,boxShadow:`0 4px 16px ${C.accent}40`,transition:"all 0.2s ease"}}>
-                <div style={{width:26,height:26,borderRadius:6,background:"rgba(255,255,255,0.22)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.12em",opacity:0.8,marginBottom:2}}>Start here</div>
-                  <div style={{fontSize:14,fontWeight:700}}>{sh.text}</div>
-                </div>
-              </button>}
-            </div>);
-          })()}
-
-          {/* ═══ MORNING LAUNCH CARD — frames today, appears 5am-1pm, once per day ═══ */}
-          {launchMessage&&<div style={{marginBottom:14,padding:"18px 20px",background:`linear-gradient(135deg,${C.accentSoft},${C.surface})`,borderRadius:14,border:`1px solid ${C.accentMed}`,position:"relative",animation:"launchFade 0.8s ease"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-              <div style={{fontSize:9,color:C.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.14em"}}>{now.getHours()<9?"Morning":now.getHours()<12?"Midday":"Early afternoon"} · {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][now.getDay()]}</div>
-              <button onClick={dismissLaunch} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:16,padding:0,lineHeight:1,opacity:0.6}}>×</button>
-            </div>
-            <div className="display" style={{fontSize:17,fontStyle:"italic",color:C.text,lineHeight:1.35}}>{launchMessage}</div>
-          </div>}
-
-          {/* ═══ EVENING RECONCILIATION — closes the day, 8pm–midnight ═══ */}
-          {showEveningCard&&(()=>{
-            const pct=todayCompletion.pct;
-            const label=pct>=85?"Strong day":pct>=60?"Solid day":pct>0?"Quiet day":"Empty day";
-            const labelColor=pct>=85?C.green:pct>=60?C.accent:pct>0?C.textSec:C.textDim;
-            return(<div style={{marginBottom:14,padding:"20px 20px",background:`linear-gradient(135deg,rgba(96,165,250,0.10),${C.surface})`,borderRadius:14,border:`1px solid rgba(96,165,250,0.25)`,position:"relative",animation:"launchFade 0.8s ease"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-                <div style={{fontSize:9,color:"#93C5FD",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.14em"}}>Close the day</div>
-                <span style={{fontSize:9,fontFamily:FN.m,color:labelColor,fontWeight:700,letterSpacing:"0.06em"}}>{label.toUpperCase()}</span>
-              </div>
-              {/* Fill visualization */}
-              <div style={{marginBottom:14}}>
-                <div style={{height:8,background:C.surfaceDim,borderRadius:4,overflow:"hidden",position:"relative"}}>
-                  <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${labelColor},${pct>=85?C.greenBright:pct>=60?C.accentBright:C.textSec})`,borderRadius:4,transition:"width 0.8s cubic-bezier(0.34,1.56,0.64,1)",boxShadow:pct>0?`0 0 12px ${labelColor}40`:"none"}}/>
-                </div>
-                <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:6,letterSpacing:"0.04em"}}>{todayCompletion.done} of {todayCompletion.total} tasks · {pct}%</div>
-              </div>
-              {!eveningCardOpen?<div>
-                <div className="display" style={{fontSize:15,fontStyle:"italic",color:C.text,lineHeight:1.4,marginBottom:14}}>What's one thing you want to carry into tomorrow?</div>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>setEveningCardOpen(true)} style={{...btnB,flex:2,background:"#60A5FA",color:C.btnText}}>Reflect</button>
-                  <button onClick={closeTheDay} style={{...btnG,flex:1}}>Close day</button>
-                </div>
-              </div>:<div>
-                <textarea value={eveningCarry} onChange={e=>setEveningCarry(e.target.value)} placeholder="One sentence — a lesson, a feeling, an intention..." autoFocus style={{...inp,minHeight:80,resize:"vertical",marginBottom:10,fontFamily:FN.b,fontSize:13,lineHeight:1.5}}/>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={closeTheDay} style={{...btnB,flex:2,background:"#60A5FA",color:C.btnText}}>Close the day</button>
-                  <button onClick={()=>{setEveningCardOpen(false);setEveningCarry("");}} style={{...btnG,flex:1}}>Cancel</button>
-                </div>
-              </div>}
-            </div>);
-          })()}
-
           {/* Pinned weekly priorities — set during Sunday review */}
           {weekPriorities.length>0&&<div style={{marginBottom:14,padding:"14px 16px",background:C.surface,borderRadius:12,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${C.accent}`}}>
             <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>This Week</div>
             {weekPriorities.map((p,i)=>(<div key={i} style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4}}><span className="hero-num" style={{fontSize:11,color:C.accent}}>{i+1}</span><span className="display" style={{fontSize:14,fontStyle:"italic",color:C.text}}>{p}</span></div>))}
           </div>}
 
-          {/* Sunday review surface — passive card */}
-          {reviewReady&&<div onClick={startReview} className="press" style={{marginBottom:14,padding:"16px 18px",background:`linear-gradient(135deg,${C.accentSoft},${C.surface})`,borderRadius:12,border:`1px solid ${C.accentMed}`,cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
-            <div className="hero-num" style={{fontSize:32,color:C.accent}}>↻</div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>Sunday</div>
-              <div className="display" style={{fontSize:16,fontStyle:"italic",color:C.text}}>Weekly Review · 5 min</div>
-            </div>
-            <button onClick={e=>{e.stopPropagation();setReviewDismissed(p=>({...p,[curWeekKey]:true}));}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:18,cursor:"pointer",padding:6}}>×</button>
-          </div>}
 
           {/* Section 1: Living banner — reacts to your day */}
           <div style={{height:180,borderRadius:14,overflow:"hidden",marginBottom:18,border:`1px solid ${C.hairline}`}}>
@@ -2058,15 +1980,15 @@ ${body}
                 {active&&!done&&<span style={{fontSize:8,fontFamily:FN.m,color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Next</span>}
               </div>);
             };
-            const empty=dailyTasks.length===0&&weeklyGoals.length===0&&monthlyGoals.length===0;
+            const addFocusQuick=()=>{const t=focusQuick.trim();if(!t)return;addFocus({id:uid(),text:t,diff:"easy"});setFocusQuick("");};
             return(<div>
-              {empty&&<div style={{textAlign:"center",padding:40,color:C.textDim,fontFamily:FN.h,fontSize:16,fontStyle:"italic"}}>{empties.focus}</div>}
-
-              {/* Section 1 — Daily Tasks (highest priority) */}
-              {dailyTasks.length>0&&<>
-                <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length}/>
-                {dailyTasks.map(t=><TRow key={t.id} t={t} big />)}
-              </>}
+              {/* Section 1 — Daily Tasks (highest priority) — add directly here */}
+              <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length}/>
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFocusQuick();}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
+                <button onClick={addFocusQuick} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
+              </div>
+              {dailyTasks.map(t=><TRow key={t.id} t={t} big />)}
 
               {/* Section 2 — Weekly Goals (second priority): checkbox dropdowns */}
               {weeklyGoals.length>0&&<>
@@ -2434,16 +2356,21 @@ ${body}
                 {f.hitToday?<span style={{fontSize:9,fontFamily:FN.m,color:C.green,fontWeight:700}}>Done today</span>:<span style={{fontSize:9,fontFamily:FN.m,color:C.textDim}}>monthly</span>}
               </div>
             ))}
-            {/* Manual focus tasks for today */}
-            {focusTasks.length>0&&<div style={{marginTop:16}}><div style={{...lbl,marginBottom:8}}>Manual Focus — {fd(vDate)}</div>
-            {focusTasks.map(t=>(<SwipeRow key={t.id} onDelete={()=>removeFocus(t.id)} bg={C.surface} padY={11}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:13,fontWeight:500,flex:1,color:C.text}}>{t.text}</span>
-                <span style={{fontSize:9,fontWeight:700,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 6px",fontFamily:FN.m}}>{DIFF[t.diff].label}</span>
-                <button onClick={()=>openEdit(t,"focus")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b}}>edit</button>
+            {/* Manual focus tasks for today — add directly here */}
+            <div style={{marginTop:16}}>
+              <div style={{...lbl,marginBottom:8}}>Manual Focus — {fd(vDate)}</div>
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const t=focusQuick.trim();if(t){addFocus({id:uid(),text:t,diff:"easy"});setFocusQuick("");}}}} placeholder="Add a focus task…" style={{...inp,flex:1}}/>
+                <button onClick={()=>{const t=focusQuick.trim();if(t){addFocus({id:uid(),text:t,diff:"easy"});setFocusQuick("");}}} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
               </div>
-            </SwipeRow>))}
-            </div>}
+              {focusTasks.map(t=>(<SwipeRow key={t.id} onDelete={()=>removeFocus(t.id)} bg={C.surface} padY={11}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:13,fontWeight:500,flex:1,color:C.text}}>{t.text}</span>
+                  <span style={{fontSize:9,fontWeight:700,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 6px",fontFamily:FN.m}}>{DIFF[t.diff].label}</span>
+                  <button onClick={()=>openEdit(t,"focus")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b}}>edit</button>
+                </div>
+              </SwipeRow>))}
+            </div>
           </div>}
 
           {/* ─── HABITS (graduated + override) ─── */}
@@ -3247,10 +3174,6 @@ ${body}
       </Overlay>
 
       {/* ═══ FLOATING QUICK CAPTURE BUTTON ═══ */}
-      <button onClick={()=>{setShowQuick(true);setQuickText("");}} className="press" style={{position:"fixed",right:18,bottom:200,zIndex:91,width:54,height:54,borderRadius:"50%",background:C.accent,border:"none",cursor:"pointer",boxShadow:"0 6px 24px rgba(245,158,11,0.4), 0 2px 8px rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0B1120" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
-
       {/* ═══ QUICK CAPTURE MODAL ═══ */}
       {showQuick&&<div onClick={()=>setShowQuick(false)} style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
         <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(8px)"}}/>
