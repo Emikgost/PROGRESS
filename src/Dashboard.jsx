@@ -627,7 +627,7 @@ export default function Dashboard(){
   // ─── PDF / report export wizard ───
   const[showExport,setShowExport]=useState(false);
   const[exportStep,setExportStep]=useState(1);
-  const[exportSections,setExportSections]=useState({analytics:true,workouts:false,goals:false,budget:false});
+  const[exportSections,setExportSections]=useState({analytics:true,goals:false,workouts:false,nutrition:false,budget:false});
   const[exportRange,setExportRange]=useState("30");
   const[exportCustomStart,setExportCustomStart]=useState("");
   const[exportCustomEnd,setExportCustomEnd]=useState("");
@@ -1111,52 +1111,124 @@ export default function Dashboard(){
     const focusBest=focusEntries.reduce((a,[,v])=>Math.max(a,v),0);
 
     const esc=s=>String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-    const acc="#D97706",ink="#1A2238",dim="#6B7280",line="#E5E0D5";
-    const card=(label,val,sub,color)=>`<div style="flex:1;min-width:120px;border:1px solid ${line};border-radius:12px;padding:16px 18px;background:#fff"><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:${dim};font-weight:700;margin-bottom:8px">${esc(label)}</div><div style="font-size:30px;font-weight:800;color:${color||ink};line-height:1">${esc(val)}</div>${sub?`<div style="font-size:11px;color:${dim};margin-top:4px">${esc(sub)}</div>`:""}</div>`;
-    const sectionTitle=t=>`<h2 style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:${acc};border-bottom:2px solid ${acc};padding-bottom:6px;margin:34px 0 16px">${esc(t)}</h2>`;
-    const bar=(label,pct,color)=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;color:${ink};margin-bottom:4px"><span>${esc(label)}</span><span style="font-weight:700;color:${color||acc}">${pct}%</span></div><div style="height:7px;background:${line};border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.min(100,pct)}%;background:${color||acc};border-radius:4px"></div></div></div>`;
+    const acc="#0AA063",ink="#16203A",dim="#6B7280",line="#E8E3D8",amber="#E0820A",blue="#3B82F6",purple="#7C3AED",red="#DC2626";
+    const money=n=>`${n<0?"-":""}$${Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const card=(label,val,sub,color)=>`<div style="flex:1;min-width:118px;border:1px solid ${line};border-radius:12px;padding:15px 16px;background:#fff"><div style="font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:${dim};font-weight:700;margin-bottom:7px">${esc(label)}</div><div style="font-size:26px;font-weight:800;color:${color||ink};line-height:1">${esc(val)}</div>${sub?`<div style="font-size:10px;color:${dim};margin-top:4px">${esc(sub)}</div>`:""}</div>`;
+    const cards=arr=>`<div style="display:flex;gap:9px;flex-wrap:wrap">${arr.join("")}</div>`;
+    const sectionTitle=(t,sub)=>`<h2 style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:${acc};border-bottom:2px solid ${acc};padding-bottom:6px;margin:32px 0 14px">${esc(t)}${sub?`<span style="float:right;font-size:10px;letter-spacing:0.04em;color:${dim};font-weight:600;text-transform:none">${esc(sub)}</span>`:""}</h2>`;
+    const bar=(label,pct,color,right)=>`<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:12px;color:${ink};margin-bottom:4px"><span>${esc(label)}</span><span style="font-weight:700;color:${color||acc}">${esc(right!=null?right:pct+"%")}</span></div><div style="height:7px;background:${line};border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.min(100,Math.max(0,pct))}%;background:${color||acc};border-radius:4px"></div></div></div>`;
+    const table=(heads,rows,aligns)=>rows.length?`<table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:11.5px"><tr style="text-align:left;color:${dim};border-bottom:1.5px solid ${line}">${heads.map((h,i)=>`<th style="padding:6px 4px;font-weight:700;text-align:${(aligns&&aligns[i])||"left"}">${esc(h)}</th>`).join("")}</tr>${rows.map(r=>`<tr style="border-bottom:1px solid ${line}">${r.map((c,i)=>`<td style="padding:6px 4px;text-align:${(aligns&&aligns[i])||"left"}">${c}</td>`).join("")}</tr>`).join("")}</table>`:"";
+    const note=t=>`<p style="color:${dim};font-size:12px;margin:6px 0 0">${esc(t)}</p>`;
 
     let body="";
-    // Habit + Focus live under "analytics"
+
+    // ── OVERVIEW (always) ──
+    body+=sectionTitle("Overview",rangeLabel);
+    body+=cards([card("Habit Completion",habitAvg+"%",`${habitDays} days tracked`,acc),card("Current Streak",streak+"d"),card("Longest Streak",longestHabitStreak+"d"),card("Focus Done",focusTotal,`${focusAvg}/day avg`,blue)]);
+    if(weeklyInsight)body+=`<div style="margin-top:12px;padding:13px 16px;border-radius:10px;background:#F4FBF7;border:1px solid #CDEBDD"><div style="font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:${acc};font-weight:700;margin-bottom:4px">Insight</div><div style="font-size:13px;color:${ink}">${esc(weeklyInsight)}</div>${recommendation?`<div style="font-size:12px;color:${dim};margin-top:6px">→ ${esc(recommendation)}</div>`:""}</div>`;
+
+    // ── ANALYTICS ──
     if(exportSections.analytics){
-      body+=sectionTitle("Habit Analytics · Consistency");
-      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">${card("Completion",habitAvg+"%",rangeLabel,"#059669")}${card("Current Streak",streak+"d")}${card("Longest Streak",longestHabitStreak+"d")}</div>`;
-      const strong=sortedH.filter(h=>h.rate>=50).slice(0,5);
-      if(strong.length)body+=`<div style="margin-top:14px">${strong.map(h=>bar(h.name,h.rate,"#059669")).join("")}</div>`;
-      body+=sectionTitle("Focus Analytics · Productivity");
-      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap">${card("Total Completed",focusTotal,rangeLabel,"#2563EB")}${card("Daily Average",focusAvg,"items / day","#2563EB")}${card("Best Day",focusBest,"items")}</div>`;
+      body+=sectionTitle("Habit Analytics","Consistency");
+      body+=cards([card("Completion",habitAvg+"%",rangeLabel,acc),card("Current Streak",streak+"d"),card("Longest Streak",longestHabitStreak+"d")]);
+      const ranked=sortedH.slice().sort((a,b)=>b.rate-a.rate);
+      if(ranked.length)body+=`<div style="margin-top:14px">${ranked.slice(0,10).map(h=>bar(h.name,h.rate,h.rate>=70?acc:h.rate>=40?amber:red)).join("")}</div>`;
+      else body+=note("No habit data in this range yet.");
+      body+=sectionTitle("Focus Analytics","Productivity");
+      body+=cards([card("Total Completed",focusTotal,rangeLabel,blue),card("Daily Average",focusAvg,"items / day",blue),card("Best Day",focusBest,"items")]);
     }
+
+    // ── GOALS ──
     if(exportSections.goals){
       body+=sectionTitle("Goals");
-      const outcomeGoals=aspirations.filter(a=>a.goalType==="outcome"&&!a.graduated);
       const wkStep=wGoals.filter(g=>g.steps&&g.steps.length>0);
-      if(outcomeGoals.length===0&&wkStep.length===0)body+=`<p style="color:${dim};font-size:13px">No step-based goals in progress.</p>`;
-      wkStep.forEach(g=>{const done=g.steps.filter(s=>s.done).length;body+=bar("Weekly · "+g.text,Math.round(done/g.steps.length*100),"#EA580C");});
-      outcomeGoals.forEach(a=>{const tot=(a.steps||[]).length,done=(a.steps||[]).filter(s=>s.done).length;body+=bar("Monthly · "+a.text,tot>0?Math.round(done/tot*100):0,"#7C3AED");});
+      const wkCount=wGoals.filter(g=>(!g.steps||!g.steps.length)&&g.target);
+      const active=aspirations.filter(a=>a.status==="active"&&!a.graduated);
+      const outcome=active.filter(a=>a.goalType==="outcome"),measurable=active.filter(a=>a.goalType==="measurable"),habitG=active.filter(a=>a.goalType==="habit");
+      if(!wkStep.length&&!wkCount.length&&!active.length)body+=note("No goals in progress.");
+      if(wkStep.length||wkCount.length){body+=`<div style="font-size:11px;font-weight:700;color:${amber};text-transform:uppercase;letter-spacing:0.06em;margin:6px 0 8px">Weekly</div>`;
+        wkStep.forEach(g=>{const d=g.steps.filter(s=>s.done).length;body+=bar(g.text,Math.round(d/g.steps.length*100),amber,`${d}/${g.steps.length} steps`);});
+        wkCount.forEach(g=>{body+=bar(g.text,Math.round((g.progress||0)/g.target*100),amber,`${g.progress||0}/${g.target}`);});}
+      if(outcome.length||measurable.length||habitG.length){body+=`<div style="font-size:11px;font-weight:700;color:${purple};text-transform:uppercase;letter-spacing:0.06em;margin:16px 0 8px">Monthly</div>`;
+        outcome.forEach(a=>{const t=(a.steps||[]).length,d=(a.steps||[]).filter(s=>s.done).length;body+=bar(a.text,t?Math.round(d/t*100):0,purple,`${d}/${t} steps`);});
+        measurable.forEach(a=>{const g=a.totalHours||0,h=a.hoursLogged||0;body+=bar(a.text,g?Math.round(h/g*100):0,purple,`${h}/${g} hrs`);});
+        habitG.forEach(a=>{body+=bar(a.text+" (habit)",0,purple,`${a.weeklyPace||5}×/wk pace`);});}
     }
+
+    // ── HEALTH: WORKOUTS + STRENGTH + BODYWEIGHT ──
     if(exportSections.workouts){
-      body+=sectionTitle("Workouts");
       const ws=wHist.filter(w=>inRange(dk(new Date(w.date))));
-      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap">${card("Sessions",ws.length,rangeLabel)}${card("Total Sets",ws.reduce((a,w)=>a+w.exercises.reduce((x,e)=>x+e.sets.length,0),0))}${card("Current Weight",(bwLog.length?bwLog[bwLog.length-1].weight:0)+"lb")}</div>`;
-      if(ws.length)body+=`<table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:12px"><tr style="text-align:left;color:${dim};border-bottom:1px solid ${line}"><th style="padding:6px 4px">Date</th><th>Split</th><th>Exercises</th><th>Sets</th></tr>${ws.slice(0,12).map(w=>`<tr style="border-bottom:1px solid ${line}"><td style="padding:6px 4px">${esc(fd(w.date))}</td><td style="text-transform:uppercase">${esc(w.split)}</td><td>${w.exercises.length}</td><td>${w.exercises.reduce((a,e)=>a+e.sets.length,0)}</td></tr>`).join("")}</table>`;
+      const sets=ws.reduce((a,w)=>a+w.exercises.reduce((x,e)=>x+e.sets.length,0),0);
+      const vol=ws.reduce((a,w)=>a+w.exercises.reduce((x,e)=>x+e.sets.reduce((y,s)=>y+(s.w||0)*(s.r||0),0),0),0);
+      body+=sectionTitle("Workouts",rangeLabel);
+      body+=cards([card("Sessions",ws.length),card("Total Sets",sets),card("Volume",Math.round(vol).toLocaleString()+" lb"),card("Bodyweight",(bwLog.length?bwLog[bwLog.length-1].weight:0)+" lb")]);
+      // split frequency
+      const splitFreq={};ws.forEach(w=>{splitFreq[w.split]=(splitFreq[w.split]||0)+1;});
+      const sf=Object.entries(splitFreq).sort((a,b)=>b[1]-a[1]);
+      if(sf.length)body+=`<div style="margin-top:14px">${sf.map(([s,n])=>bar(s.toUpperCase(),Math.round(n/ws.length*100),acc,`${n}×`)).join("")}</div>`;
+      // strength PRs (computed within range)
+      const exMap={};ws.forEach(w=>(w.exercises||[]).forEach(ex=>{const mx=Math.max(0,...(ex.sets||[]).map(s=>s.w||0));if(mx>0)(exMap[ex.name]=exMap[ex.name]||[]).push({date:w.date,w:mx});}));
+      const exStats=Object.entries(exMap).map(([name,arr])=>{arr.sort((a,b)=>new Date(a.date)-new Date(b.date));const wv=arr.map(a=>a.w);return{name,latest:wv[wv.length-1],pr:Math.max(...wv),change:wv[wv.length-1]-wv[0],sessions:arr.length};}).sort((a,b)=>b.pr-a.pr);
+      if(exStats.length){body+=`<div style="font-size:11px;font-weight:700;color:${acc};text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 0">Strength · Personal Records</div>`;
+        body+=table(["Exercise","Latest","PR","Change","Sessions"],exStats.slice(0,16).map(e=>[esc(e.name),`${e.latest} lb`,`<b>${e.pr} lb</b>`,`<span style="color:${e.change>0?acc:e.change<0?red:dim}">${e.change>0?"+":""}${e.change} lb</span>`,e.sessions]),["left","right","right","right","right"]);}
+      // recent sessions
+      if(ws.length){body+=`<div style="font-size:11px;font-weight:700;color:${dim};text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 0">Recent Sessions</div>`;
+        body+=table(["Date","Split","Exercises","Sets"],ws.slice().reverse().slice(0,12).map(w=>[esc(fd(w.date)),`<span style="text-transform:uppercase">${esc(w.split)}</span>`,w.exercises.length,w.exercises.reduce((a,e)=>a+e.sets.length,0)]),["left","left","right","right"]);}
+      // bodyweight
+      if(bwLog.length>=2){const cur=bwLog[bwLog.length-1].weight,st=bwLog[0].weight,ch=(cur-st).toFixed(1);
+        body+=`<div style="font-size:11px;font-weight:700;color:${dim};text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 8px">Bodyweight</div>`;
+        body+=cards([card("Current",cur+" lb"),card("Start",st+" lb"),card("Change",(ch>0?"+":"")+ch+" lb",null,ch>0?acc:red)]);}
     }
+
+    // ── HEALTH: NUTRITION ──
+    if(exportSections.nutrition){
+      body+=sectionTitle("Nutrition",rangeLabel);
+      const days=Object.entries(diet).filter(([k])=>inRange(k)).sort((a,b)=>new Date(b[0])-new Date(a[0]));
+      if(!days.length)body+=note("No nutrition logged in this range.");
+      else{
+        const avg=key=>Math.round(days.reduce((a,[,v])=>a+(v[key]||0),0)/days.length);
+        const ac=avg("calories"),ap=avg("protein"),acb=avg("carbs"),af=avg("fat"),aw=avg("water");
+        body+=cards([card("Avg Calories",ac,`goal ${dietGoals.calories}`,amber),card("Avg Protein",ap+"g",`goal ${dietGoals.protein}g`,red),card("Avg Carbs",acb+"g",`goal ${dietGoals.carbs}g`,blue),card("Avg Fat",af+"g",`goal ${dietGoals.fat}g`,purple),card("Avg Water",aw+" oz",`goal ${dietGoals.water} oz`,"#06B6D4")]);
+        body+=`<div style="margin-top:14px">${[["Calories",ac,dietGoals.calories,amber],["Protein",ap,dietGoals.protein,red],["Carbs",acb,dietGoals.carbs,blue],["Fat",af,dietGoals.fat,purple]].map(([l,v,g,c])=>bar(l+" adherence",g?Math.round(v/g*100):0,c,`${v} / ${g}`)).join("")}</div>`;
+        body+=table(["Date","Cal","P","C","F","Water"],days.slice(0,14).map(([k,v])=>[esc(fd(k)),Math.round(v.calories||0),`${Math.round(v.protein||0)}g`,`${Math.round(v.carbs||0)}g`,`${Math.round(v.fat||0)}g`,`${Math.round(v.water||0)}oz`]),["left","right","right","right","right","right"]);
+      }
+    }
+
+    // ── BUDGET ──
     if(exportSections.budget){
       body+=sectionTitle("Budget");
       const nw=acctNow.checking+acctNow.savings+acctNow.investment;
-      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap">${card("Net Worth","$"+nw.toFixed(2),null,"#059669")}${card("Debt","$"+Math.max(0,acctNow.credit).toFixed(2),null,"#DC2626")}</div>`;
-      body+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">${ACCT_META.map(a=>card(a.label,"$"+(acctNow[a.key]||0).toFixed(2))).join("")}</div>`;
+      body+=cards([card("Net Worth",money(nw),null,acc),card("Debt",money(Math.max(0,acctNow.credit)),null,red)]);
+      // cash flow in range
+      const txR=allTx.filter(t=>inRange(t.date));
+      const income=txR.filter(t=>t.type==="in").reduce((a,t)=>a+t.amount,0);
+      const expense=txR.filter(t=>t.type==="out").reduce((a,t)=>a+t.amount,0);
+      body+=`<div style="margin-top:10px">${cards([card("Income",money(income),rangeLabel,acc),card("Expenses",money(expense),rangeLabel,red),card("Net Flow",money(income-expense),null,income-expense>=0?acc:red)])}</div>`;
+      body+=`<div style="font-size:11px;font-weight:700;color:${dim};text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 8px">Accounts</div>`;
+      body+=cards(ACCT_META.map(a=>card(a.label,money(acctNow[a.key]||0))));
+      // recent transactions
+      const recent=txR.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,14);
+      if(recent.length){body+=`<div style="font-size:11px;font-weight:700;color:${dim};text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 0">Recent Transactions</div>`;
+        body+=table(["Date","Description","Type","Amount"],recent.map(t=>[esc(fd(t.date)),esc(t.desc||"—"),t.type==="in"?"Income":t.type==="out"?"Expense":"Transfer",`<span style="color:${t.type==="in"?acc:t.type==="out"?red:dim}">${t.type==="out"?"-":t.type==="in"?"+":""}${money(t.amount).replace("$","$")}</span>`]),["left","left","left","right"]);}
+      // subscriptions
+      if(subscriptions.length){const subTot=subscriptions.reduce((a,s)=>a+(parseFloat(s.cost)||0),0);
+        body+=`<div style="font-size:11px;font-weight:700;color:${dim};text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 0">Subscriptions · ${money(subTot)}/mo</div>`;
+        body+=table(["Name","Category","Bills","Cost"],subscriptions.map(s=>[esc(s.name),esc(s.category||"—"),s.billDay?`Day ${s.billDay}`:"—",money(parseFloat(s.cost)||0)]),["left","left","left","right"]);}
     }
 
     const html=`<!doctype html><html><head><meta charset="utf-8"><title>Progress Report — ${esc(rangeLabel)}</title>
-<style>@page{margin:48px 40px}@media print{.noprint{display:none}}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:${ink};margin:0;padding:40px;background:#fff}
-.hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${acc};padding-bottom:18px;margin-bottom:8px}
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>@page{margin:42px 38px}@media print{.noprint{display:none}}body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:${ink};margin:0;padding:38px 40px 56px;background:#fff}
+h2{page-break-after:avoid}table{page-break-inside:auto}tr{page-break-inside:avoid}
+.hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${acc};padding-bottom:16px;margin-bottom:6px}
 .foot{position:fixed;bottom:14px;left:0;right:0;text-align:center;font-size:9px;color:${dim}}</style></head>
 <body>
-<div class="hd"><div><div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:${acc};font-weight:800">Progress</div><div style="font-size:26px;font-weight:800;font-style:italic;margin-top:2px">Personal Report</div></div>
+<div class="hd"><div><div style="font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${acc}">Progress</div><div style="font-size:13px;color:${dim};margin-top:3px;font-weight:500">Personal Performance Report</div></div>
 <div style="text-align:right;font-size:11px;color:${dim}"><div style="font-weight:700;color:${ink};font-size:13px">${esc(rangeLabel)}</div><div>Generated ${esc(new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}))}</div></div></div>
 ${body}
-<div class="foot">Progress · Personal Productivity Report · ${esc(rangeLabel)}</div>
+<div class="foot">Progress · Personal Performance Report · ${esc(rangeLabel)} · ${esc(new Date().toLocaleDateString("en-US"))}</div>
 </body></html>`;
+
 
     // Trigger a real file download of the report (works everywhere, including mobile/PWA) ...
     const downloadHtml=()=>{
@@ -1880,7 +1952,7 @@ ${body}
   /* ═══ RENDER ═══ */
   return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column",transition:"background 0.4s ease, color 0.4s ease"}}>
-      <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
       <style>{CSS}</style>
 
       {confetti&&<div style={{position:"fixed",inset:0,zIndex:300,pointerEvents:"none",overflow:"hidden"}}>{Array.from({length:30}).map((_,i)=>{const l=Math.random()*100,d=Math.random()*2+1;const c=[C.green,C.goldBright,C.blue,C.orange,"#fff"][Math.floor(Math.random()*5)];return(<div key={i} style={{position:"absolute",left:`${l}%`,top:-10,width:7,height:7,borderRadius:"50%",background:c,animation:`xpFloat ${d}s ease-out forwards`}} />);})}</div>}
@@ -1890,13 +1962,13 @@ ${body}
 
       {/* ═══ STICKY HEADER ═══ */}
       <div style={{position:"sticky",top:0,zIndex:100,background:C.surface,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",paddingBottom:8}}>
-        <div style={{position:"relative",padding:"12px 0 8px"}}>
-          {/* PROGRESS wordmark — full-width, hollow, blocky → tap to Today */}
-          <button className="press" onClick={()=>{setTab("today");setMenuTab(null);}} style={{display:"block",width:"100%",background:"transparent",border:"none",cursor:"pointer",padding:"0 16px"}}>
-            <span style={{display:"block",textAlign:"center",fontFamily:FN.b,fontSize:38,fontWeight:900,letterSpacing:"0.42em",textIndent:"0.42em",textTransform:"uppercase",lineHeight:1,color:theme==="light"?"#0AA063":"#34E29B",WebkitTextFillColor:"transparent",WebkitTextStroke:theme==="light"?"1.5px #0AA063":"1.6px #34E29B"}}>Progress</span>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,padding:"13px 14px 9px"}}>
+          {/* left spacer balances the right button cluster so the wordmark stays centered & never overlaps */}
+          <div style={{width:58,flexShrink:0,height:1}} aria-hidden="true" />
+          <button className="press" onClick={()=>{setTab("today");setMenuTab(null);}} style={{flex:1,minWidth:0,background:"transparent",border:"none",cursor:"pointer",padding:0}}>
+            <span style={{display:"block",textAlign:"center",fontFamily:"'Space Grotesk',sans-serif",fontSize:27,fontWeight:700,letterSpacing:"0.18em",textIndent:"0.18em",textTransform:"uppercase",lineHeight:1.05,color:theme==="light"?"#0AA063":"#34E29B",whiteSpace:"nowrap"}}>Progress</span>
           </button>
-          {/* icon buttons overlaid top-right, tops aligned with the title */}
-          <div style={{position:"absolute",top:4,right:16,display:"flex",gap:6,alignItems:"flex-start"}}>
+          <div style={{width:58,flexShrink:0,display:"flex",gap:6,justifyContent:"flex-end",alignItems:"flex-start"}}>
             <button className="press" onClick={()=>setStructuredMode(p=>!p)} style={{background:structuredMode?C.accentSoft:"transparent",border:structuredMode?`1px solid ${C.accentMed}`:"1px solid transparent",borderRadius:6,cursor:"pointer",padding:5,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s ease"}} title="Structured Mode"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="6" y="1" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="11" y="1" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="1" y="6" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="6" y="6" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="11" y="6" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="1" y="11" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="6" y="11" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="11" y="11" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/></svg></button>
             <button className="press" onClick={()=>setShowSettings(true)} style={{background:"transparent",border:"none",cursor:"pointer",padding:4}}><svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3" stroke={C.goldBright} strokeWidth="1.5"/><path d="M10 1v2M10 17v2M1 10h2M17 10h2M3.5 3.5l1.4 1.4M15.1 15.1l1.4 1.4M3.5 16.5l1.4-1.4M15.1 4.9l1.4-1.4" stroke={C.goldBright} strokeWidth="1.5" strokeLinecap="round"/></svg></button>
           </div>
@@ -3286,7 +3358,7 @@ ${body}
         {exportStep===1&&<div>
           <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:4}}>Which sections?</div>
           <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>Select one or more to include.</div>
-          {[{k:"analytics",l:"Analytics",d:"Habit consistency + focus productivity"},{k:"workouts",l:"Workouts",d:"Sessions, sets, bodyweight"},{k:"goals",l:"Goals",d:"Weekly & monthly progress"},{k:"budget",l:"Budget",d:"Net worth, debt, accounts"}].map(s=>{const on=exportSections[s.k];return(
+          {[{k:"analytics",l:"Analytics",d:"Habit consistency, streaks, focus productivity"},{k:"goals",l:"Goals",d:"Weekly, monthly & measurable goal progress"},{k:"workouts",l:"Health · Workouts",d:"Sessions, volume, strength PRs, bodyweight"},{k:"nutrition",l:"Health · Nutrition",d:"Calorie & macro averages vs. goals"},{k:"budget",l:"Budget",d:"Net worth, cash flow, accounts, subscriptions"}].map(s=>{const on=exportSections[s.k];return(
             <div key={s.k} onClick={()=>setExportSections(p=>({...p,[s.k]:!p[s.k]}))} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:10,cursor:"pointer",background:on?C.accentSoft:C.surfaceDim,border:`1px solid ${on?C.accentMed:C.hairline}`}}>
               <div style={{width:20,height:20,borderRadius:5,border:`1.5px solid ${on?C.accent:C.textDim}`,background:on?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:11,fontWeight:800,flexShrink:0}}>{on&&"✓"}</div>
               <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{s.l}</div><div style={{fontSize:10,color:C.textDim,marginTop:1}}>{s.d}</div></div>
