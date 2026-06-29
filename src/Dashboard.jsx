@@ -181,7 +181,7 @@ function Ring({value,goal,size=120,stroke=12,color,children}){
 const seedWH=[{id:"h6",date:"2026-03-15",split:"upper",exercises:[{name:"Bench Press",sets:[{w:50,r:10},{w:60,r:6}]},{name:"Lat Pull Down",sets:[{w:54,r:8},{w:59,r:7}]}]}];
 const seedBW=[{date:"2025-10-01",weight:72.5},{date:"2026-01-01",weight:74.5},{date:"2026-03-01",weight:75.2},{date:"2026-03-29",weight:75.8}];
 const seedTx={"2026-03-01":[{id:"t14",type:"out",amount:26.5,desc:"Sunday"}],"2026-03-06":[{id:"t16",type:"in",amount:30,desc:"Income"}]};
-const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000};
+const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000,focusTransferHour:22};
 
 /* ═══ REFLECTION PROMPTS — rotate based on day quality ═══ */
 const REFLECT_PROMPTS={
@@ -1546,6 +1546,42 @@ ${body}
   // CRITICAL STATE — saved immediately on every change, no debounce. These are the things
   // that absolutely cannot be lost: your check-offs, your focus tasks, your todos, your aspirations.
   const criticalRef=useRef({checks,focusByDate,todos,aspirations});
+
+  /* ─── FOCUS ROLLOVER ─── carry unfinished focus tasks forward; only past the transfer hour ─── */
+  const rollRef=useRef({checks,settings});
+  useEffect(()=>{rollRef.current={checks,settings};},[checks,settings]);
+  useEffect(()=>{
+    const nextKey=k=>{const d=new Date(k);d.setDate(d.getDate()+1);return dk(d);};
+    const run=()=>{
+      const {checks:ck,settings:st}=rollRef.current;
+      const H=parseInt(st.focusTransferHour);const hour=isNaN(H)?22:H;
+      const now=new Date();const todayK=dk(now);
+      // Day is "closed" for focus once the clock passes the transfer hour → leftovers go to the next day.
+      const activeDay=now.getHours()>=hour?nextKey(todayK):todayK;
+      setFocusByDate(prev=>{
+        const work={...prev};
+        let landing=[...(prev[activeDay]||[])];
+        const ids=new Set(landing.map(t=>t.id));
+        let moved=false;
+        Object.keys(prev).forEach(k=>{
+          if(new Date(k)>=new Date(activeDay))return;          // only days before the active day roll over
+          const list=prev[k]||[];
+          const dayChecks=ck[k]||{};
+          const incomplete=list.filter(t=>!dayChecks[t.id]);
+          if(incomplete.length===0)return;
+          work[k]=list.filter(t=>dayChecks[t.id]);             // completed stay as that day's history
+          incomplete.forEach(t=>{if(!ids.has(t.id)){landing.push(t);ids.add(t.id);}});
+          moved=true;
+        });
+        if(!moved)return prev;
+        work[activeDay]=landing;
+        return work;
+      });
+    };
+    const t=setTimeout(run,1500);              // let storage load first
+    const id=setInterval(run,60000);           // re-check each minute so it fires when the hour passes
+    return()=>{clearTimeout(t);clearInterval(id);};
+  },[]);
   criticalRef.current={checks,focusByDate,todos,aspirations};
   useEffect(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
@@ -3324,6 +3360,13 @@ ${body}
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Morning Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.morningStart} onChange={e=>setSettings(p=>({...p,morningStart:parseInt(e.target.value)||5}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.morningEnd} onChange={e=>setSettings(p=>({...p,morningEnd:parseInt(e.target.value)||12}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Night Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.nightStart} onChange={e=>setSettings(p=>({...p,nightStart:parseInt(e.target.value)||18}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.nightEnd} onChange={e=>setSettings(p=>({...p,nightEnd:parseInt(e.target.value)||23}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Review Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,reviewDay:i}))} style={{...pill(settings.reviewDay===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
+
+        <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Carry unfinished focus to next day at</div>
+          <select value={settings.focusTransferHour??22} onChange={e=>setSettings(p=>({...p,focusTransferHour:parseInt(e.target.value)}))} style={{...inp,width:"100%",cursor:"pointer"}}>
+            {Array.from({length:24},(_,h)=>{const ampm=h<12?"AM":"PM";const h12=h%12===0?12:h%12;return(<option key={h} value={h}>{h12}:00 {ampm}</option>);})}
+          </select>
+          <div style={{fontSize:10,color:C.textDim,marginTop:5,lineHeight:1.45}}>Before this time, unfinished focus tasks stay on the day. After it, anything still open rolls over to the next day.</div>
+        </div>
 
         <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Budget Thresholds</div>
         <div style={{fontSize:10,color:C.textDim,marginBottom:10,lineHeight:1.5}}>Controls where the Net Worth and Debt cards shift between red, yellow, and green.</div>
