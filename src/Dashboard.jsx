@@ -645,6 +645,7 @@ export default function Dashboard(){
   // ─── Footer page swipe nav ───
   const[navDir,setNavDir]=useState(0); // -1 left, 1 right, 0 none — drives transition direction
   const calRef=useRef(null);
+  const dietCalRef=useRef(null);
 
   const now=new Date();const vk=dk(vDate);const isToday=vk===dk(now);const dc=checks[vk]||{};
   const focusTasks=focusByDate[vk]||[];
@@ -1499,6 +1500,7 @@ ${body}
     return days;
   },[vDate,checks,todos,focusByDate]);
   useEffect(()=>{if(calRef.current)calRef.current.scrollLeft=14*56-100;},[vk]);
+  useEffect(()=>{if(dietCalRef.current)dietCalRef.current.scrollLeft=14*52-120;},[dietDate,gView,menuTab]);
 
 
   /* ─── Storage — bulletproof save system ─── */
@@ -2848,16 +2850,30 @@ ${body}
           {gView==="diet"&&(()=>{
             const g=dietGoals,d=dietDay;
             const isToday=dietDate===dk(now);
+            const isFuture=new Date(dietDate)>new Date(dk(now));
             const calLeft=Math.max(0,(g.calories||0)-(d.calories||0));
             const macroCards=[{k:"protein"},{k:"carbs"},{k:"fat"}];
             const totalMacroG=(d.protein||0)+(d.carbs||0)+(d.fat||0);
-            const shift=(days)=>{const dt=new Date(dietDate);dt.setDate(dt.getDate()+days);const nk=dk(dt);if(new Date(nk)<=new Date(dk(now)))setDietDate(nk);};
+            // Scrolling date strip centered on the selected day — go back to backfill, forward to plan ahead.
+            const dietCalDays=[];
+            for(let i=-14;i<=14;i++){const dt=new Date(dietDate);dt.setDate(dt.getDate()+i);const k=dk(dt);const cal=(diet[k]||{}).calories||0;dietCalDays.push({key:k,cal,isToday:k===dk(now),isFuture:new Date(k)>new Date(dk(now)),dayNum:dt.getDate(),dayName:dt.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2)});}
             return(<div>
-              {/* Date stepper */}
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-                <button onClick={()=>shift(-1)} style={btnG}>‹</button>
-                <div style={{textAlign:"center"}}><div style={{fontSize:14,fontWeight:700,color:C.text}}>{isToday?"Today":new Date(dietDate).toLocaleDateString("en-US",{weekday:"long"})}</div><div style={{fontSize:10,color:C.textDim,fontFamily:FN.m}}>{new Date(dietDate).toLocaleDateString("en-US",{month:"long",day:"numeric"})}</div></div>
-                <button onClick={()=>shift(1)} disabled={isToday} style={{...btnG,opacity:isToday?0.35:1}}>›</button>
+              {/* Scrolling calendar — tap any day to log; past = backfill, future = plan ahead */}
+              <div ref={dietCalRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",padding:"4px 0",marginBottom:8}}>
+                {dietCalDays.map((dy,i)=>{const sel=dietDate===dy.key;return(
+                  <div key={i} onClick={()=>setDietDate(dy.key)} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:"pointer",background:sel?C.accent:dy.cal>0?C.accentSoft:"transparent",border:sel?"1px solid transparent":dy.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,transition:"all 0.2s ease",opacity:dy.isFuture&&!sel?0.65:1}}>
+                    <div style={{fontSize:9,fontWeight:600,color:sel?"#0B1120":C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{dy.dayName}</div>
+                    <div className="hero-num" style={{fontSize:16,color:sel?"#0B1120":dy.isToday?C.accent:C.text}}>{dy.dayNum}</div>
+                    <div style={{fontFamily:FN.m,fontSize:8,fontWeight:600,color:sel?"rgba(11,17,32,0.7)":dy.cal>0?C.accent:C.textDim,marginTop:1}}>{dy.cal>0?Math.round(dy.cal):"·"}</div>
+                  </div>
+                );})}
+              </div>
+              {/* Selected-day label + quick jump to Today */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16}}>
+                <span style={{fontSize:14,fontWeight:700,color:C.text}}>{isToday?"Today":new Date(dietDate).toLocaleDateString("en-US",{weekday:"long"})}</span>
+                <span style={{fontSize:11,color:C.textDim,fontFamily:FN.m}}>{new Date(dietDate).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>
+                {isFuture&&<span style={{fontSize:8,fontWeight:700,color:C.accent,background:C.accentSoft,borderRadius:4,padding:"2px 6px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Planned</span>}
+                {!isToday&&<button onClick={()=>setDietDate(dk(now))} style={{fontSize:9,fontWeight:700,color:C.textDim,background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:6,padding:"3px 8px",cursor:"pointer",fontFamily:FN.b}}>Today</button>}
               </div>
 
               {/* Calorie ring hero */}
