@@ -106,6 +106,9 @@ const CSS=`
 .page-r{animation:pageInR 0.28s cubic-bezier(0.25,0.46,0.45,0.94)}
 .page-l{animation:pageInL 0.28s cubic-bezier(0.25,0.46,0.45,0.94)}
 .task-row{transition:opacity 0.35s ease, background 0.4s ease, border-color 0.3s ease}
+@keyframes focusComplete{0%{transform:scale(1);opacity:1;max-height:70px}22%{transform:scale(1.05)}48%{transform:scale(1);opacity:1}72%{opacity:0.5}100%{transform:scale(0.82);opacity:0;max-height:0;margin-bottom:0;padding-top:0;padding-bottom:0;border-width:0}}
+.focus-complete{animation:focusComplete 0.56s cubic-bezier(0.4,0,0.2,1) forwards;overflow:hidden}
+@keyframes focusStrike{0%{transform:scaleX(0)}100%{transform:scaleX(1)}}
 .task-row.just-checked{animation:rowDim 0.7s ease forwards}
 .task-row:active{transform:scale(0.98)}
 .sweep-fill{position:absolute;inset:0;border-radius:10px;pointer-events:none;animation:liquidRise 360ms cubic-bezier(0.4,0.0,0.2,1) forwards}
@@ -554,6 +557,7 @@ export default function Dashboard(){
   const[focusCollapsed,setFocusCollapsed]=useState({}); // {goalId:true} — collapsed goal cards in Today→Focus (default expanded)
   const[reorderMode,setReorderMode]=useState(false); // Today: drag-to-reorder habits
   const[focusQuick,setFocusQuick]=useState(""); // inline "add focus/daily task" composer text
+  const[completingFocus,setCompletingFocus]=useState({}); // focus task ids mid completion-animation
   const[habitOrder,setHabitOrder]=useState({}); // {taskId: index} — manual habit order, overrides smart-learned order
   const[editTask,setEditTask]=useState(null); // {task, source:"focus"|"todos"}
   const[editText,setEditText]=useState("");
@@ -704,6 +708,19 @@ export default function Dashboard(){
       setGroups(p=>p.map(g=>g.tasks.includes(t.id)?{...g,feed:[{user:"You",task:t.text,time:new Date().toISOString(),type:"proof",img},...(g.feed||[]).slice(0,49)]}:g));
     });
     if(!t.grp&&isToday)logFocusCompletion(1);
+  };
+
+  /* ─── Focus daily tasks: animate completion, then move to "done" ─── */
+  const completeFocusTask=(t)=>{
+    if(dc[t.id]||completingFocus[t.id])return;
+    setCompletingFocus(p=>({...p,[t.id]:true}));        // keeps the row rendered while it animates out
+    setChecks(p=>({...p,[vk]:{...(p[vk]||{}),[t.id]:true}})); // logically done now → shows in "done" once anim ends
+    if(isToday)logFocusCompletion(1);
+    setTimeout(()=>setCompletingFocus(p=>{const n={...p};delete n[t.id];return n;}),560);
+  };
+  const restoreFocusTask=(t)=>{
+    setChecks(p=>{const day={...(p[vk]||{})};delete day[t.id];return{...p,[vk]:day};});
+    if(isToday)logFocusCompletion(-1);
   };
 
   /* ─── Streaks ─── */
@@ -1947,6 +1964,38 @@ ${body}
     </div>
     </div>);};
 
+  /* Daily focus task row — strike + pop animation on complete, then it moves to the Done list. */
+  const FocusDailyRow=({t})=>{
+    const completing=!!completingFocus[t.id];
+    const d=t.diff&&DIFF[t.diff];
+    return(<div className={completing?"focus-complete":""} style={{display:"flex",alignItems:"center",gap:11,padding:"13px 4px",marginBottom:7,borderBottom:`1px solid ${C.hairline}`}}>
+      <div onClick={()=>!completing&&completeFocusTask(t)} style={{width:23,height:23,borderRadius:7,border:`1.5px solid ${completing?C.greenBright:C.textDim}`,background:completing?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:13,fontWeight:800,cursor:"pointer",transition:"all 0.2s ease",flexShrink:0}}>{completing&&"✓"}</div>
+      {d&&<div style={{width:4,height:24,borderRadius:2,background:d.color,flexShrink:0,opacity:completing?0.4:1}}/>}
+      <span onClick={()=>!completing&&completeFocusTask(t)} style={{flex:1,position:"relative",fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:completing?C.textDim:C.text,cursor:"pointer"}}>
+        {t.text}
+        {completing&&<span style={{position:"absolute",left:0,top:"52%",height:2,width:"100%",background:C.green,transformOrigin:"left center",animation:"focusStrike 0.28s ease forwards"}}/>}
+      </span>
+      {d&&<span style={{fontSize:9,fontWeight:700,fontFamily:FN.m,color:d.color,background:d.bg,borderRadius:4,padding:"2px 7px",flexShrink:0,opacity:completing?0.5:1}}>{d.label}</span>}
+    </div>);
+  };
+  /* Completed focus tasks for the viewed day — tap to restore. Reused in Today→Focus and Goals→Focus. */
+  const renderFocusDone=()=>{
+    const done=focusTasks.filter(t=>dc[t.id]&&!completingFocus[t.id]);
+    if(done.length===0)return null;
+    return(<div style={{marginTop:18}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+        <span style={{fontSize:10,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.08em"}}>Done {isToday?"Today":""}</span>
+        <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{done.length}</span>
+        <div style={{flex:1,height:1,background:C.hairline}}/>
+      </div>
+      {done.map(t=>(<div key={t.id} onClick={()=>restoreFocusTask(t)} className="card-enter" style={{display:"flex",alignItems:"center",gap:11,padding:"10px 4px",borderBottom:`1px solid ${C.hairline}`,cursor:"pointer"}} title="Tap to restore">
+        <div style={{width:23,height:23,borderRadius:7,background:C.greenBright,display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:13,fontWeight:800,flexShrink:0}}>✓</div>
+        <span style={{flex:1,fontSize:14,color:C.textDim,textDecoration:"line-through",fontFamily:FN.h,fontStyle:"italic"}}>{t.text}</span>
+        {t.diff&&DIFF[t.diff]&&<span style={{fontSize:9,fontWeight:700,fontFamily:FN.m,color:C.textDim,background:C.surfaceDim,borderRadius:4,padding:"2px 7px",flexShrink:0}}>{DIFF[t.diff].label}</span>}
+      </div>))}
+    </div>);
+  };
+
   const mainTabs=[{k:"today",l:"Today",i:Icons.today},{k:"groups",l:"Journal",i:Icons.journal},{k:"analytics",l:"Analytics",i:Icons.analytics},{k:"goals",l:"Goals",i:Icons.goals},{k:"workout",l:"Health",i:Icons.workout},{k:"budget",l:"Budget",i:Icons.budget}];
 
   /* ═══ RENDER ═══ */
@@ -2149,7 +2198,7 @@ ${body}
               :morningTSorted.map(t=><TRow key={t.id} t={t} />)}
           </div>}
           {todaySub==="focus"&&(()=>{
-            const dailyTasks=focusTasks.filter(t=>!dc[t.id]); // one-and-done: complete and disappear
+            const dailyTasks=focusTasks.filter(t=>!dc[t.id]||completingFocus[t.id]); // active + mid-animation
             const weeklyGoals=weeklyFocusGoals;
             const monthlyGoals=monthlyFocusGoals;
             const FOCUS_BLUE="#60A5FA",FOCUS_ORANGE="#FB923C",FOCUS_PURPLE="#A78BFA";
@@ -2190,7 +2239,8 @@ ${body}
                 <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFocusQuick();}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
                 <button onClick={addFocusQuick} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
               </div>
-              {dailyTasks.map(t=><TRow key={t.id} t={t} big />)}
+              {dailyTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}
+              {renderFocusDone()}
 
               {/* Section 2 — Weekly Goals (second priority): checkbox dropdowns */}
               {weeklyGoals.length>0&&<>
@@ -2565,13 +2615,14 @@ ${body}
                 <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const t=focusQuick.trim();if(t){addFocus({id:uid(),text:t,diff:"easy"});setFocusQuick("");}}}} placeholder="Add a focus task…" style={{...inp,flex:1}}/>
                 <button onClick={()=>{const t=focusQuick.trim();if(t){addFocus({id:uid(),text:t,diff:"easy"});setFocusQuick("");}}} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
               </div>
-              {focusTasks.map(t=>(<SwipeRow key={t.id} onDelete={()=>removeFocus(t.id)} bg={C.surface} padY={11}>
+              {focusTasks.filter(t=>!dc[t.id]).map(t=>(<SwipeRow key={t.id} onDelete={()=>removeFocus(t.id)} bg={C.surface} padY={11}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:13,fontWeight:500,flex:1,color:C.text}}>{t.text}</span>
                   <span style={{fontSize:9,fontWeight:700,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 6px",fontFamily:FN.m}}>{DIFF[t.diff].label}</span>
                   <button onClick={()=>openEdit(t,"focus")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b}}>edit</button>
                 </div>
               </SwipeRow>))}
+              {renderFocusDone()}
             </div>
           </div>}
 
