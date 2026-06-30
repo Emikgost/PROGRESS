@@ -648,9 +648,17 @@ export default function Dashboard(){
   const dietCalRef=useRef(null);
 
   const now=new Date();const vk=dk(vDate);const isToday=vk===dk(now);const dc=checks[vk]||{};
+
+  /* ─── Habit history freezing ─── a habit counts on day K only between its createdOn and removedOn.
+     Existing habits (no dates) count on every day; removing sets removedOn so past days stay frozen. */
+  const habitActiveOn=(h,k)=>{const d=new Date(k);if(h.createdOn&&d<new Date(h.createdOn))return false;if(h.removedOn&&d>=new Date(h.removedOn))return false;return true;};
+  const activeTodos=(k)=>todos.filter(t=>habitActiveOn(t,k));
+  const dayHabitRoster=(k)=>[...activeTodos(k),...aspirations.filter(a=>a.graduated)];
+  const dayHabitPct=(k)=>{const all=dayHabitRoster(k);if(all.length===0)return 0;const ch=checks[k]||{};return Math.round(all.filter(t=>ch[t.id]).length/all.length*100);};
+  const removeHabit=(id)=>setTodos(p=>p.map(t=>t.id===id?{...t,removedOn:dk(now)}:t)); // soft-delete: keep on past days, drop from today onward
   const focusTasks=focusByDate[vk]||[];
-  const morningT=todos.filter(t=>t.grp==="morning");
-  const nightT=todos.filter(t=>t.grp==="night");
+  const morningT=activeTodos(vk).filter(t=>t.grp==="morning");
+  const nightT=activeTodos(vk).filter(t=>t.grp==="night");
 
   /* ─── SMART ORDERING: learn the order you actually complete tasks ─── */
   // For each task, compute its average ordinal rank across the last 14 days.
@@ -729,17 +737,17 @@ export default function Dashboard(){
 
   // Habits = recurring routine todos + graduated habit-tracker items. Inlined (rather than referencing the
   // `habits` memo declared further below) so these formulas don't depend on declaration order.
-  const streak=useMemo(()=>{const hb=[...todos,...aspirations.filter(a=>a.graduated)];const tot=hb.length;if(tot===0)return 0;let s=0;const d=new Date();d.setDate(d.getDate()-1);while(hb.filter(t=>(checks[dk(d)]||{})[t.id]).length>=tot*0.5){s++;d.setDate(d.getDate()-1);}if(hb.filter(t=>(checks[dk(now)]||{})[t.id]).length>=tot*0.5)s++;return s;},[checks,todos,aspirations]);
+  const streak=useMemo(()=>{const hit=(d)=>{const k=dk(d);const roster=[...todos.filter(t=>habitActiveOn(t,k)),...aspirations.filter(a=>a.graduated)];const tot=roster.length;if(tot===0)return false;return roster.filter(t=>(checks[k]||{})[t.id]).length>=tot*0.5;};let s=0;const d=new Date();d.setDate(d.getDate()-1);while(hit(d)){s++;d.setDate(d.getDate()-1);}if(hit(new Date()))s++;return s;},[checks,todos,aspirations]);
   const longestHabitStreak=useMemo(()=>{const hb=[...todos,...aspirations.filter(a=>a.graduated)];const tot=hb.length;if(tot===0)return 0;const keys=Object.keys(checks).sort();let mx=0,cu=0;for(const k of keys){if(hb.filter(t=>(checks[k]||{})[t.id]).length>=tot*0.5){cu++;mx=Math.max(mx,cu);}else cu=0;}return mx;},[checks,todos,aspirations]);
 
   /* ─── Today Completion — HABITS ONLY (per spec). Daily Tasks, Weekly/Monthly goal steps are Focus,
      and are deliberately excluded so the Today screen measures consistency, not productivity. ─── */
   const todayCompletion=useMemo(()=>{
-    const all=[...todos,...aspirations.filter(a=>a.graduated)];
+    const all=dayHabitRoster(vk);
     if(all.length===0)return{done:0,total:0,pct:0};
     const done=all.filter(t=>dc[t.id]).length;
     return{done,total:all.length,pct:Math.round(done/all.length*100)};
-  },[todos,aspirations,dc]);
+  },[todos,aspirations,dc,vk]);
 
   /* ─── ASPIRATION PROGRESS — compute this month's hits and on-pace status per aspiration ─── */
   // Each aspiration of type "recurring" auto-surfaces as a focus task. We treat the aspiration
@@ -950,7 +958,7 @@ export default function Dashboard(){
       const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(i).padStart(2,"0")}`;
       const ch=checks[k]||{};
       const dayFocus=focusByDate[k]||[];
-      const all=[...todos,...dayFocus];
+      const all=[...activeTodos(k),...dayFocus];
       if(all.length===0)continue;
       const done=all.filter(t=>ch[t.id]).length;
       sum+=(done/all.length)*100;days++;
@@ -980,7 +988,7 @@ export default function Dashboard(){
   const weakHabits=useMemo(()=>sortedH.filter(h=>h.rate<40).slice(-5).reverse(),[sortedH]);
 
   /* ═══ HABIT ANALYTICS — consistency only. Never mixed with Focus metrics below. ═══ */
-  const habitPctForDate=(k)=>{const all=[...todos,...aspirations.filter(a=>a.graduated)];if(all.length===0)return 0;const ch=checks[k]||{};return Math.round(all.filter(t=>ch[t.id]).length/all.length*100);};
+  const habitPctForDate=(k)=>dayHabitPct(k);
   const habitToday=todayCompletion.pct;
   const habitWeekly=useMemo(()=>{let sum=0;for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-i);sum+=habitPctForDate(dk(d));}return Math.round(sum/7);},[checks,todos,aspirations,now]);
   const habitMonthly=useMemo(()=>{const dom=now.getDate();let sum=0;for(let i=1;i<=dom;i++){sum+=habitPctForDate(dk(new Date(now.getFullYear(),now.getMonth(),i)));}return Math.round(sum/dom);},[checks,todos,aspirations,now]);
@@ -1009,7 +1017,7 @@ export default function Dashboard(){
       const k=dk(d);
       const ch=checks[k]||{};
       const dayFocus=focusByDate[k]||[];
-      const all=[...todos,...dayFocus];
+      const all=[...activeTodos(k),...dayFocus];
       const done=all.length>0?all.filter(t=>ch[t.id]).length:0;
       const pct=all.length>0?Math.round(done/all.length*100):0;
       daily.push({day:d.toLocaleDateString("en-US",{weekday:"short"}),pct,done,total:all.length});
@@ -1028,7 +1036,7 @@ export default function Dashboard(){
       const k=dk(d);
       const ch=checks[k]||{};
       const dayFocus=focusByDate[k]||[];
-      const all=[...todos,...dayFocus];
+      const all=[...activeTodos(k),...dayFocus];
       const done=all.length>0?all.filter(t=>ch[t.id]).length:0;
       const pct=all.length>0?Math.round(done/all.length*100):0;
       const focusDone=dayFocus.length>0?Math.round(dayFocus.filter(t=>ch[t.id]).length/dayFocus.length*100):0;
@@ -1048,7 +1056,7 @@ export default function Dashboard(){
     for(let i=13;i>=7;i--){
       const d=new Date();d.setDate(d.getDate()-i);
       const k=dk(d);const ch=checks[k]||{};const dayFocus=focusByDate[k]||[];
-      const all=[...todos,...dayFocus];
+      const all=[...activeTodos(k),...dayFocus];
       if(all.length===0)continue;
       const done=all.filter(t=>ch[t.id]).length;
       totPct+=(done/all.length)*100;days++;
@@ -1066,8 +1074,8 @@ export default function Dashboard(){
   const dailyLabel=todayCompletion.pct>=85?{text:"Strong Day",color:C.green}:todayCompletion.pct>=60?{text:"Solid Day",color:C.accent}:todayCompletion.pct>0?{text:"Needs Work",color:C.red}:{text:"Day Ahead",color:C.textDim};
   // Behavior pattern — compare morning vs evening completion across the month
   const behaviorPattern=useMemo(()=>{
-    const mornIds=todos.filter(t=>t.grp==="morning").map(t=>t.id);
-    const nightIds=todos.filter(t=>t.grp==="night").map(t=>t.id);
+    const mornIds=activeTodos(dk(now)).filter(t=>t.grp==="morning").map(t=>t.id);
+    const nightIds=activeTodos(dk(now)).filter(t=>t.grp==="night").map(t=>t.id);
     if(mornIds.length===0&&nightIds.length===0)return null;
     let mornHit=0,mornTot=0,nightHit=0,nightTot=0,focusHit=0,focusTot=0;
     Object.entries(checks).forEach(([k,ch])=>{
@@ -1322,7 +1330,7 @@ ${body}
       :`Yesterday was a rough one. Today's a new day.`;
     // Pick one specific action: easiest uncompleted morning habit today
     const dcToday=checks[todayKey]||{};
-    const morningCandidates=todos.filter(t=>t.grp==="morning"&&!dcToday[t.id]);
+    const morningCandidates=activeTodos(dk(now)).filter(t=>t.grp==="morning"&&!dcToday[t.id]);
     let startHere=null;
     if(morningCandidates.length>0){
       // Prefer easy difficulty. If none, pick the one with the highest historical completion rate.
@@ -1357,7 +1365,7 @@ ${body}
     // Count days hit this week
     const weekStart=new Date(y,mo,d-(dow===0?6:dow-1));
     let weekHits=0,weekTotal=0;
-    for(let i=0;i<7;i++){const wd=new Date(weekStart);wd.setDate(wd.getDate()+i);if(wd>now)break;const k=dk(wd);const ch=checks[k]||{};const all=[...todos];if(all.length===0)continue;const done=all.filter(t=>ch[t.id]).length;if(done/all.length>=0.8)weekHits++;weekTotal++;}
+    for(let i=0;i<7;i++){const wd=new Date(weekStart);wd.setDate(wd.getDate()+i);if(wd>now)break;const k=dk(wd);const ch=checks[k]||{};const all=[...activeTodos(k)];if(all.length===0)continue;const done=all.filter(t=>ch[t.id]).length;if(done/all.length>=0.8)weekHits++;weekTotal++;}
     // Struggling aspirations
     const behind=aspirationProgress.filter(a=>a.goalType==="habit"&&!a.graduated&&!a.hitToday&&!a.onPace);
     const closeToTarget=aspirationProgress.filter(a=>a.goalType==="habit"&&!a.graduated&&a.daysHit>=a.target-2&&a.daysHit<a.target);
@@ -1399,8 +1407,8 @@ ${body}
   // that would be hard for the user to notice themselves. Returns an array of insight strings.
   const patternInsights=useMemo(()=>{
     const insights=[];
-    const mornIds=todos.filter(t=>t.grp==="morning").map(t=>t.id);
-    const nightIds=todos.filter(t=>t.grp==="night").map(t=>t.id);
+    const mornIds=activeTodos(dk(now)).filter(t=>t.grp==="morning").map(t=>t.id);
+    const nightIds=activeTodos(dk(now)).filter(t=>t.grp==="night").map(t=>t.id);
     // Gather last 21 days of completion data
     const dayData=[];
     for(let i=0;i<21;i++){
@@ -1408,7 +1416,7 @@ ${body}
       const k=dk(d);const ch=checks[k]||{};
       const mornDone=mornIds.length>0?mornIds.filter(id=>ch[id]).length/mornIds.length:null;
       const nightDone=nightIds.length>0?nightIds.filter(id=>ch[id]).length/nightIds.length:null;
-      const all=[...todos];
+      const all=[...activeTodos(k)];
       const total=all.length>0?all.filter(t=>ch[t.id]).length/all.length:0;
       dayData.push({date:k,dow:d.getDay(),mornDone,nightDone,total,ch});
     }
@@ -1490,15 +1498,11 @@ ${body}
     for(let i=-14;i<=14;i++){
       const d=new Date(vDate);d.setDate(d.getDate()+i);
       const k=dk(d);
-      const ch=checks[k]||{};
-      const dayFocus=focusByDate[k]||[];
-      const all=[...todos,...dayFocus];
-      const done=all.length>0?all.filter(t=>ch[t.id]).length:0;
-      const pct=all.length>0?Math.round(done/all.length*100):0;
+      const pct=dayHabitPct(k);
       days.push({date:new Date(d),key:k,pct,isToday:k===dk(now),dayNum:d.getDate(),dayName:d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2)});
     }
     return days;
-  },[vDate,checks,todos,focusByDate]);
+  },[vDate,checks,todos,aspirations]);
   useEffect(()=>{if(calRef.current)calRef.current.scrollLeft=14*56-100;},[vk]);
   useEffect(()=>{if(dietCalRef.current)dietCalRef.current.scrollLeft=14*52-120;},[dietDate,gView,menuTab]);
 
@@ -1875,7 +1879,7 @@ ${body}
   const deleteEditTask=()=>{
     if(!editTask)return;
     if(editTask.source==="focus"){removeFocus(editTask.task.id);}
-    else{setTodos(p=>p.filter(t=>t.id!==editTask.task.id));}
+    else{removeHabit(editTask.task.id);}
     setEditTask(null);
   };
 
@@ -1884,7 +1888,7 @@ ${body}
     if(!fText.trim())return;
     const task={id:uid(),text:fText.trim(),diff:fDiff,proof:fProof};
     if(addForm==="focus"){addFocus(task);}
-    else{setTodos(p=>[...p,{...task,grp:fGrp}]);}
+    else{setTodos(p=>[...p,{createdOn:dk(now),...task,grp:fGrp}]);}
     setAddForm(null);setFText("");
   };
 
@@ -1898,7 +1902,7 @@ ${body}
     const{text,diff,proof,when,recurring,group}=quickPreview;
     const targetDate=whenToDate(when);const tk=dk(targetDate);
     const newTask={id:uid(),text,diff,proof};
-    if(recurring)setTodos(p=>[...p,{...newTask,grp:group||"general"}]);
+    if(recurring)setTodos(p=>[...p,{createdOn:dk(now),...newTask,grp:group||"general"}]);
     else setFocusByDate(p=>({...p,[tk]:[...(p[tk]||[]),newTask]}));
     setQuickText("");setQuickPreview(null);setShowQuick(false);
   };
@@ -2099,9 +2103,9 @@ ${body}
           const weekDays=gridExpanded?Array.from({length:daysInMonth},(_,i)=>i+1):Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(d.getDate()+i);return d.getMonth()===mo?d.getDate():null;}).filter(Boolean);
           const dayLabels=weekDays.map(d=>{const dt=new Date(y,mo,d);return["S","M","T","W","T","F","S"][dt.getDay()];});
           const cellW=gridExpanded?26:Math.floor((window.innerWidth-120)/7);
-          const morningItems=todos.filter(t=>t.grp==="morning");
-          const nightItems=todos.filter(t=>t.grp==="night");
-          const generalItems=todos.filter(t=>t.grp==="general");
+          const morningItems=activeTodos(dk(now)).filter(t=>t.grp==="morning");
+          const nightItems=activeTodos(dk(now)).filter(t=>t.grp==="night");
+          const generalItems=activeTodos(dk(now)).filter(t=>t.grp==="general");
           const goalItems=goalDerivedFocus;
 
           const toggleCell=(id,day)=>{
@@ -2695,7 +2699,7 @@ ${body}
               {["morning","night","general"].map(grp=>{const items=todos.filter(t=>t.grp===grp);return(
                 <div key={grp} style={{marginBottom:16}}>
                   <div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6,paddingLeft:2}}>{grp==="night"?"Evening":grp.charAt(0).toUpperCase()+grp.slice(1)}</div>
-                  {items.map(t=>(<SwipeRow key={t.id} onDelete={()=>setTodos(p=>p.filter(x=>x.id!==t.id))} bg={C.surface} padY={11}>
+                  {items.map(t=>(<SwipeRow key={t.id} onDelete={()=>removeHabit(t.id)} bg={C.surface} padY={11}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
                       <span style={{fontSize:13,fontWeight:500,flex:1,color:C.text}}>{t.text}</span>
                       {t.proof&&<span style={{fontSize:12,opacity:0.6}}>📷</span>}
@@ -3603,9 +3607,9 @@ ${body}
             const daysInMonth=new Date(y,mo+1,0).getDate();
             const days=Array.from({length:daysInMonth},(_,i)=>i+1);
             const dayLabels=days.map(d=>{const dt=new Date(y,mo,d);return["SU","MO","TU","WE","TH","FR","SA"][dt.getDay()];});
-            const morningItems=todos.filter(t=>t.grp==="morning");
-            const nightItems=todos.filter(t=>t.grp==="night");
-            const generalItems=todos.filter(t=>t.grp==="general");
+            const morningItems=activeTodos(dk(now)).filter(t=>t.grp==="morning");
+            const nightItems=activeTodos(dk(now)).filter(t=>t.grp==="night");
+            const generalItems=activeTodos(dk(now)).filter(t=>t.grp==="general");
             const cellW=28,labelW=100,hdrH=36;
             const renderSection=(title,items,color)=>{
               // Compute per-habit monthly %
@@ -3658,7 +3662,7 @@ ${body}
             const dailyPcts=days.map(d=>{
               const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
               const ch=checks[k]||{};
-              const all=[...todos];
+              const all=[...activeTodos(k)];
               if(all.length===0)return 0;
               return Math.round(all.filter(t=>ch[t.id]).length/all.length*100);
             });
