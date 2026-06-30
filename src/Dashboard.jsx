@@ -556,6 +556,7 @@ export default function Dashboard(){
   const[todaySub,setTodaySub]=useState("morning"); // morning | evening | focus
   const[focusCollapsed,setFocusCollapsed]=useState({}); // {goalId:true} — collapsed goal cards in Today→Focus (default expanded)
   const[reorderMode,setReorderMode]=useState(false); // Today: drag-to-reorder habits
+  const[focusReorder,setFocusReorder]=useState(false); // Today: drag-to-reorder focus tasks
   const[focusQuick,setFocusQuick]=useState(""); // inline "add focus/daily task" composer text
   const[completingFocus,setCompletingFocus]=useState({}); // focus task ids mid completion-animation
   const[habitOrder,setHabitOrder]=useState({}); // {taskId: index} — manual habit order, overrides smart-learned order
@@ -571,7 +572,7 @@ export default function Dashboard(){
   const[dietGoals,setDietGoals]=useState(defDietGoals);
   const[dietDate,setDietDate]=useState(()=>dk(new Date()));
   const[showDietGoals,setShowDietGoals]=useState(false);
-  const[dietAdd,setDietAdd]=useState({calories:"",protein:"",carbs:"",fat:""}); // quick-add buffer
+  const[dietAdd,setDietAdd]=useState({name:"",calories:"",protein:"",carbs:"",fat:""}); // quick-add buffer
   // ─── HEALTH: Progress filters ───
   const[strExSel,setStrExSel]=useState(null); // null = all exercises; otherwise array of names
   const[strView,setStrView]=useState("cards"); // cards | compare
@@ -1677,12 +1678,27 @@ ${body}
   const setDietMetric=(key,val)=>setDiet(p=>({...p,[dietDate]:{calories:0,protein:0,carbs:0,fat:0,water:0,...(p[dietDate]||{}),[key]:Math.max(0,val)}}));
   const addDietMetric=(key,delta)=>setDietMetric(key,(dietDay[key]||0)+delta);
   const commitDietAdd=()=>{
-    const cur=diet[dietDate]||{calories:0,protein:0,carbs:0,fat:0,water:0};
-    const next={...cur};let any=false;
-    ["calories","protein","carbs","fat"].forEach(k=>{const v=parseFloat(dietAdd[k]);if(!isNaN(v)&&v!==0){next[k]=Math.max(0,(cur[k]||0)+v);any=true;}});
-    if(any)setDiet(p=>({...p,[dietDate]:next}));
-    setDietAdd({calories:"",protein:"",carbs:"",fat:""});
+    const cals=parseFloat(dietAdd.calories)||0,p=parseFloat(dietAdd.protein)||0,c=parseFloat(dietAdd.carbs)||0,f=parseFloat(dietAdd.fat)||0;
+    if(cals===0&&p===0&&c===0&&f===0)return; // nothing to log
+    const entry={id:uid(),name:(dietAdd.name||"").trim()||"Quick add",calories:cals,protein:p,carbs:c,fat:f,t:Date.now()};
+    setDiet(prev=>{
+      const cur=prev[dietDate]||{calories:0,protein:0,carbs:0,fat:0,water:0};
+      return{...prev,[dietDate]:{...cur,calories:Math.max(0,(cur.calories||0)+cals),protein:Math.max(0,(cur.protein||0)+p),carbs:Math.max(0,(cur.carbs||0)+c),fat:Math.max(0,(cur.fat||0)+f),entries:[...(cur.entries||[]),entry]}};
+    });
+    setDietAdd({name:"",calories:"",protein:"",carbs:"",fat:""});
   };
+  const deleteDietEntry=(id)=>{
+    setDiet(prev=>{
+      const cur=prev[dietDate];if(!cur||!cur.entries)return prev;
+      const e=cur.entries.find(x=>x.id===id);if(!e)return prev;
+      return{...prev,[dietDate]:{...cur,calories:Math.max(0,(cur.calories||0)-(e.calories||0)),protein:Math.max(0,(cur.protein||0)-(e.protein||0)),carbs:Math.max(0,(cur.carbs||0)-(e.carbs||0)),fat:Math.max(0,(cur.fat||0)-(e.fat||0)),entries:cur.entries.filter(x=>x.id!==id)}};
+    });
+  };
+  // Reorder the day's focus tasks (active ones first, in new order; completed kept after).
+  const reorderFocus=(ids)=>setFocusByDate(prev=>{
+    const list=prev[vk]||[];const byId={};list.forEach(t=>{byId[t.id]=t;});const seen=new Set(ids);
+    return{...prev,[vk]:[...ids.map(id=>byId[id]).filter(Boolean),...list.filter(t=>!seen.has(t.id))]};
+  });
 
   /* ─── HEALTH: Strength progression — per exercise, max weight per day ─── */
   const strengthData=useMemo(()=>{
@@ -2277,11 +2293,16 @@ ${body}
             return(<div>
               {/* Section 1 — Daily Tasks (highest priority) — add directly here */}
               <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length}/>
-              <div style={{display:"flex",gap:8,marginBottom:10}}>
-                <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFocusQuick();}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
-                <button onClick={addFocusQuick} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
-              </div>
-              {dailyTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}
+              {focusTasks.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setFocusReorder(m=>!m)} style={{background:focusReorder?C.accent:"transparent",border:`1px solid ${focusReorder?C.accent:C.hairline}`,color:focusReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{focusReorder?"Done":"⇅ Reorder"}</button></div>}
+              {focusReorder&&focusTasks.length>1
+                ?<DragReorderList items={focusTasks} onReorder={reorderFocus} />
+                :<>
+                  <div style={{display:"flex",gap:8,marginBottom:10}}>
+                    <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFocusQuick();}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
+                    <button onClick={addFocusQuick} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
+                  </div>
+                  {dailyTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}
+                </>}
               {renderFocusDone()}
 
               {/* Section 2 — Weekly Goals (second priority): checkbox dropdowns */}
@@ -2657,7 +2678,10 @@ ${body}
                 <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const t=focusQuick.trim();if(t){addFocus({id:uid(),text:t,diff:"easy"});setFocusQuick("");}}}} placeholder="Add a focus task…" style={{...inp,flex:1}}/>
                 <button onClick={()=>{const t=focusQuick.trim();if(t){addFocus({id:uid(),text:t,diff:"easy"});setFocusQuick("");}}} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
               </div>
-              {focusTasks.filter(t=>!dc[t.id]).map(t=>(<SwipeRow key={t.id} onDelete={()=>removeFocus(t.id)} bg={C.surface} padY={11}>
+              {focusTasks.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setFocusReorder(m=>!m)} style={{background:focusReorder?C.accent:"transparent",border:`1px solid ${focusReorder?C.accent:C.hairline}`,color:focusReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{focusReorder?"Done":"⇅ Reorder"}</button></div>}
+              {focusReorder&&focusTasks.length>1
+                ?<DragReorderList items={focusTasks} onReorder={reorderFocus} />
+                :focusTasks.filter(t=>!dc[t.id]).map(t=>(<SwipeRow key={t.id} onDelete={()=>removeFocus(t.id)} bg={C.surface} padY={11}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:13,fontWeight:500,flex:1,color:C.text}}>{t.text}</span>
                   <span style={{fontSize:9,fontWeight:700,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 6px",fontFamily:FN.m}}>{DIFF[t.diff].label}</span>
@@ -2986,15 +3010,36 @@ ${body}
                 </div>);
               })()}
 
-              {/* Quick add */}
+              {/* Quick add → logs a titled food entry */}
               <div style={{...card,marginBottom:12}}>
-                <div style={{...lbl,marginBottom:12}}>Log Intake</div>
+                <div style={{...lbl,marginBottom:12}}>Log Food</div>
+                <input value={dietAdd.name} onChange={e=>setDietAdd(p=>({...p,name:e.target.value}))} placeholder="What did you eat? (e.g. Chicken & rice)" style={{...inp,width:"100%",marginBottom:8}} onKeyDown={e=>{if(e.key==="Enter")commitDietAdd();}}/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
                   {["calories","protein","carbs","fat"].map(k=>(<div key={k}><div style={{fontSize:9,color:MACRO[k].color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>{MACRO[k].label} ({MACRO[k].unit})</div><input type="number" value={dietAdd[k]} onChange={e=>setDietAdd(p=>({...p,[k]:e.target.value}))} placeholder="0" style={{...inp,textAlign:"center",fontFamily:FN.m}} onKeyDown={e=>{if(e.key==="Enter")commitDietAdd();}}/></div>))}
                 </div>
-                <button onClick={commitDietAdd} style={{...btnB,width:"100%"}}>Add to {isToday?"Today":"Day"}</button>
-                <div style={{fontSize:9,color:C.textDim,textAlign:"center",marginTop:8,fontFamily:FN.m}}>Adds to your running totals. Leave blank to skip a field.</div>
+                <button onClick={commitDietAdd} style={{...btnB,width:"100%"}}>Log to {isToday?"Today":"Day"}</button>
               </div>
+
+              {/* Food log for the selected day */}
+              {(()=>{const entries=(diet[dietDate]&&diet[dietDate].entries)||[];if(entries.length===0)return null;return(
+                <div style={{...card,marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{...lbl,margin:0}}>Food Log</div><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{entries.length} {entries.length===1?"item":"items"}</span></div>
+                  {entries.slice().reverse().map(e=>(
+                    <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 2px",borderBottom:`1px solid ${C.hairline}`}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.name}</div>
+                        <div style={{display:"flex",gap:8,marginTop:3}}>
+                          {e.protein>0&&<span style={{fontSize:9,fontFamily:FN.m,color:MACRO.protein.color}}>P {Math.round(e.protein)}</span>}
+                          {e.carbs>0&&<span style={{fontSize:9,fontFamily:FN.m,color:MACRO.carbs.color}}>C {Math.round(e.carbs)}</span>}
+                          {e.fat>0&&<span style={{fontSize:9,fontFamily:FN.m,color:MACRO.fat.color}}>F {Math.round(e.fat)}</span>}
+                        </div>
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0}}><span style={{fontSize:15,fontWeight:800,color:MACRO.calories.color,fontFamily:FN.m}}>{Math.round(e.calories)}</span><span style={{fontSize:8,color:C.textDim,marginLeft:2}}>cal</span></div>
+                      <button onClick={()=>deleteDietEntry(e.id)} title="Remove" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:17,lineHeight:1,padding:"2px 4px",flexShrink:0}}>×</button>
+                    </div>
+                  ))}
+                </div>
+              );})()}
 
               {/* Goals editor */}
               <div style={{...card,padding:0,overflow:"hidden"}}>
