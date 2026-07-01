@@ -42,6 +42,8 @@ const LIGHT={
 let C=DARK;
 let DIFF={easy:{pts:1,label:"Easy",color:C.green,bg:C.greenSoft},medium:{pts:3,label:"Med",color:C.blue,bg:C.blueSoft},hard:{pts:6,label:"Hard",color:C.orange,bg:C.orangeSoft}};
 const FN={h:"'Fraunces',serif",b:"'Inter',sans-serif",m:"'JetBrains Mono',monospace"};
+// Smooth red→orange→yellow→green gradient by percent-to-goal (0=red, 100=green).
+const progressColor=(pct)=>{const p=Math.max(0,Math.min(100,pct||0));return `hsl(${Math.round((p/100)*130)},82%,45%)`;};
 let pC=p=>p>=80?C.greenBright:p>=60?C.green:p>=40?C.gold:p>=20?C.orange:C.red;
 let gB=p=>p>=80?`linear-gradient(90deg,${C.green},${C.greenBright})`:p>=50?`linear-gradient(90deg,${C.blue},${C.green})`:p>=25?`linear-gradient(90deg,${C.gold},${C.blue})`:`linear-gradient(90deg,${C.red},${C.gold})`;
 // Completion % → background tint. Recomputed on theme swap because dark/light want different saturations.
@@ -568,11 +570,12 @@ export default function Dashboard(){
 
   const[gSplit,setGSplit]=useState(null);const[gView,setGView]=useState("workouts");const[doneEx,setDoneEx]=useState({});const[nBW,setNBW]=useState("");const[addSplit,setAddSplit]=useState(false);const[nSpName,setNSpName]=useState("");const[nSpEx,setNSpEx]=useState("");
   // ─── HEALTH: Diet ───
-  const[diet,setDiet]=useState({}); // {dateKey:{calories,protein,carbs,fat,water}}
+  const[diet,setDiet]=useState({}); // {dateKey:{calories,protein,carbs,fat,water,entries}}
+  const[foodDB,setFoodDB]=useState([]); // personal food database: {id,name,grams,calories,protein,carbs,fat}
   const[dietGoals,setDietGoals]=useState(defDietGoals);
   const[dietDate,setDietDate]=useState(()=>dk(new Date()));
   const[showDietGoals,setShowDietGoals]=useState(false);
-  const[dietAdd,setDietAdd]=useState({name:"",calories:"",protein:"",carbs:"",fat:""}); // quick-add buffer
+  const[dietAdd,setDietAdd]=useState({name:"",grams:"",calories:"",protein:"",carbs:"",fat:""}); // quick-add buffer
   // ─── HEALTH: Progress filters ───
   const[strExSel,setStrExSel]=useState(null); // null = all exercises; otherwise array of names
   const[strView,setStrView]=useState("cards"); // cards | compare
@@ -1522,7 +1525,7 @@ ${body}
       if(d.reviews)setReviews(d.reviews);if(d.weekPriorities)setWeekPriorities(d.weekPriorities);
       if(d.reflectDismissed)setReflectDismissed(d.reflectDismissed);if(d.reviewDismissed)setReviewDismissed(d.reviewDismissed);if(d.launchDismissed)setLaunchDismissed(d.launchDismissed);if(d.eveningClosed)setEveningClosed(d.eveningClosed);if(d.intentionPromptDismissed)setIntentionPromptDismissed(d.intentionPromptDismissed);
       if(d.completionLog)setCompletionLog(d.completionLog);if(d.activeSession)setActiveSession(d.activeSession);
-      if(d.diet)setDiet(d.diet);if(d.dietGoals)setDietGoals({...defDietGoals,...d.dietGoals});
+      if(d.diet)setDiet(d.diet);if(d.dietGoals)setDietGoals({...defDietGoals,...d.dietGoals});if(d.foodDB)setFoodDB(d.foodDB);
       if(d.aspirations)setAspirations(d.aspirations);
       if(d.videoJournal)setVideoJournal(d.videoJournal);
       if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",credit:"",...d.accounts});
@@ -1599,10 +1602,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals]);
+  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -1679,14 +1682,31 @@ ${body}
   const addDietMetric=(key,delta)=>setDietMetric(key,(dietDay[key]||0)+delta);
   const commitDietAdd=()=>{
     const cals=parseFloat(dietAdd.calories)||0,p=parseFloat(dietAdd.protein)||0,c=parseFloat(dietAdd.carbs)||0,f=parseFloat(dietAdd.fat)||0;
+    const grams=parseFloat(dietAdd.grams)||0;
     if(cals===0&&p===0&&c===0&&f===0)return; // nothing to log
-    const entry={id:uid(),name:(dietAdd.name||"").trim()||"Quick add",calories:cals,protein:p,carbs:c,fat:f,t:Date.now()};
+    const name=(dietAdd.name||"").trim()||"Quick add";
+    const entry={id:uid(),name,grams,calories:cals,protein:p,carbs:c,fat:f,t:Date.now()};
     setDiet(prev=>{
       const cur=prev[dietDate]||{calories:0,protein:0,carbs:0,fat:0,water:0};
       return{...prev,[dietDate]:{...cur,calories:Math.max(0,(cur.calories||0)+cals),protein:Math.max(0,(cur.protein||0)+p),carbs:Math.max(0,(cur.carbs||0)+c),fat:Math.max(0,(cur.fat||0)+f),entries:[...(cur.entries||[]),entry]}};
     });
-    setDietAdd({name:"",calories:"",protein:"",carbs:"",fat:""});
+    // Save to personal food database (dedupe by name; keep the first serving as the per-gram reference)
+    if(grams>0&&name!=="Quick add"){
+      setFoodDB(prev=>prev.find(x=>x.name.toLowerCase()===name.toLowerCase())?prev:[...prev,{id:uid(),name,grams,calories:cals,protein:p,carbs:c,fat:f}]);
+    }
+    setDietAdd({name:"",grams:"",calories:"",protein:"",carbs:"",fat:""});
   };
+  // Update a diet-add field; when the name matches a saved food and grams are set, auto-scale macros per-gram.
+  const onDietField=(field,value)=>setDietAdd(prev=>{
+    const next={...prev,[field]:value};
+    if(field==="name"||field==="grams"){
+      const match=foodDB.find(x=>x.name.toLowerCase()===(next.name||"").trim().toLowerCase());
+      const g=parseFloat(next.grams);
+      if(match&&match.grams>0&&g>0){const s=k=>String(Math.round((match[k]/match.grams)*g*10)/10);next.calories=s("calories");next.protein=s("protein");next.carbs=s("carbs");next.fat=s("fat");}
+    }
+    return next;
+  });
+  const deleteFood=(id)=>setFoodDB(prev=>prev.filter(x=>x.id!==id));
   const deleteDietEntry=(id)=>{
     setDiet(prev=>{
       const cur=prev[dietDate];if(!cur||!cur.entries)return prev;
@@ -2294,8 +2314,8 @@ ${body}
               {/* Section 1 — Daily Tasks (highest priority) — add directly here */}
               <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length}/>
               {focusTasks.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setFocusReorder(m=>!m)} style={{background:focusReorder?C.accent:"transparent",border:`1px solid ${focusReorder?C.accent:C.hairline}`,color:focusReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{focusReorder?"Done":"⇅ Reorder"}</button></div>}
-              {focusReorder&&focusTasks.length>1
-                ?<DragReorderList items={focusTasks} onReorder={reorderFocus} />
+              {focusReorder
+                ?<DragReorderList items={dailyTasks} onReorder={reorderFocus} />
                 :<>
                   <div style={{display:"flex",gap:8,marginBottom:10}}>
                     <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFocusQuick();}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
@@ -2679,8 +2699,8 @@ ${body}
                 <button onClick={()=>{const t=focusQuick.trim();if(t){addFocus({id:uid(),text:t,diff:"easy"});setFocusQuick("");}}} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
               </div>
               {focusTasks.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setFocusReorder(m=>!m)} style={{background:focusReorder?C.accent:"transparent",border:`1px solid ${focusReorder?C.accent:C.hairline}`,color:focusReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{focusReorder?"Done":"⇅ Reorder"}</button></div>}
-              {focusReorder&&focusTasks.length>1
-                ?<DragReorderList items={focusTasks} onReorder={reorderFocus} />
+              {focusReorder
+                ?<DragReorderList items={focusTasks.filter(t=>!dc[t.id])} onReorder={reorderFocus} />
                 :focusTasks.filter(t=>!dc[t.id]).map(t=>(<SwipeRow key={t.id} onDelete={()=>removeFocus(t.id)} bg={C.surface} padY={11}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:13,fontWeight:500,flex:1,color:C.text}}>{t.text}</span>
@@ -2896,7 +2916,7 @@ ${body}
         </Overlay>
         {menuTab==="workout"&&<div className="tab-content">
           {/* ═══ HEALTH SUB-NAV ═══ */}
-          <div style={{display:"flex",gap:6,marginBottom:18,overflowX:"auto"}} className="hide-scroll">{[{k:"workouts",l:"My Workouts"},{k:"diet",l:"Diet"},{k:"progress",l:"Progress"}].map(v=>{const on=gView===v.k;return(<button key={v.k} onClick={()=>{setGView(v.k);if(v.k!=="workouts")setGSplit(null);}} style={{flexShrink:0,padding:"8px 18px",borderRadius:22,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:700,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",transition:"all 0.2s ease"}}>{v.l}</button>);})}</div>
+          <div style={{display:"flex",gap:6,marginBottom:18,overflowX:"auto"}} className="hide-scroll">{[{k:"workouts",l:"My Workouts"},{k:"diet",l:"Diet"},{k:"database",l:"Food Database"},{k:"progress",l:"Progress"}].map(v=>{const on=gView===v.k;return(<button key={v.k} onClick={()=>{setGView(v.k);if(v.k!=="workouts")setGSplit(null);}} style={{flexShrink:0,padding:"8px 18px",borderRadius:22,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:700,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",transition:"all 0.2s ease"}}>{v.l}</button>);})}</div>
 
           {/* ═══════════ MY WORKOUTS ═══════════ */}
           {gView==="workouts"&&!gSplit&&<div>
@@ -2916,6 +2936,8 @@ ${body}
             const isToday=dietDate===dk(now);
             const isFuture=new Date(dietDate)>new Date(dk(now));
             const calLeft=Math.max(0,(g.calories||0)-(d.calories||0));
+            const calClr=progressColor((d.calories||0)/(g.calories||1)*100);
+            const carbClr=progressColor((d.carbs||0)/(g.carbs||1)*100);
             const macroCards=[{k:"protein"},{k:"carbs"},{k:"fat"}];
             const totalMacroG=(d.protein||0)+(d.carbs||0)+(d.fat||0);
             // Scrolling date strip centered on the selected day — go back to backfill, forward to plan ahead.
@@ -2942,27 +2964,27 @@ ${body}
 
               {/* Calorie ring hero */}
               <div style={{...card,marginBottom:12,display:"flex",alignItems:"center",gap:20}}>
-                <Ring value={d.calories||0} goal={g.calories||1} size={130} stroke={13} color={MACRO.calories.color}>
+                <Ring value={d.calories||0} goal={g.calories||1} size={130} stroke={13} color={calClr}>
                   <div style={{fontSize:26,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1}}>{Math.round(d.calories||0)}</div>
                   <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:2}}>of {g.calories}</div>
                 </Ring>
                 <div style={{flex:1}}>
                   <div style={{fontSize:10,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Calories</div>
-                  <div style={{fontSize:30,fontWeight:800,color:MACRO.calories.color,fontFamily:FN.m,lineHeight:1}}>{calLeft}</div>
+                  <div style={{fontSize:30,fontWeight:800,color:calClr,fontFamily:FN.m,lineHeight:1}}>{calLeft}</div>
                   <div style={{fontSize:11,color:C.textDim,marginTop:2}}>remaining</div>
-                  <div style={{height:6,background:C.surfaceDim,borderRadius:3,overflow:"hidden",marginTop:10}}><div style={{height:"100%",width:`${Math.min(100,(d.calories||0)/(g.calories||1)*100)}%`,background:MACRO.calories.color,borderRadius:3,transition:"width 0.5s ease"}}/></div>
+                  <div style={{height:6,background:C.surfaceDim,borderRadius:3,overflow:"hidden",marginTop:10}}><div style={{height:"100%",width:`${Math.min(100,(d.calories||0)/(g.calories||1)*100)}%`,background:calClr,borderRadius:3,transition:"width 0.5s ease, background 0.4s ease"}}/></div>
                 </div>
               </div>
 
               {/* Macro rings */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
-                {macroCards.map(({k})=>{const m=MACRO[k];const val=d[k]||0,goal=g[k]||1;const left=Math.max(0,goal-val);return(
+                {macroCards.map(({k})=>{const m=MACRO[k];const val=d[k]||0,goal=g[k]||1;const left=Math.max(0,goal-val);const ringClr=k==="carbs"?carbClr:m.color;return(
                   <div key={k} style={{...card,padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center"}}>
-                    <Ring value={val} goal={goal} size={78} stroke={8} color={m.color}>
+                    <Ring value={val} goal={goal} size={78} stroke={8} color={ringClr}>
                       <div style={{fontSize:14,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1}}>{Math.round(val)}</div>
                       <div style={{fontSize:7,color:C.textDim,fontWeight:600}}>/{goal}g</div>
                     </Ring>
-                    <div style={{fontSize:10,fontWeight:700,color:m.color,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:8}}>{m.label}</div>
+                    <div style={{fontSize:10,fontWeight:700,color:ringClr,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:8}}>{m.label}</div>
                     <div style={{fontSize:9,color:C.textDim,fontFamily:FN.m,marginTop:1}}>{left}g left</div>
                   </div>
                 );})}
@@ -3010,15 +3032,24 @@ ${body}
                 </div>);
               })()}
 
-              {/* Quick add → logs a titled food entry */}
+              {/* Quick add → logs a titled food entry, and remembers it in your food database */}
+              {(()=>{const match=foodDB.find(x=>x.name.toLowerCase()===(dietAdd.name||"").trim().toLowerCase());return(
               <div style={{...card,marginBottom:12}}>
                 <div style={{...lbl,marginBottom:12}}>Log Food</div>
-                <input value={dietAdd.name} onChange={e=>setDietAdd(p=>({...p,name:e.target.value}))} placeholder="What did you eat? (e.g. Chicken & rice)" style={{...inp,width:"100%",marginBottom:8}} onKeyDown={e=>{if(e.key==="Enter")commitDietAdd();}}/>
+                <input list="fooddb-names" value={dietAdd.name} onChange={e=>onDietField("name",e.target.value)} placeholder="What did you eat? (e.g. Chicken & rice)" style={{...inp,width:"100%",marginBottom:8}} onKeyDown={e=>{if(e.key==="Enter")commitDietAdd();}}/>
+                <datalist id="fooddb-names">{foodDB.map(f=><option key={f.id} value={f.name}/>)}</datalist>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>Serving (g)</div>
+                  <input type="number" value={dietAdd.grams} onChange={e=>onDietField("grams",e.target.value)} placeholder="e.g. 150" style={{...inp,width:"100%",fontFamily:FN.m}} onKeyDown={e=>{if(e.key==="Enter")commitDietAdd();}}/>
+                </div>
+                {match&&<div style={{fontSize:10,color:C.accent,marginBottom:8,fontFamily:FN.m,display:"flex",alignItems:"center",gap:5}}><span>✓</span><span>Saved food — macros auto-scale from {match.grams}g. Enter grams above.</span></div>}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
                   {["calories","protein","carbs","fat"].map(k=>(<div key={k}><div style={{fontSize:9,color:MACRO[k].color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>{MACRO[k].label} ({MACRO[k].unit})</div><input type="number" value={dietAdd[k]} onChange={e=>setDietAdd(p=>({...p,[k]:e.target.value}))} placeholder="0" style={{...inp,textAlign:"center",fontFamily:FN.m}} onKeyDown={e=>{if(e.key==="Enter")commitDietAdd();}}/></div>))}
                 </div>
                 <button onClick={commitDietAdd} style={{...btnB,width:"100%"}}>Log to {isToday?"Today":"Day"}</button>
+                <div style={{fontSize:9,color:C.textDim,textAlign:"center",marginTop:8,fontFamily:FN.m}}>New foods with a serving weight are saved to your Food Database.</div>
               </div>
+              );})()}
 
               {/* Food log for the selected day */}
               {(()=>{const entries=(diet[dietDate]&&diet[dietDate].entries)||[];if(entries.length===0)return null;return(
@@ -3050,6 +3081,38 @@ ${body}
           })()}
 
           {/* ═══════════ PROGRESS ═══════════ */}
+          {/* ═══════════ FOOD DATABASE ═══════════ */}
+          {gView==="database"&&(()=>{
+            const sorted=[...foodDB].sort((a,b)=>a.name.localeCompare(b.name));
+            return(<div>
+              <div style={{...card,marginBottom:12}}>
+                <div style={{...lbl,marginBottom:6}}>Food Database</div>
+                <div style={{fontSize:11,color:C.textDim,lineHeight:1.5}}>Foods you log with a serving weight are saved here automatically. Next time, type the name in Log Food and enter grams — every macro scales from the stored per-gram values.</div>
+              </div>
+              {sorted.length===0
+                ?<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>No saved foods yet. Log a food with a serving weight (g) and it'll appear here.</div>
+                :sorted.map(f=>{const pg=k=>f.grams>0?f[k]/f.grams:0;return(
+                  <div key={f.id} style={{...card,marginBottom:8,padding:"14px 16px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:9}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:14,fontWeight:700,color:C.text}}>{f.name}</div>
+                        <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:2}}>Reference {f.grams}g · {Math.round(f.calories)} cal · P{Math.round(f.protein)} C{Math.round(f.carbs)} F{Math.round(f.fat)}</div>
+                      </div>
+                      <button onClick={()=>deleteFood(f.id)} title="Remove" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:18,padding:"2px 4px",flexShrink:0}}>×</button>
+                    </div>
+                    <div style={{display:"flex",gap:6}}>
+                      {[["calories","cal"],["protein","P"],["carbs","C"],["fat","F"]].map(([k,l2])=>(
+                        <div key={k} style={{flex:1,background:C.surfaceDim,borderRadius:8,padding:"8px 4px",textAlign:"center"}}>
+                          <div style={{fontSize:13,fontWeight:800,color:MACRO[k].color,fontFamily:FN.m}}>{pg(k).toFixed(2)}</div>
+                          <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:1}}>{l2}/g</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );})}
+            </div>);
+          })()}
+
           {gView==="progress"&&(()=>{
             const exs=strengthData.exercises;
             const toggleEx=(name)=>{const cur=strExSel||exs;const next=cur.includes(name)?cur.filter(x=>x!==name):[...cur,name];setStrExSel(next.length===exs.length?null:next);};
