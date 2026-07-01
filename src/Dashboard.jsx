@@ -1723,6 +1723,11 @@ ${body}
     if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei].sets.length>1)n.exercises[ei].sets.pop();syncSession(n);return n;});}
     else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei].sets.length>1)n.exercises[ei].sets.pop();return n;});
   };
+  // Rename an exercise in the current split (updates the live draft + saved template by index; muscle groups re-map automatically from the new name)
+  const renameExercise=(ei,name)=>{
+    setCurWkState(p=>{if(!p)return p;const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei])n.exercises[ei].name=name;return n;});
+    setSplits(p=>{const arr=[...(p[gSplit]||[])];if(ei<arr.length)arr[ei]=name;return{...p,[gSplit]:arr};});
+  };
   // Start a workout: take the current curWkState (or build from split) and lock it as activeSession
   const startSession=(splitKey)=>{
     const exs=(splits[splitKey]||[]).map(name=>{const ls=[...wHist].reverse().find(h=>h.split===splitKey);const le=ls?.exercises?.find(e=>e.name===name);return{name,sets:Array.from({length:le?le.sets.length:3},(_,i)=>({w:0,r:0}))};});
@@ -3045,10 +3050,10 @@ ${body}
               <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
                 <div style={{flexShrink:0,marginTop:2}}><MuscleBody muscles={exM} accent={dn?C.green:clr} base={C.surfaceHi} skin={C.textDim} size={46} gap={3}/></div>
                 <div style={{flex:1,minWidth:0}}>
-                  <span style={{fontSize:13,fontWeight:700,color:dn?C.green:C.text}}>{dn&&"✓ "}{ex.name}</span>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:4}}>{exM.map(m=><span key={m} style={{fontSize:7,fontWeight:700,color:C.textDim,background:C.surfaceDim,borderRadius:3,padding:"1px 5px",textTransform:"uppercase",letterSpacing:"0.03em"}}>{MUSCLE_LABELS[m]}</span>)}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>{dn&&<span style={{color:C.green,fontSize:13,fontWeight:700,flexShrink:0}}>✓</span>}<input value={ex.name} onChange={e=>renameExercise(ei,e.target.value)} placeholder="Exercise name…" style={{fontSize:13,fontWeight:700,color:dn?C.green:C.text,background:"transparent",border:"none",borderBottom:`1px dashed ${C.hairline}`,padding:"2px 0",width:"100%",fontFamily:FN.b,outline:"none",minWidth:0}}/></div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:5}}>{exM.length>0?exM.map(m=><span key={m} style={{fontSize:7,fontWeight:700,color:C.textDim,background:C.surfaceDim,borderRadius:3,padding:"1px 5px",textTransform:"uppercase",letterSpacing:"0.03em"}}>{MUSCLE_LABELS[m]}</span>):<span style={{fontSize:7,color:C.textDim,fontStyle:"italic"}}>unmapped — try a clearer name</span>}</div>
                 </div>
-                <div style={{display:"flex",gap:3,flexShrink:0}}><button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"3px 8px",fontSize:10}}>Done</button><button onClick={()=>rSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>−</button><button onClick={()=>aSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>+</button><button onClick={()=>{setSplits(p=>({...p,[gSplit]:(p[gSplit]||[]).filter(e=>e!==ex.name)}));setCurWkState(p=>({...p,exercises:p.exercises.filter((_,i)=>i!==ei)}));}} style={{...btnG,padding:"3px 6px",fontSize:11,color:C.red}}>✕</button></div>
+                <div style={{display:"flex",gap:3,flexShrink:0}}><button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"3px 8px",fontSize:10}}>Done</button><button onClick={()=>rSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>−</button><button onClick={()=>aSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>+</button><button onClick={()=>{setSplits(p=>({...p,[gSplit]:(p[gSplit]||[]).filter((_,i)=>i!==ei)}));setCurWkState(p=>({...p,exercises:p.exercises.filter((_,i)=>i!==ei)}));}} style={{...btnG,padding:"3px 6px",fontSize:11,color:C.red}}>✕</button></div>
               </div>
               {ex.sets.map((s,si)=>{const ls=lE&&lE.sets?lE.sets[si]:null;const wd=ls?s.w-ls.w:null;return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:clr,fontWeight:700}}>S{si+1}</span><input type="number" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder="lbs" style={numI} /><input type="number" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={numI} /><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:ls?(wd>0?C.greenBright:wd<0?C.red:C.textDim):C.textDim}}>{ls?`${ls.w}×${ls.r}`:"—"}</span></div>);})}
             </div>);})}
