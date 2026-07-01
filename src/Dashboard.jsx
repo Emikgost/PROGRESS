@@ -474,13 +474,79 @@ function DragReorderList({items,onReorder}){
 }
 
 /* ═══ Icons for footer ═══ */
+/* ═══ MUSCLE VISUALIZATION ═══ */
+// Map an exercise name → the muscle groups it primarily trains (keyword based, order = specificity).
+const MUSCLE_RULES=[
+  {kw:["incline"],m:["chest","frontDelts","triceps"]},
+  {kw:["bench","chest press","chest fly","pec","push up","pushup","chest dip","dip"],m:["chest","frontDelts","triceps"]},
+  {kw:["overhead press","shoulder press","military","arnold","ohp"],m:["frontDelts","sideDelts","triceps"]},
+  {kw:["lateral raise","side raise","lat raise"],m:["sideDelts"]},
+  {kw:["front raise"],m:["frontDelts"]},
+  {kw:["rear delt","reverse fly","face pull"],m:["rearDelts","upperBack","traps"]},
+  {kw:["shrug"],m:["traps"]},
+  {kw:["lat pulldown","pulldown","pull up","pullup","chin up","chinup","pull-up","chin-up"],m:["lats","biceps","upperBack"]},
+  {kw:["row"],m:["upperBack","lats","rearDelts","biceps"]},
+  {kw:["romanian","rdl","stiff leg","stiff-leg"],m:["hamstrings","glutes","lowerBack"]},
+  {kw:["deadlift"],m:["hamstrings","glutes","lowerBack","traps","forearms"]},
+  {kw:["hip thrust","glute bridge","glute"],m:["glutes","hamstrings"]},
+  {kw:["leg curl","hamstring curl","lying curl"],m:["hamstrings"]},
+  {kw:["squat","leg press","lunge","split squat","hack","step up","bulgarian"],m:["quads","glutes","hamstrings"]},
+  {kw:["leg extension"],m:["quads"]},
+  {kw:["calf"],m:["calves"]},
+  {kw:["tricep","pushdown","skull","kickback","close grip","overhead extension","close-grip"],m:["triceps"]},
+  {kw:["hammer curl","hammer"],m:["biceps","forearms"]},
+  {kw:["curl","bicep","chin"],m:["biceps","forearms"]},
+  {kw:["forearm","wrist"],m:["forearms"]},
+  {kw:["crunch","sit up","situp","plank","leg raise","hanging","ab wheel","cable crunch","oblique","russian twist","ab "],m:["abs","obliques"]},
+];
+const musclesForExercise=(name)=>{const n=(name||"").toLowerCase();for(const r of MUSCLE_RULES){if(r.kw.some(k=>n.includes(k)))return r.m;}return [];};
+const musclesForSplit=(exList)=>{const s=new Set();(exList||[]).forEach(name=>musclesForExercise(name).forEach(m=>s.add(m)));return s;};
+
+// Clean, minimal front/back anatomical figure. Highlighted muscles fill with `accent`; the rest sit faint.
+function MuscleBody({muscles,accent,base,skin,size=150,showLabels=false,gap=12}){
+  const hi=muscles instanceof Set?muscles:new Set(muscles||[]);
+  const f=id=>hi.has(id)?accent:base;
+  const Front=(<g strokeLinejoin="round">
+    <circle cx="50" cy="13" r="8.5" fill={skin}/><rect x="45.5" y="20" width="9" height="6" rx="3" fill={skin}/>
+    <path d="M39 27 L50 25.5 L45 33 Z" fill={f("traps")}/><path d="M61 27 L50 25.5 L55 33 Z" fill={f("traps")}/>
+    <ellipse cx="33" cy="40" rx="8" ry="7" fill={f("frontDelts")}/><ellipse cx="67" cy="40" rx="8" ry="7" fill={f("frontDelts")}/>
+    <ellipse cx="26.5" cy="43" rx="4" ry="6.5" fill={f("sideDelts")}/><ellipse cx="73.5" cy="43" rx="4" ry="6.5" fill={f("sideDelts")}/>
+    <path d="M37 35 Q50 33 49.2 52 Q42 54 37 49 Z" fill={f("chest")}/><path d="M63 35 Q50 33 50.8 52 Q58 54 63 49 Z" fill={f("chest")}/>
+    <rect x="22.5" y="48" width="9" height="22" rx="4.5" fill={f("biceps")}/><rect x="68.5" y="48" width="9" height="22" rx="4.5" fill={f("biceps")}/>
+    <rect x="19.5" y="71" width="8" height="25" rx="4" fill={f("forearms")}/><rect x="72.5" y="71" width="8" height="25" rx="4" fill={f("forearms")}/>
+    <rect x="43" y="55" width="14" height="34" rx="4.5" fill={f("abs")}/>
+    <path d="M37.5 56 L42.5 58 L42.5 85 L38.5 82 Z" fill={f("obliques")}/><path d="M62.5 56 L57.5 58 L57.5 85 L61.5 82 Z" fill={f("obliques")}/>
+    <path d="M38 92 Q44 92 48 96 L47 139 Q42 141 39 136 Z" fill={f("quads")}/><path d="M62 92 Q56 92 52 96 L53 139 Q58 141 61 136 Z" fill={f("quads")}/>
+    <rect x="39.5" y="147" width="8.5" height="40" rx="4" fill={f("calves")}/><rect x="52" y="147" width="8.5" height="40" rx="4" fill={f("calves")}/>
+  </g>);
+  const Back=(<g strokeLinejoin="round">
+    <circle cx="50" cy="13" r="8.5" fill={skin}/><rect x="45.5" y="20" width="9" height="6" rx="3" fill={skin}/>
+    <path d="M40 26 L60 26 L56 44 L50 47 L44 44 Z" fill={f("traps")}/>
+    <ellipse cx="33" cy="40" rx="8" ry="7" fill={f("rearDelts")}/><ellipse cx="67" cy="40" rx="8" ry="7" fill={f("rearDelts")}/>
+    <path d="M40 46 L60 46 L58 58 L42 58 Z" fill={f("upperBack")}/>
+    <path d="M40 58 Q34 66 39 80 L48 78 L47 59 Z" fill={f("lats")}/><path d="M60 58 Q66 66 61 80 L52 78 L53 59 Z" fill={f("lats")}/>
+    <rect x="22.5" y="48" width="9" height="22" rx="4.5" fill={f("triceps")}/><rect x="68.5" y="48" width="9" height="22" rx="4.5" fill={f("triceps")}/>
+    <rect x="19.5" y="71" width="8" height="25" rx="4" fill={f("forearms")}/><rect x="72.5" y="71" width="8" height="25" rx="4" fill={f("forearms")}/>
+    <rect x="44" y="80" width="12" height="12" rx="3" fill={f("lowerBack")}/>
+    <path d="M39 92 Q49 92 49.5 100 L49.5 112 Q44 113 39 108 Z" fill={f("glutes")}/><path d="M61 92 Q51 92 50.5 100 L50.5 112 Q56 113 61 108 Z" fill={f("glutes")}/>
+    <path d="M39 114 L48 114 L47 148 Q42 150 39 145 Z" fill={f("hamstrings")}/><path d="M61 114 L52 114 L53 148 Q58 150 61 145 Z" fill={f("hamstrings")}/>
+    <rect x="39.5" y="151" width="8.5" height="38" rx="4" fill={f("calves")}/><rect x="52" y="151" width="8.5" height="38" rx="4" fill={f("calves")}/>
+  </g>);
+  return(<div style={{display:"flex",gap,alignItems:"flex-start"}}>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><svg viewBox="0 0 100 200" height={size} style={{overflow:"visible"}}>{Front}</svg>{showLabels&&<span style={{fontSize:8,color:skin,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:"'JetBrains Mono',monospace"}}>Front</span>}</div>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><svg viewBox="0 0 100 200" height={size} style={{overflow:"visible"}}>{Back}</svg>{showLabels&&<span style={{fontSize:8,color:skin,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:"'JetBrains Mono',monospace"}}>Back</span>}</div>
+  </div>);
+}
+const MUSCLE_LABELS={chest:"Chest",frontDelts:"Front Delts",sideDelts:"Side Delts",rearDelts:"Rear Delts",traps:"Traps",biceps:"Biceps",triceps:"Triceps",forearms:"Forearms",abs:"Abs",obliques:"Obliques",lats:"Lats",upperBack:"Upper Back",lowerBack:"Lower Back",glutes:"Glutes",quads:"Quads",hamstrings:"Hamstrings",calves:"Calves"};
+const DumbbellIcon=({size=20,color="currentColor"})=>(<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/></svg>);
+
 const Icons={
   today:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>,
   groups:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   analytics:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
   goals:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
   journal:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>,
-  workout:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
+  workout:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/></svg>,
   budget:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
 };
 
@@ -569,6 +635,9 @@ export default function Dashboard(){
   const[editProof,setEditProof]=useState(false);
 
   const[gSplit,setGSplit]=useState(null);const[gView,setGView]=useState("workouts");const[doneEx,setDoneEx]=useState({});const[nBW,setNBW]=useState("");const[addSplit,setAddSplit]=useState(false);const[nSpName,setNSpName]=useState("");const[nSpEx,setNSpEx]=useState("");
+  const[renameSplitVal,setRenameSplitVal]=useState(null); // in-progress split rename text (null = not editing)
+  const[manualDuration,setManualDuration]=useState(""); // minutes for manual workout logging
+  const[manualDate,setManualDate]=useState(dk(new Date())); // date for manual workout logging
   // ─── HEALTH: Diet ───
   const[diet,setDiet]=useState({}); // {dateKey:{calories,protein,carbs,fat,water,entries}}
   const[foodDB,setFoodDB]=useState([]); // personal food database: {id,name,grams,calories,protein,carbs,fat}
@@ -1671,7 +1740,19 @@ ${body}
   };
   const cancelSession=()=>setShowCancelConfirm(true);
   const confirmCancel=()=>{setActiveSession(null);syncSession(null);setDoneEx({});setShowCancelConfirm(false);setSessionMinimized(false);};
-  const saveWk=()=>{if(!curWkState)return;setWHist(p=>[...p,{id:uid(),date:dk(now),split:curWkState.split,exercises:curWkState.exercises}]);setConfetti(true);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});},2000);};
+  const saveWk=()=>{if(!curWkState)return;const durMin=parseFloat(manualDuration);const dur=durMin>0?Math.round(durMin*60000):undefined;setWHist(p=>[...p,{id:uid(),date:manualDate||dk(now),split:curWkState.split,exercises:curWkState.exercises,...(dur?{duration:dur}:{})}]);setConfetti(true);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});setManualDuration("");setManualDate(dk(new Date()));},2000);};
+  // Rename a workout template. Migrates past workout history to the new name so nothing is lost.
+  const renameSplit=(oldKey,rawName)=>{
+    const newKey=(rawName||"").trim().toLowerCase();
+    setRenameSplitVal(null);
+    if(!newKey||newKey===oldKey)return;
+    if(splits[newKey]){setSaveError&&setSaveError("A workout named that already exists.");return;}
+    setSplits(p=>{const n={};Object.entries(p).forEach(([k,v])=>{n[k===oldKey?newKey:k]=v;});return n;});
+    setWHist(p=>p.map(w=>w.split===oldKey?{...w,split:newKey}:w));
+    if(curWkState&&curWkState.split===oldKey)setCurWkState(p=>({...p,split:newKey}));
+    if(activeSession&&activeSession.split===oldKey)setActiveSession(p=>({...p,split:newKey}));
+    if(gSplit===oldKey)setGSplit(newKey);
+  };
   const lastSess=useMemo(()=>{const k=activeSession?activeSession.split:gSplit;return k?wHist.filter(h=>h.split===k).sort((a,b)=>new Date(b.date)-new Date(a.date))[0]||null:null;},[wHist,gSplit,activeSession]);
   // Format stopwatch
   const sessionElapsed=activeSession?Math.floor((Date.now()-activeSession.startTime)/1000):0;
@@ -2920,15 +3001,70 @@ ${body}
 
           {/* ═══════════ MY WORKOUTS ═══════════ */}
           {gView==="workouts"&&!gSplit&&<div>
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>{Object.entries(splits).map(([key,exL])=>(<div key={key} style={{...card,padding:"14px 18px",display:"flex",alignItems:"center",gap:14}}><button className="press" onClick={()=>setGSplit(key)} style={{flex:1,display:"flex",alignItems:"center",gap:14,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",padding:0}}><div style={{width:46,height:46,borderRadius:14,background:`${spClr[key]||C.blue}1A`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{fontSize:17,fontWeight:800,color:spClr[key]||C.blue,textTransform:"uppercase"}}>{key[0]}</span></div><div><div style={{fontSize:14,fontWeight:700,color:spClr[key]||C.blue,textTransform:"uppercase",letterSpacing:"0.04em"}}>{key}</div><div style={{fontSize:11,color:C.textDim,marginTop:1}}>{exL.length} exercises</div></div></button><button className="press" onClick={()=>startSession(key)} style={{display:"flex",alignItems:"center",gap:5,background:C.accent,border:"none",borderRadius:10,padding:"9px 15px",color:C.btnText,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",flexShrink:0}}><svg width="11" height="11" viewBox="0 0 24 24" fill={C.btnText}><polygon points="6 4 20 12 6 20"/></svg>Start</button><button className="press" onClick={()=>setSplits(p=>{const n={...p};delete n[key];return n;})} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:15,opacity:0.3,flexShrink:0}}>×</button></div>))}</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>{Object.entries(splits).map(([key,exL])=>{const clr=spClr[key]||C.accent;const mset=musclesForSplit(exL);return(
+              <div key={key} style={{...card,padding:"14px 16px"}}>
+                <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:11}}>
+                  <button className="press" onClick={()=>setGSplit(key)} style={{background:"transparent",border:"none",cursor:"pointer",padding:0,flexShrink:0}}><MuscleBody muscles={mset} accent={clr} base={C.surfaceHi} skin={C.textDim} size={62} gap={5}/></button>
+                  <button className="press" onClick={()=>setGSplit(key)} style={{flex:1,minWidth:0,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",padding:0}}>
+                    <div style={{fontSize:15,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.04em"}}>{key}</div>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{exL.length} exercises</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:7}}>{[...mset].slice(0,6).map(m=><span key={m} style={{fontSize:8,fontWeight:700,color:clr,background:`${clr}1A`,borderRadius:4,padding:"2px 6px",textTransform:"uppercase",letterSpacing:"0.03em"}}>{MUSCLE_LABELS[m]}</span>)}{mset.size===0&&<span style={{fontSize:9,color:C.textDim,fontStyle:"italic"}}>Add exercises to map muscles</span>}</div>
+                  </button>
+                  <button className="press" onClick={()=>setSplits(p=>{const n={...p};delete n[key];return n;})} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:15,opacity:0.3,flexShrink:0}}>×</button>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button className="press" onClick={()=>startSession(key)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:C.accent,border:"none",borderRadius:10,padding:"10px 0",color:C.btnText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em"}}><svg width="11" height="11" viewBox="0 0 24 24" fill={C.btnText}><polygon points="6 4 20 12 6 20"/></svg>Start</button>
+                  <button className="press" onClick={()=>setGSplit(key)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:10,padding:"10px 0",color:C.textDim,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em"}}>Manual / Edit</button>
+                </div>
+              </div>);})}</div>
             {!addSplit?<button onClick={()=>setAddSplit(true)} style={{...btnB,width:"100%",marginTop:12,fontSize:12}}>+ Add Split</button>:<div style={{...card,marginTop:12}}><input value={nSpName} onChange={e=>setNSpName(e.target.value)} placeholder="Split name (e.g. push)" style={{...inp,marginBottom:8}} /><input value={nSpEx} onChange={e=>setNSpEx(e.target.value)} placeholder="Exercises (comma separated)" style={{...inp,marginBottom:10}} /><div style={{display:"flex",gap:8}}><button onClick={()=>{if(!nSpName.trim())return;setSplits(p=>({...p,[nSpName.trim().toLowerCase()]:nSpEx.split(",").map(e=>e.trim()).filter(Boolean)}));setNSpName("");setNSpEx("");setAddSplit(false);}} style={{...btnB,flex:1}}>Add</button><button onClick={()=>setAddSplit(false)} style={btnG}>Cancel</button></div></div>}
             {/* Recent workouts */}
             {wHist.length>0&&<div style={{marginTop:22}}>
               <div style={{...lbl,marginBottom:10}}>Recent Workouts</div>
-              {wHist.slice().reverse().slice(0,8).map(w=>(<div key={w.id} className="press" onClick={()=>setViewWorkout(w)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:12,background:C.surface,cursor:"pointer",border:`1px solid ${C.hairline}`}}><div style={{width:36,height:36,borderRadius:10,background:`${spClr[w.split]||C.accent}1A`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{fontSize:13,fontWeight:800,color:spClr[w.split]||C.accent,textTransform:"uppercase"}}>{w.split[0]}</span></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:spClr[w.split]||C.accent,textTransform:"uppercase",letterSpacing:"0.04em"}}>{w.split}</div><div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>{fd(w.date)} · {w.exercises.length} ex · {w.exercises.reduce((a,e)=>a+e.sets.length,0)} sets{w.duration?` · ${fmtTime(Math.floor(w.duration/1000))}`:""}</div></div><span style={{fontSize:16,color:C.textDim}}>›</span><button onClick={e=>{e.stopPropagation();setWHist(p=>p.filter(x=>x.id!==w.id));}} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,opacity:0.35,padding:"0 2px"}}>×</button></div>))}
+              {wHist.slice().reverse().slice(0,8).map(w=>(<div key={w.id} className="press" onClick={()=>setViewWorkout(w)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:12,background:C.surface,cursor:"pointer",border:`1px solid ${C.hairline}`}}><div style={{width:36,height:36,borderRadius:10,background:`${spClr[w.split]||C.accent}1A`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:spClr[w.split]||C.accent}}><DumbbellIcon size={18} color={spClr[w.split]||C.accent}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:spClr[w.split]||C.accent,textTransform:"uppercase",letterSpacing:"0.04em"}}>{w.split}</div><div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>{fd(w.date)} · {w.exercises.length} ex · {w.exercises.reduce((a,e)=>a+e.sets.length,0)} sets{w.duration?` · ${fmtTime(Math.floor(w.duration/1000))}`:""}</div></div><span style={{fontSize:16,color:C.textDim}}>›</span><button onClick={e=>{e.stopPropagation();setWHist(p=>p.filter(x=>x.id!==w.id));}} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,opacity:0.35,padding:"0 2px"}}>×</button></div>))}
             </div>}
           </div>}
-          {gView==="workouts"&&gSplit&&curWkState&&<div><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}><button onClick={()=>setGSplit(null)} style={btnG}>←</button><span style={{fontSize:15,fontWeight:800,color:spClr[gSplit]||C.blue,textTransform:"uppercase"}}>{gSplit}</span><span style={{fontSize:9,color:C.green,marginLeft:6}}>● auto-saving</span><button className="press" onClick={()=>{const n=prompt("Exercise name:");if(n&&n.trim()){setSplits(p=>({...p,[gSplit]:[...(p[gSplit]||[]),n.trim()]}));setCurWkState(p=>({...p,exercises:[...p.exercises,{name:n.trim(),sets:[{w:0,r:0},{w:0,r:0},{w:0,r:0}]}]}));}}} style={{...btnG,fontSize:10,marginLeft:"auto"}}>+ Ex</button></div>{curWkState.exercises.map((ex,ei)=>{const lE=lastSess?.exercises?.find(e=>e.name===ex.name);const dn=doneEx[ei];return(<div key={ei} style={{...card,marginBottom:10,background:dn?C.greenSoft:C.surface}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><span style={{fontSize:13,fontWeight:700,color:dn?C.green:C.text}}>{dn&&"✓ "}{ex.name}</span><div style={{display:"flex",gap:3}}><button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"3px 8px",fontSize:10}}>Done</button><button onClick={()=>rSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>−</button><button onClick={()=>aSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>+</button><button onClick={()=>{setSplits(p=>({...p,[gSplit]:(p[gSplit]||[]).filter(e=>e!==ex.name)}));setCurWkState(p=>({...p,exercises:p.exercises.filter((_,i)=>i!==ei)}));}} style={{...btnG,padding:"3px 6px",fontSize:11,color:C.red}}>✕</button></div></div>{ex.sets.map((s,si)=>{const ls=lE?.sets?.[si];const wd=ls?s.w-ls.w:null;return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:spClr[gSplit]||C.blue,fontWeight:700}}>S{si+1}</span><input type="number" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder="lbs" style={numI} /><input type="number" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={numI} /><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:ls?(wd>0?C.greenBright:wd<0?C.red:C.textDim):C.textDim}}>{ls?`${ls.w}×${ls.r}`:"—"}</span></div>);})}</div>);})}<button className="press" onClick={saveWk} style={{width:"100%",background:spClr[gSplit]||C.blue,border:"none",borderRadius:12,padding:"14px 0",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",marginTop:4}}>Save ✓</button></div>}
+          {gView==="workouts"&&gSplit&&curWkState&&(()=>{const clr=spClr[gSplit]||C.blue;const splitMuscles=musclesForSplit(curWkState.exercises.map(e=>e.name));return(<div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+              <button onClick={()=>{setGSplit(null);setRenameSplitVal(null);}} style={btnG}>←</button>
+              {renameSplitVal!==null
+                ?<input autoFocus value={renameSplitVal} onChange={e=>setRenameSplitVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")renameSplit(gSplit,renameSplitVal);if(e.key==="Escape")setRenameSplitVal(null);}} onBlur={()=>renameSplit(gSplit,renameSplitVal)} style={{...inp,flex:1,fontWeight:800,textTransform:"uppercase",fontSize:15}}/>
+                :<button className="press" onClick={()=>setRenameSplitVal(gSplit)} style={{flex:1,display:"flex",alignItems:"center",gap:7,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",padding:0}}><span style={{fontSize:16,fontWeight:800,color:clr,textTransform:"uppercase"}}>{gSplit}</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg></button>}
+              <span style={{fontSize:9,color:C.green}}>● auto-saving</span>
+            </div>
+
+            {/* Muscle map for the whole workout */}
+            <div style={{...card,marginBottom:12,display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+              <MuscleBody muscles={splitMuscles} accent={clr} base={C.surfaceHi} skin={C.textDim} size={134} showLabels gap={16}/>
+              {splitMuscles.size>0?<div style={{display:"flex",flexWrap:"wrap",gap:5,justifyContent:"center"}}>{[...splitMuscles].map(m=><span key={m} style={{fontSize:9,fontWeight:700,color:clr,background:`${clr}1A`,borderRadius:5,padding:"3px 8px",textTransform:"uppercase",letterSpacing:"0.03em"}}>{MUSCLE_LABELS[m]}</span>)}</div>:<div style={{fontSize:11,color:C.textDim,fontStyle:"italic"}}>Add exercises to map trained muscles</div>}
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button className="press" onClick={()=>{const n=prompt("Exercise name:");if(n&&n.trim()){setSplits(p=>({...p,[gSplit]:[...(p[gSplit]||[]),n.trim()]}));setCurWkState(p=>({...p,exercises:[...p.exercises,{name:n.trim(),sets:[{w:0,r:0},{w:0,r:0},{w:0,r:0}]}]}));}}} style={{...btnG,fontSize:10}}>+ Exercise</button></div>
+
+            {curWkState.exercises.map((ex,ei)=>{const lE=lastSess&&lastSess.exercises?lastSess.exercises.find(e=>e.name===ex.name):null;const dn=doneEx[ei];const exM=musclesForExercise(ex.name);return(<div key={ei} style={{...card,marginBottom:10,background:dn?C.greenSoft:C.surface}}>
+              <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
+                <div style={{flexShrink:0,marginTop:2}}><MuscleBody muscles={exM} accent={dn?C.green:clr} base={C.surfaceHi} skin={C.textDim} size={46} gap={3}/></div>
+                <div style={{flex:1,minWidth:0}}>
+                  <span style={{fontSize:13,fontWeight:700,color:dn?C.green:C.text}}>{dn&&"✓ "}{ex.name}</span>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:4}}>{exM.map(m=><span key={m} style={{fontSize:7,fontWeight:700,color:C.textDim,background:C.surfaceDim,borderRadius:3,padding:"1px 5px",textTransform:"uppercase",letterSpacing:"0.03em"}}>{MUSCLE_LABELS[m]}</span>)}</div>
+                </div>
+                <div style={{display:"flex",gap:3,flexShrink:0}}><button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"3px 8px",fontSize:10}}>Done</button><button onClick={()=>rSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>−</button><button onClick={()=>aSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>+</button><button onClick={()=>{setSplits(p=>({...p,[gSplit]:(p[gSplit]||[]).filter(e=>e!==ex.name)}));setCurWkState(p=>({...p,exercises:p.exercises.filter((_,i)=>i!==ei)}));}} style={{...btnG,padding:"3px 6px",fontSize:11,color:C.red}}>✕</button></div>
+              </div>
+              {ex.sets.map((s,si)=>{const ls=lE&&lE.sets?lE.sets[si]:null;const wd=ls?s.w-ls.w:null;return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:clr,fontWeight:700}}>S{si+1}</span><input type="number" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder="lbs" style={numI} /><input type="number" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={numI} /><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:ls?(wd>0?C.greenBright:wd<0?C.red:C.textDim):C.textDim}}>{ls?`${ls.w}×${ls.r}`:"—"}</span></div>);})}
+            </div>);})}
+
+            {/* Manual logging — optional date + duration, then save directly (no live timer) */}
+            <div style={{...card,marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.text}}>Manual entry</div>
+              <div style={{fontSize:9,color:C.textDim,marginTop:1,marginBottom:10}}>For logging a completed workout after the fact</div>
+              <div style={{display:"flex",gap:10}}>
+                <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>Date</div><input type="date" value={manualDate} onChange={e=>setManualDate(e.target.value)} max={dk(new Date())} style={{...inp,width:"100%",fontFamily:FN.m,fontSize:12,colorScheme:theme}}/></div>
+                <div style={{width:90}}><div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>Duration</div><input type="number" value={manualDuration} onChange={e=>setManualDuration(e.target.value)} placeholder="min" style={{...inp,width:"100%",fontFamily:FN.m,textAlign:"center"}}/></div>
+              </div>
+            </div>
+
+            <button className="press" onClick={saveWk} style={{width:"100%",background:clr,border:"none",borderRadius:12,padding:"14px 0",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",marginTop:2}}>Save Workout ✓</button>
+          </div>);})()}
 
           {/* ═══════════ DIET ═══════════ */}
           {gView==="diet"&&(()=>{
