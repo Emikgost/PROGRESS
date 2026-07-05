@@ -1963,6 +1963,7 @@ ${body}
   const vjY=vjMonth.getFullYear(),vjM=vjMonth.getMonth(),vjDIM=new Date(vjY,vjM+1,0).getDate(),vjFD=new Date(vjY,vjM,1).getDay(),vjCM=vjY===now.getFullYear()&&vjM===now.getMonth();
   const vjDK=d=>`${vjY}-${String(vjM+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
   const vjEntries=d=>videoJournal[vjDK(d)]||[];
+  const vjWritten=d=>writtenJournal.filter(en=>dk(new Date(en.ts))===vjDK(d)).sort((a,b)=>b.ts-a.ts);
   // When a day is selected, hydrate object URLs for its entries from IndexedDB.
   useEffect(()=>{
     if(vjSel==null)return;
@@ -2505,43 +2506,35 @@ ${body}
         {/* ═══ GROUPS ═══ (unchanged behavior) */}
         {tab==="groups"&&<div className="tab-content">
           {/* ═══ JOURNAL ═══ */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <h2 style={{fontWeight:700,fontSize:18,margin:0,fontFamily:FN.h,fontStyle:"italic"}}>Journal</h2>
-            <span style={{fontSize:10,color:C.textDim,fontFamily:FN.m}}>{jrnlView==="write"?`${writtenJournal.length} written`:`${Object.values(videoJournal).reduce((a,v)=>a+v.length,0)} videos`}</span>
+            <span style={{fontSize:10,color:C.textDim,fontFamily:FN.m}}>{writtenJournal.length} written · {Object.values(videoJournal).reduce((a,v)=>a+v.length,0)} video</span>
           </div>
-          <div style={{display:"flex",gap:6,marginBottom:18,background:C.surfaceDim,borderRadius:12,padding:4}}>{[{k:"write",l:"Written"},{k:"video",l:"Video"}].map(v=>{const on=jrnlView===v.k;return(<button key={v.k} onClick={()=>setJrnlView(v.k)} style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:700,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.05em",transition:"all 0.2s ease"}}>{v.l}</button>);})}</div>
 
-          {jrnlView==="write"&&<div>
-            <button onClick={openNewJournal} className="press" style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:9,background:C.accent,border:"none",borderRadius:14,padding:"15px 0",color:C.btnText,fontSize:14,fontWeight:700,fontFamily:FN.b,cursor:"pointer",marginBottom:18}}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Write an entry</button>
-            {sortedWritten.length===0
-              ?<div style={{textAlign:"center",padding:"48px 20px",color:C.textDim}}><div style={{fontFamily:FN.h,fontStyle:"italic",fontSize:16,marginBottom:6}}>Your journal is a blank page.</div><div style={{fontSize:12,lineHeight:1.6}}>Capture a thought, reflect on today, or note something you want to remember.</div></div>
-              :sortedWritten.map(en=>{const preview=(en.body||"").replace(/\s+/g," ").trim();return(
-                <button key={en.id} onClick={()=>setJrnlOpen(en)} className="press" style={{...card,width:"100%",textAlign:"left",cursor:"pointer",marginBottom:11,display:"block",padding:"18px 18px"}}>
-                  <div style={{fontSize:9,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:FN.m,marginBottom:7}}>{jrnlDateLabel(en.ts)}</div>
-                  <div style={{fontSize:18,fontWeight:600,color:C.text,fontFamily:FN.h,lineHeight:1.25,marginBottom:preview?6:0}}>{en.title}</div>
-                  {preview&&<div style={{fontSize:13,color:C.textDim,lineHeight:1.55,fontFamily:"Georgia,serif",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{preview}</div>}
-                  {wordCount(en.body)>0&&<div style={{fontSize:9,color:C.textDim,fontFamily:FN.m,marginTop:9}}>{wordCount(en.body)} words</div>}
-                </button>
-              );})}
-          </div>}
-
-          {jrnlView==="video"&&<>
           <div style={card}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}><button onClick={()=>{setVjMonth(new Date(vjY,vjM-1,1));setVjSel(null);}} style={btnG}>‹</button><span style={{fontSize:14,fontWeight:700}}>{vjMonth.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span><button onClick={()=>{setVjMonth(new Date(vjY,vjM+1,1));setVjSel(null);}} style={btnG}>›</button></div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,color:C.textDim,fontWeight:600}}>{d}</div>)}</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>{Array.from({length:vjFD}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:vjDIM}).map((_,i)=>{const d=i+1;const isT=vjCM&&d===now.getDate();const cnt=vjEntries(d).length;const sel=vjSel===d;return(<div key={d} onClick={()=>setVjSel(sel?null:d)} style={{aspectRatio:"1",borderRadius:8,cursor:"pointer",padding:3,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:sel?C.accentMed:cnt>0?C.accentSoft:C.surfaceDim,border:isT?`2px solid ${C.accent}`:cnt>0?`1.5px solid ${C.accentMed}`:"1.5px solid transparent",transition:"all 0.2s ease"}}><span style={{fontSize:12,fontWeight:isT?800:500,color:isT?C.accent:C.text}}>{d}</span>{cnt>0&&<span style={{display:"flex",alignItems:"center",gap:2,marginTop:1}}><span style={{width:4,height:4,borderRadius:"50%",background:C.accent}}/><span style={{fontSize:8,fontWeight:700,color:C.accent,fontFamily:FN.m}}>{cnt}</span></span>}</div>);})}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>{Array.from({length:vjFD}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:vjDIM}).map((_,i)=>{const d=i+1;const isT=vjCM&&d===now.getDate();const vCnt=vjEntries(d).length;const wCnt=vjWritten(d).length;const cnt=vCnt+wCnt;const sel=vjSel===d;return(<div key={d} onClick={()=>setVjSel(sel?null:d)} style={{aspectRatio:"1",borderRadius:8,cursor:"pointer",padding:3,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:sel?C.accentMed:cnt>0?C.accentSoft:C.surfaceDim,border:isT?`2px solid ${C.accent}`:cnt>0?`1.5px solid ${C.accentMed}`:"1.5px solid transparent",transition:"all 0.2s ease"}}><span style={{fontSize:12,fontWeight:isT?800:500,color:isT?C.accent:C.text}}>{d}</span>{cnt>0&&<span style={{display:"flex",alignItems:"center",gap:2,marginTop:2}}>{wCnt>0&&<span style={{width:4,height:4,borderRadius:"50%",background:C.gold||"#F5B301"}}/>}{vCnt>0&&<span style={{width:4,height:4,borderRadius:"50%",background:C.accent}}/>}</span>}</div>);})}</div>
 
-            {vjSel&&(()=>{const key=vjDK(vjSel);const entries=videoJournal[key]||[];const dateLabel=new Date(vjY,vjM,vjSel).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});return(
+            {vjSel&&(()=>{const key=vjDK(vjSel);const entries=videoJournal[key]||[];const written=vjWritten(vjSel);const dayTs=new Date(vjY,vjM,vjSel,12,0,0).getTime();const dateLabel=new Date(vjY,vjM,vjSel).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});return(
               <div style={{marginTop:14,borderTop:`1px solid ${C.surfaceDim}`,paddingTop:14}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
                   <div style={{fontSize:14,fontWeight:700}}>{dateLabel}</div>
                   <div style={{display:"flex",gap:6}}>
+                    <button className="press" onClick={()=>setJrnlEditor({title:"",body:"",ts:dayTs})} style={{display:"flex",alignItems:"center",gap:5,background:C.gold||"#F5B301",border:"none",borderRadius:8,padding:"8px 12px",color:"#3A2E00",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3A2E00" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Write</button>
                     <button className="press" onClick={()=>setShowVjRecorder(true)} style={{display:"flex",alignItems:"center",gap:6,background:C.accent,border:"none",borderRadius:8,padding:"8px 12px",color:C.btnText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em"}}><span style={{width:9,height:9,borderRadius:"50%",background:C.btnText}}/>Record</button>
                     <button className="press" onClick={()=>vjFileRef.current?.click()} style={{...btnG,padding:"8px 12px",fontSize:11}}>↑ Upload</button>
                   </div>
                 </div>
                 <input ref={vjFileRef} type="file" accept="video/*" onChange={vjUpload} style={{display:"none"}} />
-                {entries.length===0&&<div style={{textAlign:"center",padding:"24px 12px",color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>No entries yet. Record or upload to capture this day.</div>}
+                {written.map(en=>{const preview=(en.body||"").replace(/\s+/g," ").trim();return(
+                  <button key={en.id} onClick={()=>setJrnlOpen(en)} className="press" style={{...card,width:"100%",textAlign:"left",cursor:"pointer",marginBottom:10,display:"block",padding:"14px 16px",borderLeft:`3px solid ${C.gold||"#F5B301"}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={C.gold||"#F5B301"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span style={{fontSize:9,fontWeight:700,color:C.gold||"#F5B301",textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:FN.m}}>{new Date(en.ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}</span></div>
+                    <div style={{fontSize:15,fontWeight:600,color:C.text,fontFamily:FN.h,lineHeight:1.25,marginBottom:preview?4:0}}>{en.title}</div>
+                    {preview&&<div style={{fontSize:12,color:C.textDim,lineHeight:1.5,fontFamily:"Georgia,serif",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{preview}</div>}
+                  </button>
+                );})}
+                {entries.length===0&&written.length===0&&<div style={{textAlign:"center",padding:"24px 12px",color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>Nothing yet. Write, record, or upload to capture this day.</div>}
                 {entries.map(en=>{const url=vjUrls[en.id];return(
                   <div key={en.id} style={{background:C.surfaceDim,borderRadius:12,padding:10,marginBottom:10,border:`1px solid ${C.hairline}`}}>
                     <div style={{borderRadius:10,overflow:"hidden",background:"#000",marginBottom:8}}>
@@ -2557,8 +2550,7 @@ ${body}
               </div>
             );})()}
           </div>
-          <div style={{textAlign:"center",fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:12,lineHeight:1.5,padding:"0 8px"}}>Tap a date to record or upload. Videos are stored privately on this device.</div>
-          </>}
+          <div style={{textAlign:"center",fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:12,lineHeight:1.5,padding:"0 8px"}}>Written entries and videos both appear here. <span style={{color:C.gold||"#F5B301"}}>●</span> written · <span style={{color:C.accent}}>●</span> video. Videos stay private on this device.</div>
 
           {/* Writing interface — full-screen, distraction-free */}
           {jrnlEditor&&<div style={{position:"fixed",inset:0,zIndex:400,background:C.bg,display:"flex",flexDirection:"column",animation:"overlayIn 0.22s ease"}}>
