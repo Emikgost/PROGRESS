@@ -1,17 +1,77 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+// cloud.js
+import { auth, db } from "./firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyAs7EzuiHHpWCL2UFcUqVpRtwN9Du4uaqY",
-  authDomain: "progress-635f7.firebaseapp.com",
-  projectId: "progress-635f7",
-  storageBucket: "progress-635f7.firebasestorage.app",
-  messagingSenderId: "15441470395",
-  appId: "1:15441470395:web:169a99e7844fff89801a9e"
-};
+const STORE_KEY = "dash-v18";
+const TS_KEY = "dash-cloud-ts";
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const nativeSet = localStorage.setItem.bind(localStorage);
+
+let currentUid = null;
+let ready = false;
+let pushTimer = null;
+
+function localTs() {
+  return Number(localStorage.getItem(TS_KEY) || 0);
+}
+function setLocalTs(ts) {
+  nativeSet(TS_KEY, String(ts));
+}
+
+function schedulePush() {
+  if (!currentUid || !ready) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async () => {
+    const blob = localStorage.getItem(STORE_KEY);
+    if (blob == null) return;
+    const ts = Date.now();
+    try {
+      await setDoc(doc(db, "users", currentUid), { blob, updatedAt: ts });
+      setLocalTs(ts);
+    } catch (e) {
+      console.error("Cloud push failed (will retry on next save):", e);
+    }
+  }, 1500);
+}
+
+export function installCloudSync() {
+  if (localStorage.setItem.__cloudPatched) return;
+  const patched = (key, value) => {
+    nativeSet(key, value);
+    if (key === STORE_KEY) schedulePush();
+  };
+  patched.__cloudPatched = true;
+  localStorage.setItem = patched;
+}
+
+export async function initialSync(uid) {
+  currentUid = uid;
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    if (snap.exists()) {
+      const { blob, updatedAt } = snap.data();
+      if (blob && updatedAt > localTs()) {
+        nativeSet(STORE_KEY, blob);
+        setLocalTs(updatedAt);
+        ready = true;
+        return "reload";
+      }
+    }
+    const localBlob = localStorage.getItem(STORE_KEY);
+    if (localBlob != null) {
+      const ts = Date.now();
+      await setDoc(doc(db, "users", uid), { blob: localBlob, updatedAt: ts });
+      setLocalTs(ts);
+    }
+  } catch (e) {
+    console.error("Initial sync failed (using local data for now):", e);
+  }
+  ready = true;
+  return "ok";
+}
+
+export function stopCloudSync() {
+  currentUid = null;
+  ready = false;
+  clearTimeout(pushTimer);
+}
