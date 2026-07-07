@@ -2297,6 +2297,21 @@ ${body}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><button onClick={()=>setVDate(new Date(vDate.getFullYear(),vDate.getMonth()-1,1))} style={btnG}>‹</button><span style={{fontSize:13,fontWeight:700}}>{vDate.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span><button onClick={()=>setVDate(new Date(vDate.getFullYear(),vDate.getMonth()+1,1))} style={btnG}>›</button></div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:9,color:C.textDim,fontWeight:600}}>{d}</div>)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth(),1).getDay()}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth()+1,0).getDate()}).map((_,i)=>(<div key={i+1} onClick={()=>{setVDate(new Date(vDate.getFullYear(),vDate.getMonth(),i+1));setShowFullCal(false);}} style={{textAlign:"center",padding:"4px 0",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:vDate.getDate()===i+1?700:400,background:vDate.getDate()===i+1?C.goldBright:"transparent",color:vDate.getDate()===i+1?"#fff":C.text}}>{i+1}</div>))}</div>
         </div>}
+        {/* Today at a Glance — compact, lives in the sticky header so it stays visible while scrolling */}
+        {(()=>{const tk=dk(now);const dd=diet[tk]||{};const calEaten=Math.round(dd.calories||0),calGoal=dietGoals.calories||0;const water=Math.round(dd.water||0),waterGoal=dietGoals.water||0;const wkT=wHist.filter(w=>w.date===tk);const splits=[...new Set(wkT.map(w=>w.split))];const workedOut=splits.length>0;const wVal=workedOut?(splits.length>1?`${splits.length}×`:(splits[0].charAt(0).toUpperCase()+splits[0].slice(1))):"—";const goDiet=()=>{setMenuTab("workout");setGView("diet");setTab(null);};const tiles=[
+          {k:"tasks",l:"Tasks",v:`${todayCompletion.pct}%`,c:dailyLabel.color,pct:todayCompletion.pct,go:null},
+          {k:"food",l:"Eaten",v:`${calEaten}`,c:MACRO.calories.color,pct:calGoal?Math.min(100,calEaten/calGoal*100):0,go:goDiet},
+          {k:"water",l:"Water",v:`${water}`,c:MACRO.water.color,pct:waterGoal?Math.min(100,water/waterGoal*100):0,go:goDiet},
+          {k:"workout",l:"Workout",v:wVal,c:workedOut?C.green:C.textDim,pct:workedOut?100:0,go:()=>{setMenuTab("workout");setGView("workouts");setTab(null);}},
+        ];return(
+          <div style={{display:"flex",gap:7,padding:"7px 12px 3px"}}>{tiles.map(t=>(
+            <div key={t.k} onClick={t.go||undefined} className={t.go?"press":""} style={{flex:1,minWidth:0,background:C.surfaceDim,borderRadius:11,padding:"10px 11px",cursor:t.go?"pointer":"default"}}>
+              <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:3}}>{t.l}</div>
+              <div style={{fontSize:20,fontWeight:800,color:t.c,fontFamily:FN.m,lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.v}</div>
+              <div style={{height:4,background:C.surface,borderRadius:2,overflow:"hidden",marginTop:7}}><div style={{height:"100%",width:`${t.pct}%`,background:t.c,borderRadius:2,transition:"width 0.5s ease"}}/></div>
+            </div>
+          ))}</div>
+        );})()}
         </>}
       </div>
 
@@ -2403,20 +2418,6 @@ ${body}
             {renderGridSection("Evening",nightItems,"#60A5FA")}
             {generalItems.length>0&&renderGridSection("All Day",generalItems,C.green)}
             {goalItems.length>0&&renderGridSection("Goals",goalItems.map(g=>({...g,id:g.goalId})),C.accent,"auto")}
-
-                        {/* Weekly summary bar */}
-            <div style={{...card,padding:14,marginTop:8}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em"}}>Today</div>
-                  <div className="hero-num" style={{fontSize:28,color:dailyLabel.color,lineHeight:1}}>{todayCompletion.pct}<span style={{fontSize:12,color:C.textDim}}>%</span></div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em"}}>{dailyLabel.text}</div>
-                  <div style={{fontSize:11,fontFamily:FN.m,color:C.textDim,marginTop:2}}>{todayCompletion.done}/{todayCompletion.total} tasks</div>
-                </div>
-              </div>
-            </div>
           </div>);
         })()}
         
@@ -3927,35 +3928,6 @@ ${body}
       </div>
       </div>
 
-      {/* ═══ FIXED HERO COMPLETION (Today tab only — always visible while scrolling) ═══ */}
-      {tab==="today"&&!menuTab&&(()=>{
-        const pct=todayCompletion.pct;
-        const lerp=(a,b,t)=>Math.round(a+(b-a)*t);
-        let r,g,bl;
-        if(theme==="light"){
-          // Deeper red → deeper amber → deeper green for contrast on warm paper
-          if(pct<=50){const t=pct/50;r=lerp(220,217,t);g=lerp(38,119,t);bl=lerp(38,6,t);}
-          else{const t=(pct-50)/50;r=lerp(217,5,t);g=lerp(119,150,t);bl=lerp(6,105,t);}
-        }else{
-          if(pct<=50){const t=pct/50;r=lerp(248,251,t);g=lerp(113,191,t);bl=lerp(113,36,t);}
-          else{const t=(pct-50)/50;r=lerp(251,52,t);g=lerp(191,211,t);bl=lerp(36,153,t);}
-        }
-        const numColor=`rgb(${r},${g},${bl})`;
-        return(
-          <div style={{position:"fixed",left:0,right:0,bottom:70,zIndex:99,background:theme==="light"?`linear-gradient(180deg,rgba(245,240,229,0) 0%,${C.bg} 40%)`:`linear-gradient(180deg,rgba(28,36,56,0.85) 0%,${C.surface} 30%)`,backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",borderTop:`1px solid ${C.hairline}`,padding:"12px 24px 12px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.14em",marginBottom:4,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-              <span>Today</span>
-              <span style={{width:3,height:3,borderRadius:"50%",background:C.textDim}}/>
-              <span style={{color:dailyLabel.color,fontWeight:700}}>{dailyLabel.text}</span>
-            </div>
-            <div className="hero-num" style={{fontSize:48,lineHeight:0.95,color:numColor,marginBottom:8,transition:"color 0.4s ease"}}>{pct}<span style={{fontSize:18,color:C.textDim}}>%</span></div>
-            <div style={{height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden",margin:"0 auto",maxWidth:420}}>
-              <div style={{height:"100%",width:`${pct}%`,background:numColor,borderRadius:3,transition:"width 0.6s cubic-bezier(0.34,1.56,0.64,1), background 0.4s ease",boxShadow:pct>0?(theme==="light"?`0 0 8px ${numColor}40`:`0 0 14px ${numColor}80`):"none"}} />
-            </div>
-            <div style={{fontFamily:FN.m,fontSize:9,color:C.textDim,letterSpacing:"0.04em",marginTop:6}}>{todayCompletion.done} / {todayCompletion.total} tasks</div>
-          </div>
-        );
-      })()}
 
       <div style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 6px",gap:2}}>
         {mainTabs.map(t=>{const on=curPage===t.k;return(
