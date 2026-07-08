@@ -565,6 +565,7 @@ export default function Dashboard(){
   const[aspirations,setAspirations]=useState([]);
   const[wHist,setWHist]=useState(seedWH);
   const[bwLog,setBwLog]=useState(seedBW);
+  const[exMeta,setExMeta]=useState({}); // {nameLower:{mode:"weight"|"time",wtype:"ext"|"bw"|"bwplus"|"bwminus",timeFmt:"ms"|"s"}}
   const[txns,setTxns]=useState(seedTx);
   const[groups,setGroups]=useState([{id:"g1",name:"Workout Crew",tasks:["f_ex"],members:[{name:"You",av:"E"},{name:"Alex",av:"A"}],feed:[]}]);
   const[splits,setSplits]=useState(defSplits);
@@ -1295,7 +1296,7 @@ export default function Dashboard(){
       const sf=Object.entries(splitFreq).sort((a,b)=>b[1]-a[1]);
       if(sf.length)body+=`<div style="margin-top:14px">${sf.map(([s,n])=>bar(s.toUpperCase(),Math.round(n/ws.length*100),acc,`${n}×`)).join("")}</div>`;
       // strength PRs (computed within range)
-      const exMap={};ws.forEach(w=>(w.exercises||[]).forEach(ex=>{const mx=Math.max(0,...(ex.sets||[]).map(s=>s.w||0));if(mx>0)(exMap[ex.name]=exMap[ex.name]||[]).push({date:w.date,w:mx});}));
+      const exMap={};ws.forEach(w=>(w.exercises||[]).forEach(ex=>{const mx=exMetric(ex);if(mx>0)(exMap[ex.name]=exMap[ex.name]||[]).push({date:w.date,w:mx});}));
       const exStats=Object.entries(exMap).map(([name,arr])=>{arr.sort((a,b)=>new Date(a.date)-new Date(b.date));const wv=arr.map(a=>a.w);return{name,latest:wv[wv.length-1],pr:Math.max(...wv),change:wv[wv.length-1]-wv[0],sessions:arr.length};}).sort((a,b)=>b.pr-a.pr);
       if(exStats.length){body+=`<div style="font-size:11px;font-weight:700;color:${acc};text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 0">Strength · Personal Records</div>`;
         body+=table(["Exercise","Latest","PR","Change","Sessions"],exStats.slice(0,16).map(e=>[esc(e.name),`${e.latest} lb`,`<b>${e.pr} lb</b>`,`<span style="color:${e.change>0?acc:e.change<0?red:dim}">${e.change>0?"+":""}${e.change} lb</span>`,e.sessions]),["left","right","right","right","right"]);}
@@ -1623,7 +1624,7 @@ ${body}
     if(s){const d=JSON.parse(s);
       if(d.todos)setTodos(d.todos);if(d.focusByDate)setFocusByDate(d.focusByDate);if(d.checks)setChecks(d.checks);
       if(d.wGoals)setWGoals(d.wGoals);if(d.mGoals)setMGoals(d.mGoals);if(d.wHist)setWHist(d.wHist);
-      if(d.bwLog)setBwLog(d.bwLog);if(d.txns)setTxns(d.txns);if(d.groups)setGroups(d.groups);if(d.splits)setSplits(d.splits);if(d.splitOrder)setSplitOrder(d.splitOrder);
+      if(d.bwLog)setBwLog(d.bwLog);if(d.exMeta)setExMeta(d.exMeta);if(d.txns)setTxns(d.txns);if(d.groups)setGroups(d.groups);if(d.splits)setSplits(d.splits);if(d.splitOrder)setSplitOrder(d.splitOrder);
       if(d.settings)setSettings({...defSettings,...d.settings});
       if(d.theme==="light"||d.theme==="dark")setTheme(d.theme);
       if(d.curWkState)setCurWkState(d.curWkState);if(d.chains)setChains(d.chains);if(d.reflections)setReflections(d.reflections);
@@ -1707,10 +1708,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals]);
+  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -1752,8 +1753,8 @@ ${body}
     else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets[si][f]=parseFloat(v)||0;return n;});
   };
   const aSet=ei=>{
-    if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0});syncSession(n);return n;});}
-    else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0});return n;});
+    if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0,sec:0});syncSession(n);return n;});}
+    else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0,sec:0});return n;});
   };
   const rSet=ei=>{
     if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei].sets.length>1)n.exercises[ei].sets.pop();syncSession(n);return n;});}
@@ -1883,11 +1884,19 @@ ${body}
   };
   // Reorder the day's focus tasks (active ones first, in new order; completed kept after).
   const reorderFocus=(ids)=>setFocusByDate(prev=>{
-    const list=prev[vk]||[];const byId={};list.forEach(t=>{byId[t.id]=t;});const seen=new Set(ids);
-    return{...prev,[vk]:[...ids.map(id=>byId[id]).filter(Boolean),...list.filter(t=>!seen.has(t.id))]};
+    const list=prev[vk]||[];const idSet=new Set(ids);const byId={};list.forEach(t=>{byId[t.id]=t;});
+    const q=ids.map(id=>byId[id]).filter(Boolean);let qi=0;
+    // Reorder only the tasks in `ids`, in-place — everything else (other section, completed) keeps its slot.
+    return{...prev,[vk]:list.map(t=>idSet.has(t.id)?(q[qi++]||t):t)};
   });
 
   /* ─── HEALTH: Strength progression — per exercise, max weight per day ─── */
+  // ── Exercise types: external weight / bodyweight variants / time-based (defined before charts use them) ──
+  const getMeta=(name)=>({mode:"weight",wtype:"ext",timeFmt:"ms",...(exMeta[(name||"").toLowerCase()]||{})});
+  const setMetaFor=(name,patch)=>setExMeta(p=>{const k=(name||"").toLowerCase();return{...p,[k]:{mode:"weight",wtype:"ext",timeFmt:"ms",...(p[k]||{}),...patch}};});
+  const latestBW=()=>bwLog.length?bwLog[bwLog.length-1].weight:0;
+  const effLoad=(s,meta)=>{const bw=latestBW(),w=s.w||0;switch(meta.wtype){case"bw":return bw;case"bwplus":return bw+w;case"bwminus":return Math.max(0,bw-w);default:return w;}};
+  const exMetric=(ex)=>{const meta=getMeta(ex.name);const sets=ex.sets||[];return meta.mode==="time"?Math.max(0,...sets.map(s=>s.sec||0)):Math.max(0,...sets.map(s=>effLoad(s,meta)));};
   const strengthData=useMemo(()=>{
     const exSet=new Set();const byDate={};
     // Every exercise you've put into ANY split becomes a tracked line — even before it's logged,
@@ -1898,14 +1907,14 @@ ${body}
     (activeSession?.exercises||[]).forEach(ex=>exSet.add(ex.name));
     wHist.forEach(w=>{
       (w.exercises||[]).forEach(ex=>{
-        const mx=Math.max(0,...(ex.sets||[]).map(s=>s.w||0));
+        const mx=exMetric(ex);
         exSet.add(ex.name);
         if(mx>0){byDate[w.date]=byDate[w.date]||{date:w.date};byDate[w.date][ex.name]=Math.max(byDate[w.date][ex.name]||0,mx);}
       });
     });
     const rows=Object.values(byDate).sort((a,b)=>new Date(a.date)-new Date(b.date)).map(r=>({...r,label:fd(r.date)}));
     return{exercises:[...exSet],rows};
-  },[wHist,splits,curWkState,activeSession]);
+  },[wHist,splits,curWkState,activeSession,exMeta,bwLog]);
   const strRows=useMemo(()=>{
     if(strRange==="all")return strengthData.rows;
     const cut=new Date(Date.now()-parseInt(strRange)*86400000);
@@ -1920,7 +1929,7 @@ ${body}
     wHist.forEach(w=>{
       if(cut&&new Date(w.date)<cut)return;
       (w.exercises||[]).forEach(ex=>{
-        const mx=Math.max(0,...(ex.sets||[]).map(s=>s.w||0));
+        const mx=exMetric(ex);
         if(mx>0){byEx[ex.name]=byEx[ex.name]||{};byEx[ex.name][w.date]=Math.max(byEx[ex.name][w.date]||0,mx);}
       });
     });
@@ -1939,7 +1948,7 @@ ${body}
     const order=[...Object.keys(splits),"other"];
     const groups=order.map(sp=>({split:sp,items:stats.filter(s=>s.split===sp)})).filter(g=>g.items.length>0);
     return{stats,groups};
-  },[wHist,splits,strRange]);
+  },[wHist,splits,strRange,exMeta,bwLog]);
 
   /* ─── HEALTH: Nutrition history for the grouped bar chart ─── */
   const nutritionRows=useMemo(()=>{
@@ -1948,6 +1957,9 @@ ${body}
       .filter(r=>!cut||new Date(r.date)>=cut).sort((a,b)=>new Date(a.date)-new Date(b.date));
   },[diet,nutriRange]);
   const fmtTime=s=>{const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h>0?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`;};
+  const fmtDur=(sec,fmt)=>fmt==="s"?`${sec}s`:fmtTime(sec||0);
+  const fmtSet=(s,meta)=>{if(!s)return "—";if(meta.mode==="time")return fmtDur(s.sec||0,meta.timeFmt);const w=s.w||0,r=s.r||0;switch(meta.wtype){case"bw":return `BW×${r}`;case"bwplus":return `BW+${w}×${r}`;case"bwminus":return `BW−${w}×${r}`;default:return `${w}×${r}`;}};
+  const WTYPE_LABEL={ext:"External",bw:"Bodyweight",bwplus:"BW + Added",bwminus:"BW − Assist"};
 
   /* ─── Budget: calendar plumbing ─── */
   const bY=bMonth.getFullYear(),bM=bMonth.getMonth(),bDIM=new Date(bY,bM+1,0).getDate(),bFD=new Date(bY,bM,1).getDay(),bCM=bY===now.getFullYear()&&bM===now.getMonth();
@@ -2492,15 +2504,13 @@ ${body}
               {/* Section 1 — Daily Tasks (highest priority) — add directly here */}
               <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length}/>
               {focusTasks.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setFocusReorder(m=>!m)} style={{background:focusReorder?C.accent:"transparent",border:`1px solid ${focusReorder?C.accent:C.hairline}`,color:focusReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{focusReorder?"Done":"⇅ Reorder"}</button></div>}
-              {focusReorder
-                ?<DragReorderList items={dailyTasks} onReorder={reorderFocus} />
-                :(()=>{const today=dk(now);const todayTasks=dailyTasks.filter(t=>t.createdOn===today);const prevTasks=dailyTasks.filter(t=>t.createdOn!==today);const Divider=({label,color,n})=>(<div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.12em"}}>{label}</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{n}</span></div>);return(<>
-                  <div style={{display:"flex",gap:8,marginBottom:10}}>
+              {(()=>{const today=dk(now);const todayTasks=dailyTasks.filter(t=>t.createdOn===today);const prevTasks=dailyTasks.filter(t=>t.createdOn!==today);const Divider=({label,color,n})=>(<div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.12em"}}>{label}</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{n}</span></div>);return(<>
+                  {!focusReorder&&<div style={{display:"flex",gap:8,marginBottom:10}}>
                     <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFocusQuick();}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
                     <button onClick={addFocusQuick} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
-                  </div>
-                  {todayTasks.length>0&&<><Divider label="Today" color={FOCUS_BLUE} n={todayTasks.length}/>{todayTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}</>}
-                  {prevTasks.length>0&&<><Divider label="Previous" color={C.textDim} n={prevTasks.length}/>{prevTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}</>}
+                  </div>}
+                  {todayTasks.length>0&&<><Divider label="Today" color={FOCUS_BLUE} n={todayTasks.length}/>{focusReorder&&todayTasks.length>1?<DragReorderList items={todayTasks} onReorder={reorderFocus} />:todayTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}</>}
+                  {prevTasks.length>0&&<><Divider label="Previous" color={C.textDim} n={prevTasks.length}/>{focusReorder&&prevTasks.length>1?<DragReorderList items={prevTasks} onReorder={reorderFocus} />:prevTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}</>}
                 </>);})()}
               {renderFocusDone()}
 
@@ -3224,7 +3234,7 @@ ${body}
 
             <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button className="press" onClick={()=>{const n=prompt("Exercise name:");if(n&&n.trim()){setSplits(p=>({...p,[gSplit]:[...(p[gSplit]||[]),n.trim()]}));setCurWkState(p=>({...p,exercises:[...p.exercises,{name:n.trim(),sets:[{w:0,r:0},{w:0,r:0},{w:0,r:0}]}]}));}}} style={{...btnG,fontSize:10}}>+ Exercise</button></div>
 
-            {curWkState.exercises.map((ex,ei)=>{const lE=lastSess&&lastSess.exercises?lastSess.exercises.find(e=>e.name===ex.name):null;const dn=doneEx[ei];const exM=musclesForExercise(ex.name);return(<div key={ei} style={{...card,marginBottom:10,background:dn?C.greenSoft:C.surface}}>
+            {curWkState.exercises.map((ex,ei)=>{const lE=lastSess&&lastSess.exercises?lastSess.exercises.find(e=>e.name===ex.name):null;const dn=doneEx[ei];const exM=musclesForExercise(ex.name);const meta=getMeta(ex.name);return(<div key={ei} style={{...card,marginBottom:10,background:dn?C.greenSoft:C.surface}}>
               <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
                 <div style={{flexShrink:0,marginTop:2}}><MuscleBody muscles={exM} accent={dn?C.green:clr} base={C.surfaceHi} skin={C.textDim} size={46} gap={3}/></div>
                 <div style={{flex:1,minWidth:0}}>
@@ -3233,7 +3243,21 @@ ${body}
                 </div>
                 <div style={{display:"flex",gap:3,flexShrink:0}}><button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"3px 8px",fontSize:10}}>Done</button><button onClick={()=>rSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>−</button><button onClick={()=>aSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>+</button><button onClick={()=>{setSplits(p=>({...p,[gSplit]:(p[gSplit]||[]).filter((_,i)=>i!==ei)}));setCurWkState(p=>({...p,exercises:p.exercises.filter((_,i)=>i!==ei)}));}} style={{...btnG,padding:"3px 6px",fontSize:11,color:C.red}}>✕</button></div>
               </div>
-              {ex.sets.map((s,si)=>{const ls=lE&&lE.sets?lE.sets[si]:null;const wd=ls?s.w-ls.w:null;return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:clr,fontWeight:700}}>S{si+1}</span><input type="number" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder="lbs" style={numI} /><input type="number" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={numI} /><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:ls?(wd>0?C.greenBright:wd<0?C.red:C.textDim):C.textDim}}>{ls?`${ls.w}×${ls.r}`:"—"}</span></div>);})}
+              {/* Exercise type selectors */}
+              <div style={{display:"flex",gap:6,marginBottom:9,flexWrap:"wrap"}}>
+                <select value={meta.mode} onChange={e=>setMetaFor(ex.name,{mode:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}>
+                  <option value="weight">Weight × Reps</option><option value="time">Time</option>
+                </select>
+                {meta.mode==="weight"?<select value={meta.wtype} onChange={e=>setMetaFor(ex.name,{wtype:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}>
+                  <option value="ext">External</option><option value="bw">Bodyweight</option><option value="bwplus">BW + Added</option><option value="bwminus">BW − Assist</option>
+                </select>:<select value={meta.timeFmt} onChange={e=>setMetaFor(ex.name,{timeFmt:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}>
+                  <option value="ms">Min : Sec</option><option value="s">Seconds</option>
+                </select>}
+              </div>
+              {ex.sets.map((s,si)=>{const ls=lE&&lE.sets?lE.sets[si]:null;
+                if(meta.mode==="time"){return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:clr,fontWeight:700}}>S{si+1}</span><div style={{display:"flex",alignItems:"center",gap:5}}><input type="number" value={s.sec||""} onChange={e=>uSet(ei,si,"sec",e.target.value)} placeholder="seconds" style={{...numI,flex:1}} /><span style={{fontSize:10,color:C.textDim,fontFamily:FN.m,minWidth:34}}>{s.sec?fmtDur(s.sec,meta.timeFmt):""}</span></div><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:C.textDim}}>{ls?fmtSet(ls,meta):"—"}</span></div>);}
+                const isBw=meta.wtype==="bw";const wPlaceholder=meta.wtype==="bwplus"?"+lbs":meta.wtype==="bwminus"?"−lbs":"lbs";const wd=ls&&!isBw?(s.w||0)-(ls.w||0):null;
+                return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:clr,fontWeight:700}}>S{si+1}</span>{isBw?<div style={{...numI,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:C.accent}}>BW</div>:<input type="number" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder={wPlaceholder} style={numI} />}<input type="number" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={numI} /><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:ls?(wd>0?C.greenBright:wd<0?C.red:C.textDim):C.textDim}}>{ls?fmtSet(ls,meta):"—"}</span></div>);})}
             </div>);})}
 
             {/* Manual logging — optional date + duration, then save directly (no live timer) */}
@@ -4118,9 +4142,9 @@ ${body}
         </div>
         {/* Exercises */}
         <div style={{flex:1,overflowY:"auto",padding:"16px 22px 24px"}}>
-          {activeSession.exercises.map((ex,ei)=>{const lE=lastSess?.exercises?.find(e=>e.name===ex.name);const dn=doneEx[ei];return(
+          {activeSession.exercises.map((ex,ei)=>{const lE=lastSess?.exercises?.find(e=>e.name===ex.name);const dn=doneEx[ei];const meta=getMeta(ex.name);return(
             <div key={ei} style={{...card,marginBottom:12,background:dn?C.greenSoft:C.surface,border:`1px solid ${dn?C.greenMed:C.hairline}`}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                 <span style={{fontSize:14,fontWeight:700,color:dn?C.green:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{dn&&"✓ "}{ex.name}</span>
                 <div style={{display:"flex",gap:4}}>
                   <button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"4px 10px",fontSize:9}}>Done</button>
@@ -4128,12 +4152,24 @@ ${body}
                   <button onClick={()=>aSet(ei)} style={{...btnG,padding:"4px 8px",fontSize:13}}>+</button>
                 </div>
               </div>
-              {ex.sets.map((s,si)=>{const ls=lE?.sets?.[si];const wd=ls?s.w-ls.w:null;return(
+              <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+                <select value={meta.mode} onChange={e=>setMetaFor(ex.name,{mode:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}><option value="weight">Weight × Reps</option><option value="time">Time</option></select>
+                {meta.mode==="weight"?<select value={meta.wtype} onChange={e=>setMetaFor(ex.name,{wtype:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}><option value="ext">External</option><option value="bw">Bodyweight</option><option value="bwplus">BW + Added</option><option value="bwminus">BW − Assist</option></select>:<select value={meta.timeFmt} onChange={e=>setMetaFor(ex.name,{timeFmt:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}><option value="ms">Min : Sec</option><option value="s">Seconds</option></select>}
+              </div>
+              {ex.sets.map((s,si)=>{const ls=lE?.sets?.[si];
+                if(meta.mode==="time"){return(
+                  <div key={si} style={{display:"grid",gridTemplateColumns:"32px 1fr 56px",gap:6,marginBottom:6,alignItems:"center"}}>
+                    <span style={{fontSize:10,color:C.accent,fontWeight:700,fontFamily:FN.m}}>S{si+1}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}><input type="number" inputMode="numeric" value={s.sec||""} onChange={e=>uSet(ei,si,"sec",e.target.value)} placeholder="seconds" style={{...numI,padding:"12px 8px",fontSize:15,flex:1}}/><span style={{fontSize:12,color:C.textDim,fontFamily:FN.m,minWidth:38}}>{s.sec?fmtDur(s.sec,meta.timeFmt):""}</span></div>
+                    <span style={{fontSize:9,textAlign:"center",fontWeight:600,fontFamily:FN.m,color:C.textDim}}>{ls?fmtSet(ls,meta):"—"}</span>
+                  </div>
+                );}
+                const isBw=meta.wtype==="bw";const wPlaceholder=meta.wtype==="bwplus"?"+lbs":meta.wtype==="bwminus"?"−lbs":"lbs";const wd=ls&&!isBw?(s.w||0)-(ls.w||0):null;return(
                 <div key={si} style={{display:"grid",gridTemplateColumns:"32px 1fr 1fr 56px",gap:6,marginBottom:6,alignItems:"center"}}>
                   <span style={{fontSize:10,color:C.accent,fontWeight:700,fontFamily:FN.m}}>S{si+1}</span>
-                  <input type="number" inputMode="decimal" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder="lbs" style={{...numI,padding:"12px 8px",fontSize:15}}/>
+                  {isBw?<div style={{...numI,padding:"12px 8px",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,color:C.accent}}>BW</div>:<input type="number" inputMode="decimal" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder={wPlaceholder} style={{...numI,padding:"12px 8px",fontSize:15}}/>}
                   <input type="number" inputMode="numeric" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={{...numI,padding:"12px 8px",fontSize:15}}/>
-                  <span style={{fontSize:9,textAlign:"center",fontWeight:600,fontFamily:FN.m,color:ls?(wd>0?C.green:wd<0?C.red:C.textDim):C.textDim}}>{ls?`${ls.w}×${ls.r}`:"—"}</span>
+                  <span style={{fontSize:9,textAlign:"center",fontWeight:600,fontFamily:FN.m,color:ls?(wd>0?C.green:wd<0?C.red:C.textDim):C.textDim}}>{ls?fmtSet(ls,meta):"—"}</span>
                 </div>
               );})}
             </div>
@@ -4329,17 +4365,19 @@ ${body}
       <Overlay open={!!viewWorkout} onClose={()=>setViewWorkout(null)} title={viewWorkout?`${viewWorkout.split.toUpperCase()} · ${fd(viewWorkout.date)}`:""} wide>
         {viewWorkout&&<div>
           {viewWorkout.duration&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.m,marginBottom:18,letterSpacing:"0.04em"}}>Duration: {fmtTime(Math.floor(viewWorkout.duration/1000))} · {viewWorkout.exercises.length} exercises · {viewWorkout.exercises.reduce((a,e)=>a+e.sets.length,0)} sets total</div>}
-          {viewWorkout.exercises.map((ex,ei)=>{const totalVol=ex.sets.reduce((a,s)=>a+(s.w||0)*(s.r||0),0);return(
+          {viewWorkout.exercises.map((ex,ei)=>{const meta=getMeta(ex.name);const totalVol=meta.mode==="time"?0:ex.sets.reduce((a,s)=>a+effLoad(s,meta)*(s.r||0),0);const totalSec=meta.mode==="time"?ex.sets.reduce((a,s)=>a+(s.sec||0),0):0;return(
             <div key={ei} style={{...card,padding:16,marginBottom:10,background:C.surfaceDim,border:`1px solid ${C.hairline}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
                 <span style={{fontSize:14,fontWeight:600,color:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{ex.name}</span>
-                <span style={{fontSize:10,fontFamily:FN.m,color:C.textDim,letterSpacing:"0.04em"}}>{Math.round(totalVol)} kg vol</span>
+                <span style={{fontSize:10,fontFamily:FN.m,color:C.textDim,letterSpacing:"0.04em"}}>{meta.mode==="time"?`${fmtDur(totalSec,meta.timeFmt)} total`:`${Math.round(totalVol).toLocaleString()} lb vol`}</span>
               </div>
               {ex.sets.map((s,si)=>(
-                <div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr",gap:10,padding:"6px 0",borderTop:si>0?`1px solid ${C.hairline}`:"none",alignItems:"center"}}>
+                <div key={si} style={{display:"grid",gridTemplateColumns:meta.mode==="time"?"36px 1fr":"36px 1fr 1fr",gap:10,padding:"6px 0",borderTop:si>0?`1px solid ${C.hairline}`:"none",alignItems:"center"}}>
                   <span style={{fontSize:10,fontFamily:FN.m,color:C.accent,fontWeight:700}}>S{si+1}</span>
-                  <span style={{fontFamily:FN.m,fontSize:14,color:C.text}}>{s.w||0}<span style={{fontSize:10,color:C.textDim,marginLeft:4}}>lb</span></span>
-                  <span style={{fontFamily:FN.m,fontSize:14,color:C.text}}>{s.r||0}<span style={{fontSize:10,color:C.textDim,marginLeft:4}}>reps</span></span>
+                  {meta.mode==="time"
+                    ?<span style={{fontFamily:FN.m,fontSize:14,color:C.text}}>{fmtDur(s.sec||0,meta.timeFmt)}</span>
+                    :<><span style={{fontFamily:FN.m,fontSize:14,color:C.text}}>{meta.wtype==="bw"?"BW":`${meta.wtype==="bwplus"?"BW+":meta.wtype==="bwminus"?"BW−":""}${s.w||0}`}<span style={{fontSize:10,color:C.textDim,marginLeft:4}}>{meta.wtype==="ext"?"lb":meta.wtype==="bw"?"":"lb"}</span></span>
+                    <span style={{fontFamily:FN.m,fontSize:14,color:C.text}}>{s.r||0}<span style={{fontSize:10,color:C.textDim,marginLeft:4}}>reps</span></span></>}
                 </div>
               ))}
             </div>
