@@ -1,29 +1,60 @@
 // cloud.js
 import { auth, db } from "./firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, runTransaction } from "firebase/firestore";
 
 const STORE_KEY = "dash-v18";
-const TS_KEY = "dash-cloud-ts";
+const REV_KEY = "dash-base-rev";
 const nativeSet = localStorage.setItem.bind(localStorage);
 
 let currentUid = null;
 let ready = false;
 let pushTimer = null;
+let pushing = false;
+let pendingWhilePushing = false;
 
-function localTs() { return Number(localStorage.getItem(TS_KEY) || 0); }
-function setLocalTs(ts) { nativeSet(TS_KEY, String(ts)); }
+function baseRev() { return Number(localStorage.getItem(REV_KEY) || 0); }
+function setBaseRev(r) { nativeSet(REV_KEY, String(r)); }
 
-// With offline persistence on (firebase.js), this write goes to a durable on-device queue
-// and retries automatically until it reaches the server. Not awaited, so a dropped
-// connection never blocks the app.
-function doPush() {
+// Adopt the cloud copy into local storage, then reload so the app boots from it.
+function adoptAndReload(blob, rev) {
+  nativeSet(STORE_KEY, blob);
+  setBaseRev(rev);
+  window.location.reload();
+}
+
+// Guarded push: only overwrites the cloud copy if we're building on the exact revision we last
+// synced. A stale/late write (older base rev) is refused, so it can never clobber newer data.
+async function doPush() {
   if (!currentUid || !ready) return;
+  if (pushing) { pendingWhilePushing = true; return; }
   const blob = localStorage.getItem(STORE_KEY);
   if (blob == null) return;
-  const ts = Date.now();
-  setLocalTs(ts);
-  setDoc(doc(db, "users", currentUid), { blob, updatedAt: ts })
-    .catch((e) => console.error("Cloud push queued/failed:", e));
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return; // retry on reconnect
+  pushing = true;
+  const ref = doc(db, "users", currentUid);
+  const myBase = baseRev();
+  try {
+    const result = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const cloudRev = snap.exists() ? (snap.data().rev || 0) : 0;
+      if (snap.exists() && cloudRev !== myBase) {
+        return { conflict: true, cloudRev, data: snap.data() }; // cloud moved on — don't overwrite
+      }
+      const newRev = cloudRev + 1;
+      tx.set(ref, { blob, rev: newRev, updatedAt: Date.now() });
+      return { conflict: false, newRev };
+    });
+    if (result.conflict) {
+      if (result.data && result.data.blob) adoptAndReload(result.data.blob, result.cloudRev);
+    } else {
+      setBaseRev(result.newRev);
+    }
+  } catch (e) {
+    console.error("Cloud push deferred (offline/transient):", e && e.code ? e.code : e);
+  } finally {
+    pushing = false;
+    if (pendingWhilePushing) { pendingWhilePushing = false; schedulePush(); }
+  }
 }
 
 function schedulePush() {
@@ -32,7 +63,6 @@ function schedulePush() {
   pushTimer = setTimeout(doPush, 1500);
 }
 
-// Fix 2: push immediately when the app is backgrounded / locked / closed.
 function flushNow() {
   if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
   doPush();
@@ -55,33 +85,30 @@ export function installCloudSync() {
   if (typeof window !== "undefined") {
     window.addEventListener("pagehide", flushNow);
     window.addEventListener("beforeunload", flushNow);
+    window.addEventListener("online", () => schedulePush()); // retry when connection returns
   }
 }
 
 export async function initialSync(uid) {
   currentUid = uid;
   try {
-    const snap = await getDoc(doc(db, "users", uid)); // resolves from cache when offline
+    const snap = await getDoc(doc(db, "users", uid));
     if (snap.exists()) {
-      const { blob, updatedAt } = snap.data();
-      if (blob && updatedAt > localTs()) {
+      const { blob, rev } = snap.data();
+      const cloudRev = rev || 0;
+      if (blob && cloudRev > baseRev()) {
         nativeSet(STORE_KEY, blob);
-        setLocalTs(updatedAt);
+        setBaseRev(cloudRev);
         ready = true;
         return "reload";
       }
     }
-    const localBlob = localStorage.getItem(STORE_KEY);
-    if (localBlob != null) {
-      const ts = Date.now();
-      setLocalTs(ts);
-      setDoc(doc(db, "users", uid), { blob: localBlob, updatedAt: ts })
-        .catch((e) => console.error("Initial push queued/failed:", e));
-    }
+    ready = true;
+    await doPush(); // we're at/ahead of the cloud → push our copy (guarded)
   } catch (e) {
     console.error("Initial sync failed (using local data for now):", e);
+    ready = true;
   }
-  ready = true;
   return "ok";
 }
 
