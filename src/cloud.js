@@ -10,7 +10,7 @@
 import { db } from "./firebase";
 import { doc, getDoc, onSnapshot, runTransaction } from "firebase/firestore";
 
-const VERSION = 5;
+const VERSION = 6;
 const STORE_KEY = "dash-v18";
 const SYNCED_REV = "dash-synced-rev";   // cloud revision this device is based on
 const SYNCED_HASH = "dash-synced-hash"; // hash of the data at that revision
@@ -83,10 +83,27 @@ function hasLocalChanges() {
   return hash(b) !== syncedHash();
 }
 
+// Loop breaker: if we somehow adopt over and over, stop rather than thrash.
+let adoptTimes = [];
+function adoptStorm() {
+  const now = Date.now();
+  adoptTimes = adoptTimes.filter((t) => now - t < 10000);
+  adoptTimes.push(now);
+  return adoptTimes.length > 6;
+}
+
+// Place the cloud copy locally and ask the app to re-read it.
+// NO page reload: reloading skipped installCloudSync() and caused two devices to
+// bounce "Syncing..." screens at each other forever.
 function adopt(blob, rev) {
+  if (adoptStorm()) {
+    setStatus("error", "sync loop detected - paused; reload manually");
+    console.error("[sync] adopt storm - backing off");
+    return;
+  }
   nativeSet(STORE_KEY, blob);
   markSynced(rev, blob);
-  window.location.reload();
+  try { window.dispatchEvent(new CustomEvent("cloud-adopted")); } catch (e) {}
 }
 
 async function doPush() {
@@ -193,14 +210,15 @@ export async function initialSync(uid) {
 
       if (blob && local == null) {                       // brand-new device
         nativeSet(STORE_KEY, blob); markSynced(cloudRev, blob);
-        ready = true; console.log("[sync] first load — took cloud copy");
-        return "reload";
+        ready = true; status.rev = cloudRev; setStatus("synced", "loaded your data from cloud");
+        console.log("[sync] first load - took cloud copy");
+        return "ok";
       }
       if (blob && cloudIsNewer && !hasLocalChanges()) {  // cloud ahead, we have nothing pending
         nativeSet(STORE_KEY, blob); markSynced(cloudRev, blob);
         ready = true; status.rev = cloudRev; setStatus("synced", "loaded newer data from cloud");
         console.log("[sync] adopted cloud copy (rev " + cloudRev + ")");
-        return "reload";
+        return "ok";   // Dashboard has not mounted yet - it will simply read this data
       }
       if (blob && local === blob) markSynced(cloudRev, blob); // identical, just re-stamp
     }
