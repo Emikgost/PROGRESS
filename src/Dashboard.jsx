@@ -1618,6 +1618,10 @@ ${body}
 
 
   /* ─── Storage — bulletproof save system ─── */
+  // HYDRATION GATE: nothing may be SAVED until the load below has finished and its state has landed.
+  // Without this, the save effects below run on mount with the *initial default* state (empty checks,
+  // seed todos) and overwrite real saved data — which cloud sync then pushes up. This is the guard.
+  const[hydrated,setHydrated]=useState(false);
   // LOAD: read main blob + separate photoLog key
   useEffect(()=>{try{
     let s=localStorage.getItem("dash-v18");if(!s)s=localStorage.getItem("dash-v17");
@@ -1644,6 +1648,7 @@ ${body}
     // Load photoLog from its own key (split to save ~500KB-2MB of main blob space)
     try{const ph=localStorage.getItem("dash-v18-photos");if(ph)setPhotoLog(JSON.parse(ph));}catch(e){}
   }catch(e){console.error("Load failed:",e);}
+  finally{setHydrated(true);}
   },[]);
 
   // SAVE HELPER — writes to localStorage with error surfacing
@@ -1698,20 +1703,21 @@ ${body}
   },[]);
   criticalRef.current={checks,focusByDate,todos,aspirations};
   useEffect(()=>{
+    if(!hydrated)return;   // never write before load has landed — this was wiping checks on every mount
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
     blob.checks=checks;blob.focusByDate=focusByDate;blob.todos=todos;blob.aspirations=aspirations;
     // Strip photoLog from main blob if it migrated
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },[checks,focusByDate,todos,aspirations]);
+  },[hydrated,checks,focusByDate,todos,aspirations]);
 
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
-  useEffect(()=>{const t=setTimeout(()=>{
+  useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
     Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
