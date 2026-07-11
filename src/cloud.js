@@ -1,8 +1,11 @@
 // cloud.js
-import { auth, db } from "./firebase";
+import { db } from "./firebase";
 import { doc, getDoc, runTransaction } from "firebase/firestore";
 
 const STORE_KEY = "dash-v18";
+const SYNCED_REV = "dash-synced-rev"; // the cloud rev this device last pulled or successfully wrote
+const DIRTY = "dash-dirty";           // "1" = we have local changes that haven't reached the cloud yet
+
 const nativeSet = localStorage.setItem.bind(localStorage);
 
 let currentUid = null;
@@ -10,24 +13,20 @@ let ready = false;
 let pushTimer = null;
 let pushing = false;
 let pendingWhilePushing = false;
-let lastPulledRev = 0; // the rev we last pulled/wrote this session (in-memory, never gets stuck in storage)
 
-function adoptAndReload(blob, rev) {
-  nativeSet(STORE_KEY, blob);
-  lastPulledRev = rev;
-  window.location.reload();
-}
+const syncedRev = () => Number(localStorage.getItem(SYNCED_REV) || 0);
+const setSyncedRev = (r) => nativeSet(SYNCED_REV, String(r));
+const isDirty = () => localStorage.getItem(DIRTY) === "1";
+const setDirty = (v) => nativeSet(DIRTY, v ? "1" : "0");
 
-// Push always re-reads the cloud's CURRENT rev inside the transaction and writes rev+1.
-// It never refuses based on a stored baseline, so it can't deadlock. The only time it
-// pulls instead of writing is when the cloud is STRICTLY NEWER than what we last saw
-// this session (i.e. another device genuinely wrote after us) AND we have no newer local edits.
+// Push our local blob. The transaction always reads the cloud's CURRENT rev and writes rev+1,
+// so a push is never refused and can never deadlock. `dirty` is only cleared once the write
+// has actually landed — so a failed/offline push stays queued and retries.
 async function doPush() {
   if (!currentUid || !ready) return;
   if (pushing) { pendingWhilePushing = true; return; }
   const blob = localStorage.getItem(STORE_KEY);
   if (blob == null) return;
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return;
   pushing = true;
   const ref = doc(db, "users", currentUid);
   try {
@@ -38,9 +37,11 @@ async function doPush() {
       tx.set(ref, { blob, rev: next, updatedAt: Date.now() });
       return next;
     });
-    lastPulledRev = newRev;
+    setSyncedRev(newRev);
+    setDirty(false); // confirmed in the cloud
   } catch (e) {
-    console.error("Cloud push deferred (offline/transient):", e && e.code ? e.code : e);
+    // Stays dirty → retried on next save, on reconnect, or on next app open.
+    console.error("[sync] push failed, will retry:", (e && e.code) || e);
   } finally {
     pushing = false;
     if (pendingWhilePushing) { pendingWhilePushing = false; schedulePush(); }
@@ -62,7 +63,7 @@ export function installCloudSync() {
   if (localStorage.setItem.__cloudPatched) return;
   const patched = (key, value) => {
     nativeSet(key, value);
-    if (key === STORE_KEY) schedulePush();
+    if (key === STORE_KEY) { setDirty(true); schedulePush(); }
   };
   patched.__cloudPatched = true;
   localStorage.setItem = patched;
@@ -75,36 +76,39 @@ export function installCloudSync() {
   if (typeof window !== "undefined") {
     window.addEventListener("pagehide", flushNow);
     window.addEventListener("beforeunload", flushNow);
-    window.addEventListener("online", () => schedulePush());
+    window.addEventListener("online", schedulePush); // retry when the connection returns
   }
 }
 
-// On login: pull the cloud copy only if it's NEWER than what we have locally.
+// On login, decide honestly: does the cloud have something newer than us, or do we have
+// unsynced local edits? Pull only when the cloud is genuinely ahead AND we have nothing
+// unsynced. Otherwise push, so our edits are never silently discarded.
 export async function initialSync(uid) {
   currentUid = uid;
   try {
     const snap = await getDoc(doc(db, "users", uid));
     const localBlob = localStorage.getItem(STORE_KEY);
+
     if (snap.exists()) {
       const { blob, rev } = snap.data();
       const cloudRev = rev || 0;
-      // Adopt the cloud copy only if we have NO local data, or the cloud is a real newer version.
-      if (blob && (localBlob == null || cloudRev > lastPulledRev)) {
-        // But never overwrite local data with an OLDER-looking cloud copy on a device
-        // that already has data — if we have local data, prefer pushing it up.
-        if (localBlob == null) {
-          nativeSet(STORE_KEY, blob);
-          lastPulledRev = cloudRev;
-          ready = true;
-          return "reload";
-        }
+      const noLocalData = localBlob == null;
+      const cloudIsAhead = cloudRev > syncedRev();
+
+      if (blob && (noLocalData || (cloudIsAhead && !isDirty()))) {
+        nativeSet(STORE_KEY, blob);
+        setSyncedRev(cloudRev);
+        setDirty(false);
+        ready = true;
+        return "reload"; // adopt the cloud copy and boot from it
       }
-      lastPulledRev = cloudRev;
+      // Else: we're current, or we hold unsynced edits → our copy goes up.
     }
+
     ready = true;
-    await doPush(); // push our local copy so the cloud is never left stale
+    if (localBlob != null) await doPush();
   } catch (e) {
-    console.error("Initial sync failed (using local data for now):", e);
+    console.error("[sync] initial sync failed, using local data:", e);
     ready = true;
   }
   return "ok";
