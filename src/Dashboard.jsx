@@ -84,6 +84,10 @@ function applyTheme(palette){
 const CSS=`
 @keyframes checkStamp{0%{transform:scale(0.6);opacity:0}50%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:1}}
 @keyframes strikeSweep{0%{transform:scaleX(0)}100%{transform:scaleX(1)}}
+@keyframes goalComplete{0%{transform:scale(1);opacity:1}35%{transform:scale(1.03)}70%{opacity:1}100%{transform:scale(0.97);opacity:0;max-height:0;margin-bottom:0}}
+.goal-completing{animation:goalComplete 0.75s cubic-bezier(0.4,0,0.2,1) forwards;overflow:hidden}
+.focus-grid{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:760px){.focus-grid{grid-template-columns:1.7fr 1fr;align-items:start}.focus-grid>.fg-main{grid-row:1/span 2}}
 @keyframes rowDim{0%{background:rgba(245,158,11,0.12)}100%{background:transparent}}
 @keyframes xpFloat{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-28px)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
@@ -565,7 +569,13 @@ export default function Dashboard(){
   const[aspirations,setAspirations]=useState([]);
   const[wHist,setWHist]=useState(seedWH);
   const[bwLog,setBwLog]=useState(seedBW);
-  const[exMeta,setExMeta]=useState({}); // {nameLower:{mode:"weight"|"time",wtype:"ext"|"bw"|"bwplus"|"bwminus",timeFmt:"ms"|"s"}}
+  const[exMeta,setExMeta]=useState({});
+  const[sleepLog,setSleepLog]=useState({}); // {dateKey: garminScore 0-100}
+  const[completingGoal,setCompletingGoal]=useState({}); // goalId -> mid completion animation
+  const[carryover,setCarryover]=useState({}); // {periodKey: "carried"|"ended"} — remembers carryover answers
+  const[carryPrompt,setCarryPrompt]=useState(null); // {kind:"month"|"week", goal, remaining}
+  const[goalPeriod,setGoalPeriod]=useState({week:"",month:""}); // which week/month the CURRENT progress belongs to
+  const[goalHistory,setGoalHistory]=useState({}); // {"w_2026-07-05":{goalId:{done,total}}, "m_2026-07":{...}} // {nameLower:{mode:"weight"|"time",wtype:"ext"|"bw"|"bwplus"|"bwminus",timeFmt:"ms"|"s"}}
   const[txns,setTxns]=useState(seedTx);
   const[groups,setGroups]=useState([{id:"g1",name:"Workout Crew",tasks:["f_ex"],members:[{name:"You",av:"E"},{name:"Alex",av:"A"}],feed:[]}]);
   const[splits,setSplits]=useState(defSplits);
@@ -1008,9 +1018,9 @@ export default function Dashboard(){
     return{id:a.id,text:a.text,kind:"action",actionText:a.dailyAction||(a.goalType==="measurable"?`${a.text} — study session`:a.text),implementationIntention:a.implementationIntention,complete:hit};
   }).filter(g=>!g.complete),[aspirations,checks,now]);
 
-  const toggleWeeklyStep=(goalId,stepId)=>{const g=wGoals.find(x=>x.id===goalId);const s=g&&(g.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setWGoals(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&g){const after=(g.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))celebrateGoal();}};
-  const setWeeklyCount=(goalId,newCount)=>{const g=wGoals.find(x=>x.id===goalId);if(!g)return;const tgt=g.target||1;const nc=Math.max(0,Math.min(tgt,newCount));logFocusCompletion(nc-(g.current||0));setWGoals(p=>p.map(x=>x.id===goalId?{...x,current:nc}:x));if(nc>=tgt&&(g.current||0)<tgt)celebrateGoal();};
-  const toggleMonthlyStep=(goalId,stepId)=>{const a=aspirations.find(x=>x.id===goalId);const s=a&&(a.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setAspirations(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&a){const after=(a.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))celebrateGoal();}};
+  const toggleWeeklyStep=(goalId,stepId)=>{const g=wGoals.find(x=>x.id===goalId);const s=g&&(g.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setWGoals(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&g){const after=(g.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId);}};
+  const setWeeklyCount=(goalId,newCount)=>{const g=wGoals.find(x=>x.id===goalId);if(!g)return;const tgt=g.target||1;const nc=Math.max(0,Math.min(tgt,newCount));logFocusCompletion(nc-(g.current||0));setWGoals(p=>p.map(x=>x.id===goalId?{...x,current:nc}:x));if(nc>=tgt&&(g.current||0)<tgt)completeGoalAnim(goalId);};
+  const toggleMonthlyStep=(goalId,stepId)=>{const a=aspirations.find(x=>x.id===goalId);const s=a&&(a.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setAspirations(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&a){const after=(a.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId);}};
   const toggleMonthlyAction=(goalId)=>{const on=!!(checks[dk(now)]||{})[goalId];if(!on)flashChecked(goalId);setChecks(p=>({...p,[dk(now)]:{...(p[dk(now)]||{}),[goalId]:!on}}));logFocusCompletion(on?-1:1);if(!on)celebrateGoal();};
 
   // Graduation check — runs when aspirationProgress updates
@@ -1628,7 +1638,7 @@ ${body}
     if(s){const d=JSON.parse(s);
       if(d.todos)setTodos(d.todos);if(d.focusByDate)setFocusByDate(d.focusByDate);if(d.checks)setChecks(d.checks);
       if(d.wGoals)setWGoals(d.wGoals);if(d.mGoals)setMGoals(d.mGoals);if(d.wHist)setWHist(d.wHist);
-      if(d.bwLog)setBwLog(d.bwLog);if(d.exMeta)setExMeta(d.exMeta);if(d.txns)setTxns(d.txns);if(d.groups)setGroups(d.groups);if(d.splits)setSplits(d.splits);if(d.splitOrder)setSplitOrder(d.splitOrder);
+      if(d.bwLog)setBwLog(d.bwLog);if(d.exMeta)setExMeta(d.exMeta);if(d.sleepLog)setSleepLog(d.sleepLog);if(d.carryover)setCarryover(d.carryover);if(d.goalPeriod)setGoalPeriod(d.goalPeriod);if(d.goalHistory)setGoalHistory(d.goalHistory);if(d.txns)setTxns(d.txns);if(d.groups)setGroups(d.groups);if(d.splits)setSplits(d.splits);if(d.splitOrder)setSplitOrder(d.splitOrder);
       if(d.settings)setSettings({...defSettings,...d.settings});
       if(d.theme==="light"||d.theme==="dark")setTheme(d.theme);
       if(d.curWkState)setCurWkState(d.curWkState);if(d.chains)setChains(d.chains);if(d.reflections)setReflections(d.reflections);
@@ -1714,10 +1724,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -1966,6 +1976,202 @@ ${body}
   const fmtDur=(sec,fmt)=>fmt==="s"?`${sec}s`:fmtTime(sec||0);
   const fmtSet=(s,meta)=>{if(!s)return "—";if(meta.mode==="time")return fmtDur(s.sec||0,meta.timeFmt);const w=s.w||0,r=s.r||0;switch(meta.wtype){case"bw":return `BW×${r}`;case"bwplus":return `BW+${w}×${r}`;case"bwminus":return `BW−${w}×${r}`;default:return `${w}×${r}`;}};
   const WTYPE_LABEL={ext:"External",bw:"Bodyweight",bwplus:"BW + Added",bwminus:"BW − Assist"};
+  // ── Sleep Score (Garmin, manual entry) ──
+  const sleepFor=(d)=>{const v=sleepLog[dk(d||now)];return typeof v==="number"?v:null;};
+  const setSleepFor=(d,v)=>{const k=dk(d||now);const n=(v===""||v==null)?null:Math.max(0,Math.min(100,Math.round(Number(v))));setSleepLog(p=>{const c={...p};if(n==null||isNaN(n))delete c[k];else c[k]=n;return c;});};
+  const sleepColor=(v)=>v==null?C.textDim:v>=85?C.greenBright:v>=70?(C.green||"#34C759"):v>=50?(C.amber||"#E8A33D"):C.red;
+  const sleepBand=(v)=>v==null?"—":v>=90?"Excellent":v>=80?"Good":v>=60?"Fair":"Poor";
+  const sleepStats=useMemo(()=>{const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=dk(d);days.push({key:k,label:d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2),score:typeof sleepLog[k]==="number"?sleepLog[k]:null});}
+    const vals=days.filter(x=>x.score!=null).map(x=>x.score);
+    const avg=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):null;
+    const all=Object.values(sleepLog).filter(v=>typeof v==="number");
+    const avgAll=all.length?Math.round(all.reduce((a,b)=>a+b,0)/all.length):null;
+    const best=vals.length?Math.max(...vals):null,worst=vals.length?Math.min(...vals):null;
+    return{days,avg,avgAll,best,worst,logged:vals.length};},[sleepLog,now]);
+
+  // ── Goal planning engine: calendar-aware, auto-redistributing ──
+  // Everything here is DERIVED, so it recalculates automatically whenever hours are logged
+  // or a day is missed. Nothing to store, nothing to get stale.
+  const monthBounds=(d)=>{const s=new Date(d.getFullYear(),d.getMonth(),1);const e=new Date(d.getFullYear(),d.getMonth()+1,0);return{start:s,end:e};};
+  const weekEnd=(d)=>{const e=new Date(d);e.setDate(e.getDate()+(6-e.getDay()));e.setHours(23,59,59,999);return e;};
+  const daysBetween=(a,b)=>Math.max(0,Math.round((new Date(b.getFullYear(),b.getMonth(),b.getDate())-new Date(a.getFullYear(),a.getMonth(),a.getDate()))/86400000)+1);
+  const goalPlan=useMemo(()=>{
+    const plans={};
+    aspirations.filter(a=>a.goalType==="measurable"&&!a.graduated).forEach(a=>{
+      const total=Number(a.totalHours)||0;
+      const done=Number(a.hoursLogged)||0;
+      const remaining=Math.max(0,total-done);
+      const pct=total>0?Math.min(100,Math.round(done/total*100)):0;
+      // Deadline: explicit, else end of the current month.
+      const mEnd=a.deadline?new Date(a.deadline+"T23:59:59"):monthBounds(now).end;
+      const daysLeft=Math.max(1,daysBetween(now,mEnd));
+      // Days left in THIS week (capped by the deadline) - this is what makes a partial
+      // first/last week get a smaller, correct share instead of a naive 1/4 of the total.
+      const wEnd=weekEnd(now);
+      const effWeekEnd=wEnd<mEnd?wEnd:mEnd;
+      const daysLeftThisWeek=Math.max(1,daysBetween(now,effWeekEnd));
+      // Proportional split by remaining days => a short week gets proportionally less.
+      const thisWeekTarget=Math.round((remaining*(daysLeftThisWeek/daysLeft))*10)/10;
+      const perDay=Math.round((remaining/daysLeft)*10)/10;
+      const weeksLeft=Math.max(1,Math.ceil(daysLeft/7));
+      // Are we on pace? Compare done vs. what we "should" have done by now.
+      const mStart=a.created?new Date(a.created+"T00:00:00"):monthBounds(now).start;
+      const elapsed=Math.max(1,daysBetween(mStart,now));
+      const span=Math.max(1,daysBetween(mStart,mEnd));
+      const expected=Math.round((total*(elapsed/span))*10)/10;
+      return plans[a.id]={total,done,remaining,pct,daysLeft,weeksLeft,daysLeftThisWeek,thisWeekTarget,perDay,expected,onPace:done>=expected,behindBy:Math.max(0,Math.round((expected-done)*10)/10),deadline:mEnd};
+    });
+    return plans;
+  },[aspirations,now]);
+  // ── #4 Auto-generated daily Focus Tasks from goals ──
+  // DERIVED (not stored) so they can never drift out of sync or duplicate. Check state
+  // lives in `checks`, which already persists per-day.
+  const goalFocusTasks=useMemo(()=>{
+    const out=[];
+    aspirations.filter(a=>a.goalType==="measurable"&&!a.graduated).forEach(a=>{
+      const pl=goalPlan[a.id];
+      if(!pl||pl.remaining<=0)return;
+      out.push({id:"gt_"+a.id,goalId:a.id,text:a.text,hours:pl.perDay,total:pl.total,done:pl.done,pct:pl.pct});
+    });
+    return out;
+  },[aspirations,goalPlan]);
+  const toggleGoalTask=(t)=>{
+    const key=dk(now);
+    const on=!!(checks[key]||{})[t.id];
+    if(!on){
+      flashChecked(t.id);
+      logGoalHours(t.goalId,t.hours);   // checking it off logs the day's hours
+      logFocusCompletion(1);
+    }else{
+      logGoalHours(t.goalId,-t.hours);
+      logFocusCompletion(-1);
+    }
+    setChecks(p=>({...p,[key]:{...(p[key]||{}),[t.id]:!on}}));
+  };
+  // ── #1/#7 Goal completion: same animation as focus tasks, then remove from the active list ──
+  const completeGoalAnim=(id,after)=>{
+    setCompletingGoal(p=>({...p,[id]:true}));
+    celebrateGoal();
+    setTimeout(()=>{ setCompletingGoal(p=>{const c={...p};delete c[id];return c;}); if(after)after(); },760);
+  };
+  // ── CALENDAR-CALIBRATED PERIODS ──
+  // Weekly goals live inside a real Sun–Sat week; monthly goals inside a real calendar month.
+  // When the calendar rolls over, progress is archived and the goals get a clean slate.
+  const weekKeyOf=(d)=>{const s2=new Date(d);s2.setDate(s2.getDate()-s2.getDay());return dk(s2);};
+  const monthKeyOf=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  const gpWeekKey=weekKeyOf(now), gpMonthKey=monthKeyOf(now);
+  // Calendar facts the app can act on.
+  const calInfo=useMemo(()=>{
+    const wStart=new Date(now); wStart.setDate(wStart.getDate()-wStart.getDay());
+    const wEnd=new Date(wStart); wEnd.setDate(wEnd.getDate()+6);
+    const mStart=new Date(now.getFullYear(),now.getMonth(),1);
+    const mEnd=new Date(now.getFullYear(),now.getMonth()+1,0);
+    const daysLeftWeek=daysBetween(now,wEnd);     // inclusive of today
+    const daysLeftMonth=daysBetween(now,mEnd);
+    const weekDays=[];
+    for(let i=0;i<7;i++){const d=new Date(wStart);d.setDate(d.getDate()+i);
+      weekDays.push({key:dk(d),dayNum:d.getDate(),label:["S","M","T","W","T","F","S"][i],
+        isToday:dk(d)===dk(now),isPast:d<new Date(dk(now)+"T00:00:00"),isFuture:d>new Date(dk(now)+"T23:59:59")});}
+    const monthDays=[];
+    for(let i=1;i<=mEnd.getDate();i++){const d=new Date(now.getFullYear(),now.getMonth(),i);
+      monthDays.push({key:dk(d),dayNum:i,isToday:dk(d)===dk(now),isPast:d<new Date(dk(now)+"T00:00:00")});}
+    return{wStart,wEnd,mStart,mEnd,daysLeftWeek,daysLeftMonth,weekDays,monthDays,
+      weekLabel:`${wStart.toLocaleDateString("en-US",{month:"short",day:"numeric"})} \u2013 ${wEnd.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`,
+      monthLabel:now.toLocaleDateString("en-US",{month:"long",year:"numeric"})};
+  },[now]);
+  // ROLLOVER — idempotent: only writes when the calendar period ACTUALLY changed.
+  // (If it wrote on every mount it would churn the data and break cross-device sync.)
+  useEffect(()=>{
+    if(!hydrated)return;
+    // First ever run: just record where we are. Never wipe existing progress.
+    if(!goalPeriod.week||!goalPeriod.month){
+      setGoalPeriod({week:gpWeekKey,month:gpMonthKey});
+      return;
+    }
+    if(goalPeriod.week!==gpWeekKey){
+      // Archive the finished week, then clean-slate the weekly goals.
+      const snap={};
+      wGoals.forEach(g=>{const total=(g.steps||[]).length||g.target||0;
+        const done=(g.steps||[]).length?(g.steps||[]).filter(x=>x.done).length:(g.current||0);
+        snap[g.id]={text:g.text,done,total};});
+      setGoalHistory(p=>({...p,["w_"+goalPeriod.week]:snap}));
+      setWGoals(p=>p.map(g=>(g.steps||[]).length
+        ?{...g,steps:g.steps.map(st=>({...st,done:false}))}   // steps reset
+        :{...g,current:0}));                                   // counts reset
+      setGoalPeriod(p=>({...p,week:gpWeekKey}));
+    }
+    if(goalPeriod.month!==gpMonthKey){
+      const snap={};
+      aspirations.filter(a=>!a.graduated).forEach(a=>{
+        snap[a.id]={text:a.text,done:Number(a.hoursLogged)||0,total:Number(a.totalHours)||0};});
+      setGoalHistory(p=>({...p,["m_"+goalPeriod.month]:snap}));
+      // Monthly goals whose deadline has passed are retired; the carryover prompt already
+      // offered to roll their remaining hours into a fresh goal for this month.
+      setAspirations(p=>p.map(a=>{
+        if(a.graduated||a.goalType!=="measurable")return a;
+        const dl=a.deadline?new Date(a.deadline+"T23:59:59"):null;
+        return dl&&dl<now?{...a,graduated:true,status:"archived"}:a;
+      }));
+      setGoalPeriod(p=>({...p,month:gpMonthKey}));
+    }
+  },[hydrated,gpWeekKey,gpMonthKey,goalPeriod.week,goalPeriod.month]);
+
+  // ── #8/#9 Carryover ──
+  const periodKeys=useMemo(()=>{
+    const m=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+    const ws=new Date(now); ws.setDate(ws.getDate()-ws.getDay());
+    return{month:m,week:dk(ws)};
+  },[now]);
+  const isMonthEnd=useMemo(()=>{const e=new Date(now.getFullYear(),now.getMonth()+1,0);return daysBetween(now,e)<=1;},[now]);
+  const isWeekEnd=useMemo(()=>now.getDay()===6,[now]);
+  const carryCandidates=useMemo(()=>{
+    const out=[];
+    if(isMonthEnd){
+      aspirations.filter(a=>a.goalType==="measurable"&&!a.graduated).forEach(a=>{
+        const pl=goalPlan[a.id];
+        const k=`m_${periodKeys.month}_${a.id}`;
+        if(pl&&pl.remaining>0&&!carryover[k])out.push({kind:"month",key:k,goal:a,remaining:pl.remaining});
+      });
+    }
+    if(isWeekEnd){
+      wGoals.forEach(g=>{
+        const total=(g.steps||[]).length||g.target||0;
+        const done=(g.steps||[]).length?(g.steps||[]).filter(x=>x.done).length:(g.current||0);
+        const k=`w_${periodKeys.week}_${g.id}`;
+        if(total>0&&done<total&&!carryover[k])out.push({kind:"week",key:k,goal:g,remaining:total-done});
+      });
+    }
+    return out;
+  },[isMonthEnd,isWeekEnd,aspirations,goalPlan,wGoals,carryover,periodKeys]);
+  const answerCarry=(c,choice,perDay)=>{
+    setCarryover(p=>({...p,[c.key]:choice}));
+    if(choice==="ended"){
+      if(c.kind==="month")setAspirations(p=>p.map(a=>a.id===c.goal.id?{...a,graduated:true,status:"archived"}:a));
+      setCarryPrompt(null);return;
+    }
+    if(c.kind==="month"){
+      // Carry the remaining hours into a fresh goal for next month, distributed as chosen.
+      const nm=new Date(now.getFullYear(),now.getMonth()+1,1);
+      const nmEnd=new Date(nm.getFullYear(),nm.getMonth()+1,0);
+      const days=nmEnd.getDate();
+      const total=perDay&&perDay>0?Math.min(c.remaining,Math.round(perDay*days*10)/10):c.remaining;
+      setAspirations(p=>[...p.map(a=>a.id===c.goal.id?{...a,graduated:true,status:"archived"}:a),
+        {id:uid(),text:c.goal.text,goalType:"measurable",totalHours:Math.max(1,Math.round(c.remaining*10)/10),hoursLogged:0,
+         created:dk(nm),deadline:dk(nmEnd),status:"active",graduated:false,monthsAtTarget:0,carriedFrom:c.goal.id}]);
+    }else{
+      // Weekly: reset progress so the goal continues into next week with the remaining work.
+      setWGoals(p=>p.map(g=>g.id===c.goal.id?((g.steps||[]).length?g:{...g,current:0}):g));
+    }
+    setCarryPrompt(null);
+  };
+  const logGoalHours=(id,delta)=>setAspirations(p=>p.map(a=>{
+    if(a.id!==id)return a;
+    const total=Number(a.totalHours)||0;
+    const next=Math.max(0,Math.round(((Number(a.hoursLogged)||0)+delta)*10)/10);
+    const capped=total>0?Math.min(total,next):next;
+    if(total>0&&capped>=total&&(Number(a.hoursLogged)||0)<total)celebrateGoal();
+    return{...a,hoursLogged:capped};
+  }));
 
   /* ─── Budget: calendar plumbing ─── */
   const bY=bMonth.getFullYear(),bM=bMonth.getMonth(),bDIM=new Date(bY,bM+1,0).getDate(),bFD=new Date(bY,bM,1).getDay(),bCM=bY===now.getFullYear()&&bM===now.getMonth();
@@ -2275,6 +2481,37 @@ ${body}
   return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column",transition:"background 0.4s ease, color 0.4s ease"}}>
       <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+      {/* #8/#9 — Carryover modal: choose how the remaining work is redistributed */}
+      {carryPrompt&&(()=>{const c=carryPrompt;const nm=new Date(now.getFullYear(),now.getMonth()+1,1);
+        const nmEnd=new Date(nm.getFullYear(),nm.getMonth()+1,0);const days=nmEnd.getDate();
+        const monthName=nm.toLocaleDateString("en-US",{month:"long"});
+        const evenPerDay=Math.round((c.remaining/days)*10)/10;
+        return(
+        <div onClick={()=>setCarryPrompt(null)} style={{position:"fixed",inset:0,zIndex:400,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:440,background:C.surface,borderRadius:"20px 20px 0 0",padding:"22px 20px 28px",maxHeight:"86vh",overflowY:"auto"}}>
+            <div style={{...lbl,marginBottom:6}}>Carry into {c.kind==="month"?monthName:"next week"}</div>
+            <div style={{fontSize:13,color:C.textSec||C.text,lineHeight:1.5,marginBottom:16}}>
+              <b>{c.goal.text}</b> \u2014 <b>{c.remaining}{c.kind==="month"?"h":""}</b> remaining.
+              {c.kind==="month"&&<> Spread evenly that's <b>{evenPerDay}h/day</b> across {days} days.</>}
+            </div>
+            {c.kind==="month"?(<>
+              <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>How much per day?</div>
+              <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                {[evenPerDay,Math.round(evenPerDay*1.5*10)/10,Math.round(evenPerDay*2*10)/10].filter((v,i,arr)=>v>0&&arr.indexOf(v)===i).map(v=>(
+                  <button key={v} onClick={()=>answerCarry(c,"carried",v)} className="press" style={{flex:1,minWidth:90,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,padding:"12px 8px",cursor:"pointer",fontFamily:FN.b}}>
+                    <div style={{fontSize:17,fontWeight:800,color:C.accent,fontFamily:FN.m,lineHeight:1}}>{v}h</div>
+                    <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:4}}>per day \u00B7 {Math.ceil(c.remaining/v)}d</div>
+                  </button>
+                ))}
+              </div>
+              <button onClick={()=>answerCarry(c,"carried",evenPerDay)} style={{...btnB,width:"100%",marginBottom:8}}>Carry all {c.remaining}h into {monthName}</button>
+            </>):(
+              <button onClick={()=>answerCarry(c,"carried")} style={{...btnB,width:"100%",marginBottom:8}}>Continue into next week</button>
+            )}
+            <button onClick={()=>setCarryPrompt(null)} style={{...btnG,width:"100%"}}>Cancel</button>
+          </div>
+        </div>);
+      })()}
       <style>{CSS}</style>
 
       {confetti&&<div style={{position:"fixed",inset:0,zIndex:300,pointerEvents:"none",overflow:"hidden"}}>{Array.from({length:30}).map((_,i)=>{const l=Math.random()*100,d=Math.random()*2+1;const c=[C.green,C.goldBright,C.blue,C.orange,"#fff"][Math.floor(Math.random()*5)];return(<div key={i} style={{position:"absolute",left:`${l}%`,top:-10,width:7,height:7,borderRadius:"50%",background:c,animation:`xpFloat ${d}s ease-out forwards`}} />);})}</div>}
@@ -2321,11 +2558,12 @@ ${body}
           {k:"food",l:"Eaten",v:`${calEaten}`,c:MACRO.calories.color,pct:calGoal?Math.min(100,calEaten/calGoal*100):0,go:goDiet},
           {k:"water",l:"Water",v:`${water}`,c:MACRO.water.color,pct:waterGoal?Math.min(100,water/waterGoal*100):0,go:goDiet},
           {k:"workout",l:"Workout",v:wVal,c:workedOut?C.green:C.textDim,pct:workedOut?100:0,go:()=>{setMenuTab("workout");setGView("workouts");setTab(null);}},
+          {k:"sleep",l:"Sleep",v:(sleepFor(now)==null?"\u2014":String(sleepFor(now))),c:sleepColor(sleepFor(now)),pct:sleepFor(now)==null?0:Math.min(100,sleepFor(now)),go:()=>{setMenuTab("workout");setGView("workouts");setTab(null);}},
         ];return(
-          <div style={{display:"flex",gap:7,padding:"7px 12px 3px"}}>{tiles.map(t=>(
-            <div key={t.k} onClick={t.go||undefined} className={t.go?"press":""} style={{flex:1,minWidth:0,background:C.surfaceDim,borderRadius:11,padding:"10px 11px",cursor:t.go?"pointer":"default"}}>
+          <div style={{display:"flex",gap:5,padding:"7px 10px 3px"}}>{tiles.map(t=>(
+            <div key={t.k} onClick={t.go||undefined} className={t.go?"press":""} style={{flex:1,minWidth:0,background:C.surfaceDim,borderRadius:10,padding:"9px 7px",cursor:t.go?"pointer":"default"}}>
               <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:3}}>{t.l}</div>
-              <div style={{fontSize:20,fontWeight:800,color:t.c,fontFamily:FN.m,lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.v}</div>
+              <div style={{fontSize:18,fontWeight:800,color:t.c,fontFamily:FN.m,lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.v}</div>
               <div style={{height:4,background:C.surface,borderRadius:2,overflow:"hidden",marginTop:7}}><div style={{height:"100%",width:`${t.pct}%`,background:t.c,borderRadius:2,transition:"width 0.5s ease"}}/></div>
             </div>
           ))}</div>
@@ -2485,7 +2723,7 @@ ${body}
               const total=goal.total!=null?goal.total:(goal.target!=null?goal.target:0);
               const pct=total>0?Math.round(Math.min(100,done/total*100)):0;
               const complete=total>0&&pct>=100;
-              return(<div style={{marginBottom:8,borderRadius:12,background:C.surface,border:`1px solid ${complete?color:C.hairline}`,borderLeft:`3px solid ${color}`,overflow:"hidden",transition:"border-color 0.3s ease"}}>
+              return(<div className={completingGoal[goal.id]?"goal-completing":""} style={{marginBottom:8,borderRadius:12,background:C.surface,border:`1px solid ${complete?color:C.hairline}`,borderLeft:`3px solid ${color}`,overflow:"hidden",transition:"border-color 0.3s ease"}}>
                 <div onClick={()=>setFocusCollapsed(p=>({...p,[goal.id]:!p[goal.id]}))} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",cursor:"pointer"}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:9,fontFamily:FN.m,color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>{badge}</div>
@@ -2507,8 +2745,22 @@ ${body}
             };
             const addFocusQuick=()=>{const t=focusQuick.trim();if(!t)return;addFocus({id:uid(),text:t,diff:"easy"});setFocusQuick("");};
             return(<div>
+              {/* #8/#9 — Carryover prompt at week / month end */}
+              {carryCandidates.length>0&&<div style={{...card,marginBottom:14,borderLeft:`3px solid ${C.accent}`}}>
+                <div style={{...lbl,marginBottom:6}}>{carryCandidates[0].kind==="month"?"Month is ending":"Week is ending"}</div>
+                <div style={{fontSize:12,color:C.textSec||C.text,lineHeight:1.5,marginBottom:11}}>
+                  <b>{carryCandidates[0].goal.text}</b> has <b>{carryCandidates[0].remaining}{carryCandidates[0].kind==="month"?"h":""}</b> left. Carry it into next {carryCandidates[0].kind}, or call it done?
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>setCarryPrompt(carryCandidates[0])} className="press" style={{...btnB,flex:2}}>Carry over</button>
+                  <button onClick={()=>answerCarry(carryCandidates[0],"ended")} className="press" style={{...btnG,flex:1}}>End it</button>
+                </div>
+              </div>}
+
+              <div className="focus-grid">
+              <div className="fg-main">
               {/* Section 1 — Daily Tasks (highest priority) — add directly here */}
-              <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length}/>
+              <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length+goalFocusTasks.length}/>
               {focusTasks.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setFocusReorder(m=>!m)} style={{background:focusReorder?C.accent:"transparent",border:`1px solid ${focusReorder?C.accent:C.hairline}`,color:focusReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{focusReorder?"Done":"⇅ Reorder"}</button></div>}
               {(()=>{const today=dk(now);const todayTasks=dailyTasks.filter(t=>t.createdOn===today);const prevTasks=dailyTasks.filter(t=>t.createdOn!==today);const Divider=({label,color,n})=>(<div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.12em"}}>{label}</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{n}</span></div>);return(<>
                   {!focusReorder&&<div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -2518,8 +2770,24 @@ ${body}
                   {todayTasks.length>0&&<><Divider label="Today" color={FOCUS_BLUE} n={todayTasks.length}/>{focusReorder&&todayTasks.length>1?<DragReorderList items={todayTasks} onReorder={reorderFocus} />:todayTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}</>}
                   {prevTasks.length>0&&<><Divider label="Previous" color={C.textDim} n={prevTasks.length}/>{focusReorder&&prevTasks.length>1?<DragReorderList items={prevTasks} onReorder={reorderFocus} />:prevTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}</>}
                 </>);})()}
+              {/* #4 — auto-generated from your hour-based goals (no manual duplication) */}
+              {goalFocusTasks.length>0&&<>
+                <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color:FOCUS_PURPLE,textTransform:"uppercase",letterSpacing:"0.12em"}}>From your goals</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{goalFocusTasks.length}</span></div>
+                {goalFocusTasks.map(t=>{const done=!!(checks[dk(now)]||{})[t.id];const flash=justChecked[t.id];return(
+                  <div key={t.id} onClick={()=>toggleGoalTask(t)} className={`task-row${flash?" just-checked":""}`} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${FOCUS_PURPLE}`,cursor:"pointer"}}>
+                    <div style={{width:20,height:20,borderRadius:4,flexShrink:0,border:`1.5px solid ${done?C.greenBright:C.textDim}`,background:done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:11,fontWeight:800,animation:flash?"checkStamp 0.4s ease":"none"}}>{done&&"\u2713"}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <span style={{fontSize:9,fontFamily:FN.m,color:FOCUS_PURPLE,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Goal \u00B7 {t.hours}h today</span>
+                      <div style={{position:"relative",fontSize:14,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:done?C.textDim:C.text}}>{t.text}<span style={{position:"absolute",left:0,top:"52%",height:1.5,width:"100%",background:C.green,transformOrigin:"left center",transform:done&&!flash?"scaleX(1)":"scaleX(0)",animation:flash?"strikeSweep 0.32s ease forwards":"none",opacity:done?1:0}}/></div>
+                      <div style={{marginTop:6,display:"flex",alignItems:"center",gap:7}}><div style={{flex:1,height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${t.pct}%`,background:t.pct>=100?C.greenBright:FOCUS_PURPLE,borderRadius:2,transition:"width 0.45s ease"}}/></div><span style={{fontSize:9,fontFamily:FN.m,color:C.textDim,fontWeight:700}}>{t.done}/{t.total}h</span></div>
+                    </div>
+                  </div>
+                );})}
+              </>}
               {renderFocusDone()}
+              </div>
 
+              <div className="fg-side">
               {/* Section 2 — Weekly Goals (second priority): checkbox dropdowns */}
               {weeklyGoals.length>0&&<>
                 <SectionHeader title="Weekly Goals" color={FOCUS_ORANGE} count={weeklyGoals.length}/>
@@ -2561,6 +2829,8 @@ ${body}
                   </div>);
                 })}
               </>}
+              </div>
+              </div>
             </div>);
           })()}
           {todaySub==="evening"&&<div>
@@ -2862,6 +3132,24 @@ ${body}
 
           {/* ─── MONTHLY GOALS ─── */}
           {gTab==="monthly"&&<div>
+            {/* Calendar-calibrated month grid — real month length, real reset date */}
+            <div style={{...card,marginBottom:12,padding:"12px 14px"}}>
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10}}>
+                <span style={{fontSize:11,fontWeight:800,color:C.text,textTransform:"uppercase",letterSpacing:"0.08em"}}>{calInfo.monthLabel}</span>
+                <span style={{fontSize:9,fontFamily:FN.m,color:calInfo.daysLeftMonth<=3?(C.amber||"#E8A33D"):C.textDim}}>{calInfo.daysLeftMonth===1?"Ends today":`${calInfo.daysLeftMonth}d left`}</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+                {Array.from({length:calInfo.mStart.getDay()}).map((_,i)=><div key={"pad"+i}/>)}
+                {calInfo.monthDays.map(d=>{const hit=Object.keys(checks[d.key]||{}).length>0;return(
+                  <div key={d.key} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:6,
+                    background:d.isToday?C.accent:hit?`${C.greenBright}28`:"transparent",
+                    border:`1px solid ${d.isToday?C.accent:hit?C.greenBright:C.hairline}`,opacity:(!d.isPast&&!d.isToday)?0.5:1}}>
+                    <span style={{fontSize:9,fontFamily:FN.m,fontWeight:700,color:d.isToday?C.btnText:hit?C.greenBright:C.textDim}}>{d.dayNum}</span>
+                  </div>
+                );})}
+              </div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><button onClick={()=>setShowGoalCreator(true)} className="press" style={btnB}>+ New Monthly Goal</button></div>
             {aspirations.filter(a=>!a.graduated).length===0&&<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:14}}>No goals yet. What are you working toward?</div>}
             {aspirations.filter(a=>!a.graduated).map(a=>{const p=aspirationProgress.find(x=>x.id===a.id);const pct=p?.pct||0;const typeBadge=a.goalType==="measurable"?"📐":a.goalType==="outcome"?"🎯":"🔄";return(
               <SwipeRow key={a.id} onDelete={()=>removeGoal(a.id)} bg={C.surface} padY={14}>
@@ -2870,7 +3158,7 @@ ${body}
                   <div style={{flex:1}}>
                     <div style={{fontSize:14,fontWeight:600,color:C.text}}>{a.text}</div>
                     <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:2}}>
-                      {a.goalType==="measurable"&&`${a.hoursLogged||0}/${a.totalHours}h · due ${fd(a.deadline)}`}
+                      {a.goalType==="measurable"&&(()=>{const pl=goalPlan[a.id];return pl?`${pl.done}/${pl.total}h \u00B7 ${pl.pct}%`:`${a.hoursLogged||0}/${a.totalHours}h`;})()}
                       {a.goalType==="outcome"&&`${(a.steps||[]).filter(s=>s.done).length}/${(a.steps||[]).length} steps`}
                       {a.goalType==="habit"&&`${p?.daysHit||0}/${a.targetDays} days · ${p?.onPace?"on pace":"behind"}`}
                     </div>
@@ -2879,6 +3167,23 @@ ${body}
                   <button onClick={()=>openGoalEdit(a,"monthly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px",flexShrink:0}}>edit</button>
                 </div>
                 {(a.goalType==="habit"||a.goalType==="measurable")&&<div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>=80?C.greenBright:pct>=50?C.accent:C.red,borderRadius:2,transition:"width 0.5s ease"}}/></div>}
+                {a.goalType==="measurable"&&(()=>{const pl=goalPlan[a.id];if(!pl)return null;return(
+                  <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.hairline}`}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:10}}>
+                      {[["This week",pl.thisWeekTarget+"h",C.accent],["Per day",pl.perDay+"h",C.text],["Left",pl.remaining+"h",C.text],["Days",String(pl.daysLeft),C.textDim]].map(([l2,v,clr])=>(
+                        <div key={l2} style={{background:C.surfaceDim,borderRadius:8,padding:"7px 3px",textAlign:"center"}}>
+                          <div style={{fontSize:14,fontWeight:800,color:clr,fontFamily:FN.m,lineHeight:1}}>{v}</div>
+                          <div style={{fontSize:7,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>{l2}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:9,color:pl.onPace?C.greenBright:(C.amber||"#E8A33D"),fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",flex:1}}>{pl.onPace?"On pace":`Behind by ${pl.behindBy}h`}</span>
+                      {[0.5,1,2].map(h=>(<button key={h} onClick={()=>logGoalHours(a.id,h)} className="press" style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 9px",fontSize:10,fontWeight:700,color:C.text,fontFamily:FN.m,cursor:"pointer"}}>+{h}h</button>))}
+                      <button onClick={()=>logGoalHours(a.id,-0.5)} className="press" style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 8px",fontSize:10,fontWeight:700,color:C.textDim,fontFamily:FN.m,cursor:"pointer"}}>\u2212</button>
+                    </div>
+                  </div>
+                );})()}
                 {a.goalType==="outcome"&&(()=>{const total=(a.steps||[]).length;const done=(a.steps||[]).filter(s=>s.done).length;const sp=total>0?Math.round(done/total*100):0;const activeId=(a.steps||[]).find(s=>!s.done)?.id;return(<><div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",marginBottom:6}}><div style={{height:"100%",width:`${sp}%`,background:sp>=100?C.greenBright:C.accent,borderRadius:2,transition:"width 0.5s ease"}}/></div><div>{(a.steps||[]).map((s,si)=>{const isActive=s.id===activeId;return(<div key={s.id||si} onClick={()=>{const turningOn=!s.done;setAspirations(p=>p.map(g=>g.id===a.id?{...g,steps:g.steps.map((st,i)=>i===si?{...st,done:!st.done}:st)}:g));logFocusCompletion(turningOn?1:-1);}} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",cursor:"pointer",borderTop:si>0?`1px solid ${C.hairline}`:"none"}}>
                   <div style={{width:16,height:16,borderRadius:3,border:`1.5px solid ${s.done?C.greenBright:isActive?C.accent:C.textDim}`,background:s.done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:9,fontWeight:800,flexShrink:0}}>{s.done&&"✓"}</div>
                   <span style={{fontSize:12,color:s.done?C.textDim:C.text,textDecoration:s.done?"line-through":"none",fontWeight:isActive?700:400}}>{s.text}</span>
@@ -2891,6 +3196,22 @@ ${body}
 
           {/* ─── WEEKLY (auto-derived) ─── */}
           {gTab==="weekly"&&<div>
+            {/* Calendar-calibrated week strip — shows the real Sun–Sat week and when it resets */}
+            <div style={{...card,marginBottom:12,padding:"12px 14px"}}>
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10}}>
+                <span style={{fontSize:11,fontWeight:800,color:C.text,textTransform:"uppercase",letterSpacing:"0.08em"}}>{calInfo.weekLabel}</span>
+                <span style={{fontSize:9,fontFamily:FN.m,color:calInfo.daysLeftWeek<=2?(C.amber||"#E8A33D"):C.textDim}}>{calInfo.daysLeftWeek===1?"Resets tomorrow":`Resets in ${calInfo.daysLeftWeek}d`}</span>
+              </div>
+              <div style={{display:"flex",gap:4}}>
+                {calInfo.weekDays.map(d=>{const hit=Object.keys(checks[d.key]||{}).length>0;return(
+                  <div key={d.key} style={{flex:1,textAlign:"center",padding:"6px 2px",borderRadius:8,background:d.isToday?`${C.accent}22`:"transparent",border:d.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,opacity:d.isFuture?0.45:1}}>
+                    <div style={{fontSize:8,fontWeight:700,color:C.textDim,textTransform:"uppercase"}}>{d.label}</div>
+                    <div className="hero-num" style={{fontSize:14,color:d.isToday?C.accent:C.text,lineHeight:1.3}}>{d.dayNum}</div>
+                    <div style={{width:5,height:5,borderRadius:"50%",margin:"3px auto 0",background:hit?C.greenBright:(d.isPast?C.hairline:"transparent")}}/>
+                  </div>
+                );})}
+              </div>
+            </div>
             <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>{!showAddWeekly&&<button onClick={()=>setShowAddWeekly(true)} className="press" style={btnB}>+ New Weekly Goal</button>}</div>
             {showAddWeekly&&<div style={{...card,marginBottom:16}}>
               <input value={nWkText} onChange={e=>setNWkText(e.target.value)} placeholder="e.g. Create Presentation" style={{...inp,marginBottom:10,fontSize:14,fontFamily:FN.h,fontStyle:"italic"}} autoFocus/>
@@ -3195,6 +3516,40 @@ ${body}
                     <div style={{fontFamily:FN.m,fontSize:8,fontWeight:700,color:has?clr:C.textDim,marginTop:1,whiteSpace:"nowrap",overflow:"hidden"}}>{label}</div>
                   </div>
                 );})}
+              </div>
+            );})()}
+            {/* ═══ Sleep Score (Garmin — manual entry) ═══ */}
+            {(()=>{const today=sleepFor(now);const maxS=100;return(
+              <div style={{...card,marginBottom:14}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                  <span style={{...lbl,margin:0}}>Sleep Score</span>
+                  <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>Garmin</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:16}}>
+                  <Ring value={today||0} goal={maxS} size={86} stroke={9} color={sleepColor(today)}>
+                    <div style={{fontSize:22,fontWeight:800,color:today==null?C.textDim:C.text,fontFamily:FN.m,lineHeight:1}}>{today==null?"—":today}</div>
+                    <div style={{fontSize:7,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:2}}>{sleepBand(today)}</div>
+                  </Ring>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Tonight's score</div>
+                    <input type="number" inputMode="numeric" min="0" max="100" value={today==null?"":today} onChange={e=>setSleepFor(now,e.target.value)} placeholder="0–100" style={{...inp,width:"100%",fontFamily:FN.m,fontSize:16,textAlign:"center",marginBottom:8}}/>
+                    <div style={{display:"flex",gap:12}}>
+                      <div><div style={{fontSize:15,fontWeight:800,color:sleepColor(sleepStats.avg),fontFamily:FN.m,lineHeight:1}}>{sleepStats.avg??"—"}</div><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>7-day avg</div></div>
+                      <div><div style={{fontSize:15,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1}}>{sleepStats.best??"—"}</div><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>Best</div></div>
+                      <div><div style={{fontSize:15,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1}}>{sleepStats.avgAll??"—"}</div><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>All-time</div></div>
+                    </div>
+                  </div>
+                </div>
+                {/* 7-day bars */}
+                <div style={{display:"flex",alignItems:"flex-end",gap:5,height:56}}>
+                  {sleepStats.days.map(d=>{const h=d.score==null?0:Math.max(4,(d.score/100)*46);return(
+                    <div key={d.key} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                      <div style={{fontSize:8,fontFamily:FN.m,color:d.score==null?C.textDim:sleepColor(d.score),fontWeight:700}}>{d.score??""}</div>
+                      <div style={{width:"100%",height:h,background:d.score==null?C.surfaceDim:sleepColor(d.score),borderRadius:3,transition:"height 0.4s ease"}}/>
+                      <div style={{fontSize:7,color:C.textDim,textTransform:"uppercase"}}>{d.label}</div>
+                    </div>
+                  );})}
+                </div>
               </div>
             );})()}
             {orderedSplitKeys.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}><button onClick={()=>setSplitReorder(m=>!m)} style={{background:splitReorder?C.accent:"transparent",border:`1px solid ${splitReorder?C.accent:C.hairline}`,color:splitReorder?C.btnText:C.textDim,borderRadius:8,padding:"6px 13px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{splitReorder?"Done":"⇅ Reorder"}</button></div>}
