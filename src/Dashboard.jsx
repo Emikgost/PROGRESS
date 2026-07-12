@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Brush } from "recharts";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Brush, ReferenceLine } from "recharts";
 
 /* ═══ TOKENS ═══ */
 // Two palettes: DARK (navy editorial) and LIGHT (warm paper editorial). Both keep the same
@@ -44,10 +44,22 @@ let DIFF={easy:{pts:1,label:"Easy",color:C.green,bg:C.greenSoft},medium:{pts:3,l
 const FN={h:"'Fraunces',serif",b:"'Inter',sans-serif",m:"'JetBrains Mono',monospace"};
 // Smooth red→orange→yellow→green gradient by percent-to-goal (0=red, 100=green).
 const progressColor=(pct)=>{const p=Math.max(0,Math.min(100,pct||0));return `hsl(${Math.round((p/100)*130)},82%,45%)`;};
-let pC=p=>p>=80?C.greenBright:p>=60?C.green:p>=40?C.gold:p>=20?C.orange:C.red;
+let pC=p=>{const v=Math.max(0,Math.min(100,p||0));
+  if(v>=90)return `hsl(${Math.round(100+((v-90)/10)*40)},72%,45%)`;      // 90-100  green
+  if(v>=70)return `hsl(${Math.round(30+((v-70)/20)*25)},88%,52%)`;        // 70-90   orange -> yellow
+  return `hsl(${Math.round((v/70)*18)},80%,50%)`;                          // 0-70    red -> red-orange
+};
 let gB=p=>p>=80?`linear-gradient(90deg,${C.green},${C.greenBright})`:p>=50?`linear-gradient(90deg,${C.blue},${C.green})`:p>=25?`linear-gradient(90deg,${C.gold},${C.blue})`:`linear-gradient(90deg,${C.red},${C.gold})`;
 // Completion % → background tint. Recomputed on theme swap because dark/light want different saturations.
-let pctBg=p=>{if(p<=0)return "transparent";const isLight=C.mode==="light";const r=Math.round(248+(52-248)*(p/100));const g=Math.round(113+(211-113)*(p/100));const b=Math.round(113+(153-113)*(p/100));return `rgba(${r},${g},${b},${isLight?0.12:0.18})`;};
+let pctBg=p=>{if(p<=0)return "transparent";const v=Math.max(0,Math.min(100,p));const a=C.mode==="light"?0.30:0.42;
+  const h=v>=90?Math.round(100+((v-90)/10)*40):v>=70?Math.round(30+((v-70)/20)*25):Math.round((v/70)*18);
+  return `hsla(${h},80%,50%,${a})`;
+};
+// ─── PERFECT DAY (100%) — emerald + gold. Deliberately unlike any other state. ───
+const EMERALD_DEEP="#04613F",EMERALD="#059669",EMERALD_LIT="#10B981";
+const GOLD="#E8C46A",GOLD_LIT="#FBE9A8",GOLD_DEEP="#B8942F";
+const isPerfect=p=>Math.round(p||0)>=100;
+const perfectBg=`linear-gradient(145deg,${EMERALD_DEEP} 0%,${EMERALD} 48%,${EMERALD_LIT} 100%)`;
 let pctBorder=p=>{if(p<=0)return "transparent";const r=Math.round(248+(52-248)*(p/100));const g=Math.round(113+(211-113)*(p/100));const b=Math.round(113+(153-113)*(p/100));return `rgba(${r},${g},${b},0.55)`;};
 const dk=d=>{const t=typeof d==="string"?new Date(d):d;return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;};
 const fd=d=>new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"});
@@ -67,9 +79,16 @@ let Tip=({active,payload,label:lb})=>{if(!active||!payload?.length)return null;r
 function applyTheme(palette){
   C=palette;
   DIFF={easy:{pts:1,label:"Easy",color:C.green,bg:C.greenSoft},medium:{pts:3,label:"Med",color:C.blue,bg:C.blueSoft},hard:{pts:6,label:"Hard",color:C.orange,bg:C.orangeSoft}};
-  pC=p=>p>=80?C.greenBright:p>=60?C.green:p>=40?C.gold:p>=20?C.orange:C.red;
+  pC=p=>{const v=Math.max(0,Math.min(100,p||0));
+  if(v>=90)return `hsl(${Math.round(100+((v-90)/10)*40)},72%,45%)`;      // 90-100  green
+  if(v>=70)return `hsl(${Math.round(30+((v-70)/20)*25)},88%,52%)`;        // 70-90   orange -> yellow
+  return `hsl(${Math.round((v/70)*18)},80%,50%)`;                          // 0-70    red -> red-orange
+};
   gB=p=>p>=80?`linear-gradient(90deg,${C.green},${C.greenBright})`:p>=50?`linear-gradient(90deg,${C.blue},${C.green})`:p>=25?`linear-gradient(90deg,${C.gold},${C.blue})`:`linear-gradient(90deg,${C.red},${C.gold})`;
-  pctBg=p=>{if(p<=0)return "transparent";const isLight=C.mode==="light";const r=Math.round(248+(52-248)*(p/100));const g=Math.round(113+(211-113)*(p/100));const b=Math.round(113+(153-113)*(p/100));return `rgba(${r},${g},${b},${isLight?0.12:0.18})`;};
+  pctBg=p=>{if(p<=0)return "transparent";const v=Math.max(0,Math.min(100,p));const a=C.mode==="light"?0.30:0.42;
+  const h=v>=90?Math.round(100+((v-90)/10)*40):v>=70?Math.round(30+((v-70)/20)*25):Math.round((v/70)*18);
+  return `hsla(${h},80%,50%,${a})`;
+};
   pctBorder=p=>{if(p<=0)return "transparent";const r=Math.round(248+(52-248)*(p/100));const g=Math.round(113+(211-113)*(p/100));const b=Math.round(113+(153-113)*(p/100));return `rgba(${r},${g},${b},0.55)`;};
   card={background:C.surface,borderRadius:14,padding:20,border:`1px solid ${C.hairline}`,boxShadow:C.shadow};
   lbl={fontFamily:FN.b,fontSize:11,fontWeight:600,color:C.textDim,marginBottom:14,textTransform:"uppercase",letterSpacing:"0.08em"};
@@ -81,9 +100,35 @@ function applyTheme(palette){
   Tip=({active,payload,label:lb})=>{if(!active||!payload?.length)return null;return(<div style={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"8px 14px",fontSize:11,fontFamily:FN.m,boxShadow:C.modalShadow}}><div style={{color:C.textDim,marginBottom:3}}>{lb}</div>{payload.map((p,i)=>(<div key={i} style={{color:p.color||C.text,fontWeight:600}}>{p.name}: {typeof p.value==="number"?Math.round(p.value*10)/10:p.value}</div>))}</div>);};
 }
 
+const FOCUS_ORANGE_G="#FB923C",FOCUS_PURPLE_G="#A78BFA";
+// Garmin's official sleep-score bands (Firstbeat Analytics). Score blends sleep DURATION
+// (vs. the 7-9h guideline, age-adjusted), sleep QUALITY (light/deep/REM balance, awakenings,
+// restlessness) and overnight RECOVERY (HRV / parasympathetic activity).
+const SLEEP_BANDS=[
+  {name:"Excellent",min:90,max:100,color:"#22C55E",meaning:"Restorative sleep \u2014 good duration, healthy stage balance and strong HRV recovery. Rare: only ~5% of Garmin users average here. Green light to train hard."},
+  {name:"Good",min:80,max:89,color:"#84CC16",meaning:"Solid, above-average night. Your body recovered well. Normal training load is fine."},
+  {name:"Fair",min:60,max:79,color:"#F59E0B",meaning:"The most common range (global average is 72). Sleep was adequate but not restorative \u2014 short, fragmented, or stage-skewed. Moderate training; consider trimming intensity 10\u201320%."},
+  {name:"Poor",min:0,max:59,color:"#EF4444",meaning:"Significantly compromised \u2014 too short, heavily fragmented, or low HRV recovery. Common causes: alcohol, late training, illness, stress. Prioritise recovery over intensity."},
+];
 const CSS=`
 @keyframes checkStamp{0%{transform:scale(0.6);opacity:0}50%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:1}}
 @keyframes strikeSweep{0%{transform:scaleX(0)}100%{transform:scaleX(1)}}
+@keyframes goldSheen{0%{transform:translateX(-140%) skewX(-18deg)}55%{transform:translateX(240%) skewX(-18deg)}100%{transform:translateX(240%) skewX(-18deg)}}
+@keyframes goldPulse{0%,100%{opacity:0.55}50%{opacity:1}}
+/* A 100% day: emerald field, gold filigree corners, gold hairline frame, slow sheen. */
+.perfect-day{position:relative;overflow:hidden;isolation:isolate;
+  box-shadow:0 0 0 1px rgba(232,196,106,0.85),0 2px 10px -2px rgba(4,97,63,0.55),inset 0 1px 0 rgba(251,233,168,0.28)}
+.perfect-day::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(circle at 12% 12%,rgba(251,233,168,0.42) 0,transparent 34%),
+    radial-gradient(circle at 88% 88%,rgba(251,233,168,0.30) 0,transparent 34%),
+    repeating-linear-gradient(135deg,rgba(232,196,106,0.16) 0 1px,transparent 1px 7px);
+  animation:goldPulse 3.6s ease-in-out infinite}
+.perfect-day::after{content:"";position:absolute;top:0;bottom:0;width:38%;z-index:1;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(251,233,168,0.5),transparent);
+  animation:goldSheen 4.2s ease-in-out infinite}
+.perfect-day>*{position:relative;z-index:2}
+.perfect-crown{position:absolute;top:1px;right:2px;z-index:3;font-size:7px;line-height:1;color:#FBE9A8;text-shadow:0 0 4px rgba(232,196,106,0.9)}
 @keyframes goalComplete{0%{transform:scale(1);opacity:1}35%{transform:scale(1.03)}70%{opacity:1}100%{transform:scale(0.97);opacity:0;max-height:0;margin-bottom:0}}
 .goal-completing{animation:goalComplete 0.75s cubic-bezier(0.4,0,0.2,1) forwards;overflow:hidden}
 .focus-grid{display:grid;grid-template-columns:1fr;gap:14px}
@@ -758,6 +803,8 @@ export default function Dashboard(){
   const calRef=useRef(null);
   const dietCalRef=useRef(null);
   const wkCalRef=useRef(null);
+  const goalCalRef=useRef(null);
+  useEffect(()=>{if(tab==="goals"&&goalCalRef.current){goalCalRef.current.scrollLeft=goalCalRef.current.scrollWidth;}},[tab,gTab]);
   useEffect(()=>{if(menuTab==="workout"&&gView==="workouts"&&!gSplit&&wkCalRef.current){wkCalRef.current.scrollLeft=wkCalRef.current.scrollWidth;}},[menuTab,gView,gSplit]);
 
   const now=new Date();const vk=dk(vDate);const isToday=vk===dk(now);const dc=checks[vk]||{};
@@ -1613,6 +1660,7 @@ ${body}
   const allPhotos=useMemo(()=>{const out=[];Object.entries(photoLog).sort(([a],[b])=>b.localeCompare(a)).forEach(([date,items])=>{items.forEach(p=>out.push({...p,date}));});return out;},[photoLog]);
 
   /* ─── Calendar days (relative to vDate) ─── */
+  const dayPct=useMemo(()=>dayHabitPct(vk),[vk,checks,todos,focusByDate,habits]);
   const calDays=useMemo(()=>{
     const days=[];
     for(let i=-14;i<=14;i++){
@@ -1979,7 +2027,7 @@ ${body}
   // ── Sleep Score (Garmin, manual entry) ──
   const sleepFor=(d)=>{const v=sleepLog[dk(d||now)];return typeof v==="number"?v:null;};
   const setSleepFor=(d,v)=>{const k=dk(d||now);const n=(v===""||v==null)?null:Math.max(0,Math.min(100,Math.round(Number(v))));setSleepLog(p=>{const c={...p};if(n==null||isNaN(n))delete c[k];else c[k]=n;return c;});};
-  const sleepColor=(v)=>v==null?C.textDim:v>=85?C.greenBright:v>=70?(C.green||"#34C759"):v>=50?(C.amber||"#E8A33D"):C.red;
+  const sleepColor=(v)=>{if(v==null)return C.textDim;const b=SLEEP_BANDS.find(x=>v>=x.min&&v<=x.max);return b?b.color:C.textDim;};
   const sleepBand=(v)=>v==null?"—":v>=90?"Excellent":v>=80?"Good":v>=60?"Fair":"Poor";
   const sleepStats=useMemo(()=>{const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=dk(d);days.push({key:k,label:d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2),score:typeof sleepLog[k]==="number"?sleepLog[k]:null});}
     const vals=days.filter(x=>x.score!=null).map(x=>x.score);
@@ -2538,11 +2586,16 @@ ${body}
         {curPage==="today"&&<>
         <div style={{display:"flex",alignItems:"center",gap:4,padding:"0 12px"}}>
           <div ref={calRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",flex:1,padding:"4px 0"}}>
-            {calDays.map((d,i)=>{const sel=vk===d.key;return(
-              <div key={i} onClick={()=>{setVDate(d.date);setTab("today");setMenuTab(null);}} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:"pointer",background:sel?C.accent:d.pct>0?pctBg(d.pct):"transparent",border:sel?"1px solid transparent":d.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,transition:"all 0.2s ease"}}>
-                <div style={{fontSize:9,fontWeight:600,color:sel?"#0B1120":C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{d.dayName}</div>
-                <div className="hero-num" style={{fontSize:16,color:sel?"#0B1120":d.isToday?C.accent:C.text}}>{d.dayNum}</div>
-                <div style={{fontFamily:FN.m,fontSize:9,fontWeight:600,color:sel?"rgba(11,17,32,0.7)":d.pct>0?pC(d.pct):C.textDim,marginTop:1}}>{d.pct>0?`${d.pct}%`:"—"}</div>
+            {calDays.map((d,i)=>{const sel=vk===d.key;const perf=isPerfect(d.pct);return(
+              <div key={i} onClick={()=>{setVDate(d.date);setTab("today");setMenuTab(null);}} className={perf?"perfect-day":""} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:"pointer",
+                background:perf?perfectBg:(sel?C.accent:d.pct>0?pctBg(d.pct):"transparent"),
+                border:perf?"1px solid transparent":(sel?"1px solid transparent":d.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`),
+                outline:perf&&sel?`2px solid ${GOLD_LIT}`:"none",outlineOffset:perf&&sel?1:0,
+                transition:"all 0.2s ease"}}>
+                {perf&&<span className="perfect-crown">✦</span>}
+                <div style={{fontSize:9,fontWeight:600,color:perf?GOLD_LIT:sel?"#0B1120":C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{d.dayName}</div>
+                <div className="hero-num" style={{fontSize:16,color:perf?"#FFFDF5":sel?"#0B1120":d.isToday?C.accent:C.text,textShadow:perf?"0 1px 6px rgba(4,97,63,0.85)":"none"}}>{d.dayNum}</div>
+                <div style={{fontFamily:FN.m,fontSize:9,fontWeight:800,color:perf?GOLD_LIT:sel?"rgba(11,17,32,0.7)":d.pct>0?pC(d.pct):C.textDim,marginTop:1,letterSpacing:perf?"0.02em":"normal"}}>{d.pct>0?`${d.pct}%`:"—"}</div>
               </div>
             );})}
           </div>
@@ -2550,23 +2603,27 @@ ${body}
         </div>
         {showFullCal&&<div className="card-enter" style={{...card,margin:"4px 12px 0",padding:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><button onClick={()=>setVDate(new Date(vDate.getFullYear(),vDate.getMonth()-1,1))} style={btnG}>‹</button><span style={{fontSize:13,fontWeight:700}}>{vDate.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span><button onClick={()=>setVDate(new Date(vDate.getFullYear(),vDate.getMonth()+1,1))} style={btnG}>›</button></div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:9,color:C.textDim,fontWeight:600}}>{d}</div>)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth(),1).getDay()}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth()+1,0).getDate()}).map((_,i)=>(<div key={i+1} onClick={()=>{setVDate(new Date(vDate.getFullYear(),vDate.getMonth(),i+1));setShowFullCal(false);}} style={{textAlign:"center",padding:"4px 0",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:vDate.getDate()===i+1?700:400,background:vDate.getDate()===i+1?C.goldBright:"transparent",color:vDate.getDate()===i+1?"#fff":C.text}}>{i+1}</div>))}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:9,color:C.textDim,fontWeight:600}}>{d}</div>)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth(),1).getDay()}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth()+1,0).getDate()}).map((_,i)=>{const cd=new Date(vDate.getFullYear(),vDate.getMonth(),i+1);const cp=dayHabitPct(dk(cd));const perf=isPerfect(cp);const selD=vDate.getDate()===i+1;return(<div key={i+1} onClick={()=>{setVDate(cd);setShowFullCal(false);}} className={perf?"perfect-day":""} style={{textAlign:"center",padding:"5px 0",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:perf?800:selD?700:400,
+  background:perf?perfectBg:(selD?C.goldBright:cp>0?pctBg(cp):"transparent"),
+  color:perf?"#FFFDF5":selD?"#fff":C.text,
+  outline:perf&&selD?`2px solid ${GOLD_LIT}`:"none",outlineOffset:perf&&selD?1:0,
+  textShadow:perf?"0 1px 5px rgba(4,97,63,0.8)":"none"}}>{i+1}</div>);})}</div>
         </div>}
         {/* Today at a Glance — compact, lives in the sticky header so it stays visible while scrolling */}
-        {(()=>{const tk=dk(now);const dd=diet[tk]||{};const calEaten=Math.round(dd.calories||0),calGoal=dietGoals.calories||0;const water=Math.round(dd.water||0),waterGoal=dietGoals.water||0;const wkT=wHist.filter(w=>w.date===tk);const splits=[...new Set(wkT.map(w=>w.split))];const workedOut=splits.length>0;const wVal=workedOut?(splits.length>1?`${splits.length}×`:(splits[0].charAt(0).toUpperCase()+splits[0].slice(1))):"—";const goDiet=()=>{setMenuTab("workout");setGView("diet");setTab(null);};const tiles=[
-          {k:"tasks",l:"Tasks",v:`${todayCompletion.pct}%`,c:dailyLabel.color,pct:todayCompletion.pct,go:null},
+        {(()=>{const tk=vk;const dd=diet[tk]||{};const calEaten=Math.round(dd.calories||0),calGoal=dietGoals.calories||0;const water=Math.round(dd.water||0),waterGoal=dietGoals.water||0;const wkT=wHist.filter(w=>w.date===tk);const splits=[...new Set(wkT.map(w=>w.split))];const workedOut=splits.length>0;const wVal=workedOut?(splits.length>1?`${splits.length}×`:(splits[0].charAt(0).toUpperCase()+splits[0].slice(1))):"—";const daySleep=(typeof sleepLog[tk]==="number"?sleepLog[tk]:null);const goDiet=()=>{setMenuTab("workout");setGView("diet");setTab(null);};const tiles=[
+          {k:"tasks",l:"Tasks",v:`${dayPct}%`,c:pC(dayPct),pct:dayPct,go:null},
           {k:"food",l:"Eaten",v:`${calEaten}`,c:MACRO.calories.color,pct:calGoal?Math.min(100,calEaten/calGoal*100):0,go:goDiet},
           {k:"water",l:"Water",v:`${water}`,c:MACRO.water.color,pct:waterGoal?Math.min(100,water/waterGoal*100):0,go:goDiet},
           {k:"workout",l:"Workout",v:wVal,c:workedOut?C.green:C.textDim,pct:workedOut?100:0,go:()=>{setMenuTab("workout");setGView("workouts");setTab(null);}},
-          {k:"sleep",l:"Sleep",v:(sleepFor(now)==null?"\u2014":String(sleepFor(now))),c:sleepColor(sleepFor(now)),pct:sleepFor(now)==null?0:Math.min(100,sleepFor(now)),go:()=>{setMenuTab("workout");setGView("workouts");setTab(null);}},
+          {k:"sleep",l:"Sleep",v:(daySleep==null?"\u2014":String(daySleep)),c:sleepColor(daySleep),pct:daySleep==null?0:Math.min(100,daySleep),go:()=>{setMenuTab("workout");setGView("sleep");setTab(null);}},
         ];return(
-          <div style={{display:"flex",gap:5,padding:"7px 10px 3px"}}>{tiles.map(t=>(
-            <div key={t.k} onClick={t.go||undefined} className={t.go?"press":""} style={{flex:1,minWidth:0,background:C.surfaceDim,borderRadius:10,padding:"9px 7px",cursor:t.go?"pointer":"default"}}>
-              <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:3}}>{t.l}</div>
-              <div style={{fontSize:18,fontWeight:800,color:t.c,fontFamily:FN.m,lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.v}</div>
-              <div style={{height:4,background:C.surface,borderRadius:2,overflow:"hidden",marginTop:7}}><div style={{height:"100%",width:`${t.pct}%`,background:t.c,borderRadius:2,transition:"width 0.5s ease"}}/></div>
+          <div style={{display:"flex",gap:5,padding:"7px 10px 3px"}}>{tiles.map(t=>{const perf=t.k==="tasks"&&isPerfect(dayPct);return(
+            <div key={t.k} onClick={t.go||undefined} className={`${t.go?"press":""}${perf?" perfect-day":""}`} style={{flex:1,minWidth:0,background:perf?perfectBg:C.surfaceDim,borderRadius:10,padding:"9px 7px",cursor:t.go?"pointer":"default"}}>
+              <div style={{fontSize:9,color:perf?GOLD_LIT:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:3}}>{t.l}</div>
+              <div style={{fontSize:18,fontWeight:800,color:perf?"#FFFDF5":t.c,fontFamily:FN.m,lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textShadow:perf?"0 1px 6px rgba(4,97,63,0.85)":"none"}}>{t.v}</div>
+              <div style={{height:4,background:perf?"rgba(4,97,63,0.55)":C.surface,borderRadius:2,overflow:"hidden",marginTop:7}}><div style={{height:"100%",width:`${t.pct}%`,background:perf?`linear-gradient(90deg,${GOLD_DEEP},${GOLD_LIT})`:t.c,borderRadius:2,transition:"width 0.5s ease"}}/></div>
             </div>
-          ))}</div>
+          );})}</div>
         );})()}
         </>}
       </div>
@@ -3003,6 +3060,95 @@ ${body}
               <div style={{...card,padding:"16px 14px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:5}}>Sessions</div><div className="hero-num" style={{fontSize:24,color:C.green,lineHeight:1}}>{wk.length}</div></div>
               <div style={{...card,padding:"16px 14px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:5}}>Time Trained</div><div className="hero-num" style={{fontSize:24,color:C.text,lineHeight:1}}>{totalMin>0?(totalMin>=60?`${Math.floor(totalMin/60)}h${totalMin%60?` ${totalMin%60}m`:""}`:`${totalMin}m`):"—"}</div></div>
             </div>
+          {/* ═══ SLEEP ANALYTICS ═══ */}
+          {(()=>{
+            const n=30; // last 30 nights
+            const vals=[];
+            for(let i=n-1;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=dk(d);
+              const sc=typeof sleepLog[k]==="number"?sleepLog[k]:null;
+              if(sc!=null)vals.push({key:k,score:sc,date:d});}
+            if(vals.length===0)return null;
+            const scores=vals.map(v=>v.score);
+            const avg=Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+            const best=Math.max(...scores), worst=Math.min(...scores);
+            // Band distribution (Garmin's official bands)
+            const dist=SLEEP_BANDS.map(b=>({...b,count:scores.filter(v=>v>=b.min&&v<=b.max).length}));
+            // Consistency: standard deviation (lower = more regular)
+            const mean=scores.reduce((a,b)=>a+b,0)/scores.length;
+            const sd=Math.round(Math.sqrt(scores.reduce((a,b)=>a+Math.pow(b-mean,2),0)/scores.length));
+            // Correlations — does training / eating late move the needle?
+            const trained=vals.filter(v=>wHist.some(w=>w.date===v.key));
+            const rested=vals.filter(v=>!wHist.some(w=>w.date===v.key));
+            const avgOf=a=>a.length?Math.round(a.reduce((x,y)=>x+y.score,0)/a.length):null;
+            const trainAvg=avgOf(trained), restAvg=avgOf(rested);
+            // Sleep on the night BEFORE a workout vs. performance proxy (did you train at all next day)
+            const vsGarmin=avg-72; // Garmin's published global average
+            return(
+            <div style={{...card,marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><div style={{width:8,height:8,borderRadius:2,background:"#8B7FE8"}}/><span style={{fontSize:12,fontWeight:800,color:"#8B7FE8",textTransform:"uppercase",letterSpacing:"0.1em"}}>Sleep</span><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{vals.length} nights logged</span></div>
+
+              {/* Headline numbers */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
+                {[["Avg",avg,sleepColor(avg)],["Best",best,sleepColor(best)],["Worst",worst,sleepColor(worst)],["Variance","\u00B1"+sd,C.textDim]].map(([l2,v,clr])=>(
+                  <div key={l2} style={{background:C.surfaceDim,borderRadius:9,padding:"10px 4px",textAlign:"center"}}>
+                    <div style={{fontSize:19,fontWeight:800,color:clr,fontFamily:FN.m,lineHeight:1}}>{v}</div>
+                    <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:4}}>{l2}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Trend line */}
+              <div style={{height:110,marginBottom:6}}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={vals.map(v=>({d:fd(v.date),score:v.score}))} margin={{top:5,right:5,left:-22,bottom:0}}>
+                    <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" vertical={false}/>
+                    <XAxis dataKey="d" tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false} interval="preserveStartEnd"/>
+                    <YAxis domain={[0,100]} ticks={[0,60,80,90,100]} tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false}/>
+                    <ReferenceLine y={72} stroke={C.textDim} strokeDasharray="3 3" label={{value:"Garmin avg 72",fontSize:7,fill:C.textDim,position:"insideTopRight"}}/>
+                    <Tooltip contentStyle={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:8,fontSize:11}}/>
+                    <Line type="monotone" dataKey="score" stroke="#8B7FE8" strokeWidth={2} dot={{r:2,fill:"#8B7FE8"}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{fontSize:10,color:vsGarmin>=0?C.greenBright:(C.amber||"#E8A33D"),fontFamily:FN.m,marginBottom:14}}>
+                You average <b>{avg}</b> \u2014 {vsGarmin>=0?`${vsGarmin} above`:`${Math.abs(vsGarmin)} below`} Garmin's global average of 72.
+              </div>
+
+              {/* Band distribution */}
+              <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Nights by band</div>
+              <div style={{display:"flex",height:12,borderRadius:6,overflow:"hidden",marginBottom:8}}>
+                {dist.map(b=>{const w=(b.count/vals.length)*100;return w>0?<div key={b.name} style={{width:`${w}%`,background:b.color}}/>:null;})}
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:"4px 12px",marginBottom:14}}>
+                {dist.map(b=>(<span key={b.name} style={{display:"flex",alignItems:"center",gap:5,fontSize:9,color:C.textSec||C.text}}>
+                  <span style={{width:8,height:8,borderRadius:2,background:b.color}}/>{b.name} <b style={{fontFamily:FN.m}}>{b.count}</b>
+                  <span style={{color:C.textDim}}>({Math.round(b.count/vals.length*100)}%)</span>
+                </span>))}
+              </div>
+
+              {/* Correlation with training */}
+              {(trainAvg!=null&&restAvg!=null)&&<div style={{paddingTop:12,borderTop:`1px solid ${C.hairline}`}}>
+                <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:9}}>Training vs. sleep</div>
+                <div style={{display:"flex",gap:8}}>
+                  <div style={{flex:1,background:C.surfaceDim,borderRadius:9,padding:"10px 8px",textAlign:"center"}}>
+                    <div style={{fontSize:18,fontWeight:800,color:sleepColor(trainAvg),fontFamily:FN.m,lineHeight:1}}>{trainAvg}</div>
+                    <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",marginTop:4}}>Nights you trained</div>
+                  </div>
+                  <div style={{flex:1,background:C.surfaceDim,borderRadius:9,padding:"10px 8px",textAlign:"center"}}>
+                    <div style={{fontSize:18,fontWeight:800,color:sleepColor(restAvg),fontFamily:FN.m,lineHeight:1}}>{restAvg}</div>
+                    <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",marginTop:4}}>Rest days</div>
+                  </div>
+                </div>
+                <div style={{fontSize:10,color:C.textDim,lineHeight:1.5,marginTop:9,fontStyle:"italic",fontFamily:FN.h}}>
+                  {Math.abs(trainAvg-restAvg)<3?"Training days and rest days score about the same for you."
+                    :trainAvg>restAvg?`You sleep ${trainAvg-restAvg} points better on days you train.`
+                    :`You sleep ${restAvg-trainAvg} points worse on days you train \u2014 late or intense sessions can suppress overnight recovery.`}
+                </div>
+              </div>}
+            </div>);
+          })()}
+
+
             {ranked.length>0&&<div style={{...card,marginBottom:18}}>
               <div style={{...lbl,marginBottom:12}}>Most Trained Muscles</div>
               {ranked.slice(0,8).map(([m,n])=>(<div key={m} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><span style={{fontSize:10,color:C.text,fontWeight:600,width:78,flexShrink:0}}>{MUSCLE_LABELS[m]}</span><div style={{flex:1,height:8,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.round(n/maxM*100)}%`,background:C.green,borderRadius:4,transition:"width 0.4s ease"}}/></div><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m,width:22,textAlign:"right"}}>{n}×</span></div>))}
@@ -3128,28 +3274,54 @@ ${body}
 
         {/* ═══ GOALS — 4 sub-tabs: Monthly / Weekly / Focus / Habits ═══ */}
         {tab==="goals"&&<div className="tab-content">
+          {/* Shared scrolling calendar for the whole Goals tab — same strip as Diet / Workouts.
+              Shows the real week + month boundaries so you can see exactly when things reset. */}
+          {(()=>{const days=[];
+            for(let i=-20;i<=6;i++){const d=new Date();d.setDate(d.getDate()+i);
+              const k=dk(d);
+              const hits=Object.keys(checks[k]||{}).length;
+              const isToday=k===dk(now);
+              const isFuture=new Date(k+"T00:00:00")>new Date(dk(now)+"T00:00:00");
+              const isWeekStart=d.getDay()===0;
+              const isMonthStart=d.getDate()===1;
+              const isWeekEndDay=d.getDay()===6;
+              const isMonthEndDay=d.getDate()===new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+              days.push({key:k,dayNum:d.getDate(),dayName:d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2),hits,isToday,isFuture,isWeekStart,isMonthStart,isWeekEndDay,isMonthEndDay});}
+            return(
+            <div style={{marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:8}}>
+                <span style={{fontSize:11,fontWeight:800,color:C.text,textTransform:"uppercase",letterSpacing:"0.08em"}}>{calInfo.monthLabel}</span>
+                <span style={{fontSize:9,fontFamily:FN.m,color:C.textDim}}>
+                  <span style={{color:calInfo.daysLeftWeek<=2?(C.amber||"#E8A33D"):C.textDim}}>Week resets in {calInfo.daysLeftWeek}d</span>
+                  {" \u00B7 "}
+                  <span style={{color:calInfo.daysLeftMonth<=3?(C.amber||"#E8A33D"):C.textDim}}>Month in {calInfo.daysLeftMonth}d</span>
+                </span>
+              </div>
+              <div ref={goalCalRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",padding:"4px 0"}}>
+                {days.map((dy,i)=>(
+                  <div key={i} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,
+                    background:dy.hits>0?`${C.greenBright}1F`:"transparent",
+                    border:dy.hits>0?`1px solid ${C.greenBright}`:dy.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,
+                    borderLeft:dy.isMonthStart?`2px solid ${FOCUS_PURPLE_G}`:dy.isWeekStart?`2px solid ${FOCUS_ORANGE_G}`:undefined,
+                    opacity:dy.isFuture?0.5:1}}>
+                    <div style={{fontSize:9,fontWeight:600,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{dy.dayName}</div>
+                    <div className="hero-num" style={{fontSize:16,color:dy.isToday?C.accent:C.text}}>{dy.dayNum}</div>
+                    <div style={{fontFamily:FN.m,fontSize:8,fontWeight:700,color:dy.hits>0?C.greenBright:C.textDim,marginTop:1,whiteSpace:"nowrap",overflow:"hidden"}}>
+                      {dy.isMonthEndDay?"M\u2022END":dy.isWeekEndDay?"W\u2022END":dy.hits>0?dy.hits:"\u00B7"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:12,marginTop:7}}>
+                <span style={{fontSize:8,color:C.textDim,display:"flex",alignItems:"center",gap:4}}><span style={{width:2,height:9,background:FOCUS_ORANGE_G,display:"inline-block"}}/>Week starts</span>
+                <span style={{fontSize:8,color:C.textDim,display:"flex",alignItems:"center",gap:4}}><span style={{width:2,height:9,background:FOCUS_PURPLE_G,display:"inline-block"}}/>Month starts</span>
+              </div>
+            </div>);})()}
           <div style={{display:"flex",gap:4,marginBottom:16,flexWrap:"wrap"}}>{[{k:"monthly",l:"Monthly"},{k:"weekly",l:"Weekly"},{k:"focus",l:"Focus"},{k:"habits",l:"Habits"}].map(t=>(<button key={t.k} onClick={()=>setGTab(t.k)} className="pill-btn" style={pill(gTab===t.k)}>{t.l}</button>))}</div>
 
           {/* ─── MONTHLY GOALS ─── */}
           {gTab==="monthly"&&<div>
-            {/* Calendar-calibrated month grid — real month length, real reset date */}
-            <div style={{...card,marginBottom:12,padding:"12px 14px"}}>
-              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10}}>
-                <span style={{fontSize:11,fontWeight:800,color:C.text,textTransform:"uppercase",letterSpacing:"0.08em"}}>{calInfo.monthLabel}</span>
-                <span style={{fontSize:9,fontFamily:FN.m,color:calInfo.daysLeftMonth<=3?(C.amber||"#E8A33D"):C.textDim}}>{calInfo.daysLeftMonth===1?"Ends today":`${calInfo.daysLeftMonth}d left`}</span>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
-                {Array.from({length:calInfo.mStart.getDay()}).map((_,i)=><div key={"pad"+i}/>)}
-                {calInfo.monthDays.map(d=>{const hit=Object.keys(checks[d.key]||{}).length>0;return(
-                  <div key={d.key} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:6,
-                    background:d.isToday?C.accent:hit?`${C.greenBright}28`:"transparent",
-                    border:`1px solid ${d.isToday?C.accent:hit?C.greenBright:C.hairline}`,opacity:(!d.isPast&&!d.isToday)?0.5:1}}>
-                    <span style={{fontSize:9,fontFamily:FN.m,fontWeight:700,color:d.isToday?C.btnText:hit?C.greenBright:C.textDim}}>{d.dayNum}</span>
-                  </div>
-                );})}
-              </div>
-            </div>
-            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><button onClick={()=>setShowGoalCreator(true)} className="press" style={btnB}>+ New Monthly Goal</button></div>
+            <button onClick={()=>setShowGoalCreator(true)} className="press" style={{...btnB,width:"100%",padding:"14px 0",fontSize:12,marginBottom:14}}>+ New Monthly Goal</button>
             {aspirations.filter(a=>!a.graduated).length===0&&<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:14}}>No goals yet. What are you working toward?</div>}
             {aspirations.filter(a=>!a.graduated).map(a=>{const p=aspirationProgress.find(x=>x.id===a.id);const pct=p?.pct||0;const typeBadge=a.goalType==="measurable"?"📐":a.goalType==="outcome"?"🎯":"🔄";return(
               <SwipeRow key={a.id} onDelete={()=>removeGoal(a.id)} bg={C.surface} padY={14}>
@@ -3191,27 +3363,10 @@ ${body}
                 </div>);})}</div></>);})()}
               </SwipeRow>
             );})}
-            <button onClick={()=>setShowGoalCreator(true)} style={{width:"100%",background:"transparent",border:`1px dashed ${C.hairline}`,borderRadius:10,padding:14,color:C.textDim,fontSize:11,fontWeight:600,cursor:"pointer",marginTop:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>+ Create a Goal</button>
           </div>}
 
           {/* ─── WEEKLY (auto-derived) ─── */}
           {gTab==="weekly"&&<div>
-            {/* Calendar-calibrated week strip — shows the real Sun–Sat week and when it resets */}
-            <div style={{...card,marginBottom:12,padding:"12px 14px"}}>
-              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10}}>
-                <span style={{fontSize:11,fontWeight:800,color:C.text,textTransform:"uppercase",letterSpacing:"0.08em"}}>{calInfo.weekLabel}</span>
-                <span style={{fontSize:9,fontFamily:FN.m,color:calInfo.daysLeftWeek<=2?(C.amber||"#E8A33D"):C.textDim}}>{calInfo.daysLeftWeek===1?"Resets tomorrow":`Resets in ${calInfo.daysLeftWeek}d`}</span>
-              </div>
-              <div style={{display:"flex",gap:4}}>
-                {calInfo.weekDays.map(d=>{const hit=Object.keys(checks[d.key]||{}).length>0;return(
-                  <div key={d.key} style={{flex:1,textAlign:"center",padding:"6px 2px",borderRadius:8,background:d.isToday?`${C.accent}22`:"transparent",border:d.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,opacity:d.isFuture?0.45:1}}>
-                    <div style={{fontSize:8,fontWeight:700,color:C.textDim,textTransform:"uppercase"}}>{d.label}</div>
-                    <div className="hero-num" style={{fontSize:14,color:d.isToday?C.accent:C.text,lineHeight:1.3}}>{d.dayNum}</div>
-                    <div style={{width:5,height:5,borderRadius:"50%",margin:"3px auto 0",background:hit?C.greenBright:(d.isPast?C.hairline:"transparent")}}/>
-                  </div>
-                );})}
-              </div>
-            </div>
             <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>{!showAddWeekly&&<button onClick={()=>setShowAddWeekly(true)} className="press" style={btnB}>+ New Weekly Goal</button>}</div>
             {showAddWeekly&&<div style={{...card,marginBottom:16}}>
               <input value={nWkText} onChange={e=>setNWkText(e.target.value)} placeholder="e.g. Create Presentation" style={{...inp,marginBottom:10,fontSize:14,fontFamily:FN.h,fontStyle:"italic"}} autoFocus/>
@@ -3502,7 +3657,7 @@ ${body}
         </Overlay>
         {menuTab==="workout"&&<div className="tab-content">
           {/* ═══ HEALTH SUB-NAV ═══ */}
-          <div style={{display:"flex",gap:6,marginBottom:18,overflowX:"auto"}} className="hide-scroll">{[{k:"workouts",l:"My Workouts"},{k:"diet",l:"Diet"},{k:"database",l:"Food Database"},{k:"progress",l:"Progress"}].map(v=>{const on=gView===v.k;return(<button key={v.k} onClick={()=>{setGView(v.k);if(v.k!=="workouts")setGSplit(null);}} style={{flexShrink:0,padding:"8px 18px",borderRadius:22,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:700,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",transition:"all 0.2s ease"}}>{v.l}</button>);})}</div>
+          <div style={{display:"flex",gap:6,marginBottom:18,overflowX:"auto"}} className="hide-scroll">{[{k:"workouts",l:"My Workouts"},{k:"diet",l:"Diet"},{k:"sleep",l:"Sleep"},{k:"database",l:"Food Database"},{k:"progress",l:"Progress"}].map(v=>{const on=gView===v.k;return(<button key={v.k} onClick={()=>{setGView(v.k);if(v.k!=="workouts")setGSplit(null);}} style={{flexShrink:0,padding:"8px 18px",borderRadius:22,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:700,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",transition:"all 0.2s ease"}}>{v.l}</button>);})}</div>
 
           {/* ═══════════ MY WORKOUTS ═══════════ */}
           {gView==="workouts"&&!gSplit&&<div>
@@ -3516,40 +3671,6 @@ ${body}
                     <div style={{fontFamily:FN.m,fontSize:8,fontWeight:700,color:has?clr:C.textDim,marginTop:1,whiteSpace:"nowrap",overflow:"hidden"}}>{label}</div>
                   </div>
                 );})}
-              </div>
-            );})()}
-            {/* ═══ Sleep Score (Garmin — manual entry) ═══ */}
-            {(()=>{const today=sleepFor(now);const maxS=100;return(
-              <div style={{...card,marginBottom:14}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-                  <span style={{...lbl,margin:0}}>Sleep Score</span>
-                  <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>Garmin</span>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:16}}>
-                  <Ring value={today||0} goal={maxS} size={86} stroke={9} color={sleepColor(today)}>
-                    <div style={{fontSize:22,fontWeight:800,color:today==null?C.textDim:C.text,fontFamily:FN.m,lineHeight:1}}>{today==null?"—":today}</div>
-                    <div style={{fontSize:7,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:2}}>{sleepBand(today)}</div>
-                  </Ring>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Tonight's score</div>
-                    <input type="number" inputMode="numeric" min="0" max="100" value={today==null?"":today} onChange={e=>setSleepFor(now,e.target.value)} placeholder="0–100" style={{...inp,width:"100%",fontFamily:FN.m,fontSize:16,textAlign:"center",marginBottom:8}}/>
-                    <div style={{display:"flex",gap:12}}>
-                      <div><div style={{fontSize:15,fontWeight:800,color:sleepColor(sleepStats.avg),fontFamily:FN.m,lineHeight:1}}>{sleepStats.avg??"—"}</div><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>7-day avg</div></div>
-                      <div><div style={{fontSize:15,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1}}>{sleepStats.best??"—"}</div><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>Best</div></div>
-                      <div><div style={{fontSize:15,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1}}>{sleepStats.avgAll??"—"}</div><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>All-time</div></div>
-                    </div>
-                  </div>
-                </div>
-                {/* 7-day bars */}
-                <div style={{display:"flex",alignItems:"flex-end",gap:5,height:56}}>
-                  {sleepStats.days.map(d=>{const h=d.score==null?0:Math.max(4,(d.score/100)*46);return(
-                    <div key={d.key} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-                      <div style={{fontSize:8,fontFamily:FN.m,color:d.score==null?C.textDim:sleepColor(d.score),fontWeight:700}}>{d.score??""}</div>
-                      <div style={{width:"100%",height:h,background:d.score==null?C.surfaceDim:sleepColor(d.score),borderRadius:3,transition:"height 0.4s ease"}}/>
-                      <div style={{fontSize:7,color:C.textDim,textTransform:"uppercase"}}>{d.label}</div>
-                    </div>
-                  );})}
-                </div>
               </div>
             );})()}
             {orderedSplitKeys.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}><button onClick={()=>setSplitReorder(m=>!m)} style={{background:splitReorder?C.accent:"transparent",border:`1px solid ${splitReorder?C.accent:C.hairline}`,color:splitReorder?C.btnText:C.textDim,borderRadius:8,padding:"6px 13px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{splitReorder?"Done":"⇅ Reorder"}</button></div>}
@@ -3936,6 +4057,98 @@ ${body}
               })()}
             </div>);
           })()}
+          {/* ═══════════ SLEEP ═══════════ */}
+          {gView==="sleep"&&(()=>{
+            const sel=sleepFor(vDate);
+            const b=SLEEP_BANDS.find(x=>sel!=null&&sel>=x.min&&sel<=x.max);
+            // 30-day strip
+            const strip=[];for(let i=29;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=dk(d);
+              strip.push({key:k,dayNum:d.getDate(),dayName:d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2),
+                score:typeof sleepLog[k]==="number"?sleepLog[k]:null,isSel:k===vk,isToday:k===dk(now)});}
+            const all=Object.values(sleepLog).filter(v=>typeof v==="number");
+            const avgAll=all.length?Math.round(all.reduce((a,c)=>a+c,0)/all.length):null;
+            const dist=SLEEP_BANDS.map(bd=>({...bd,n:all.filter(v=>v>=bd.min&&v<=bd.max).length}));
+            return(<div>
+              {/* Day-scoped entry */}
+              <div style={{...card,marginBottom:14}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                  <span style={{...lbl,margin:0}}>{isToday?"Last night":fd(vDate)}</span>
+                  <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>Garmin Sleep Score</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:16}}>
+                  <Ring value={sel||0} goal={100} size={96} stroke={10} color={sleepColor(sel)}>
+                    <div style={{fontSize:26,fontWeight:800,color:sel==null?C.textDim:C.text,fontFamily:FN.m,lineHeight:1}}>{sel==null?"\u2014":sel}</div>
+                    <div style={{fontSize:7,color:sleepColor(sel),fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:2}}>{b?b.name:""}</div>
+                  </Ring>
+                  <div style={{flex:1}}>
+                    <input type="number" inputMode="numeric" min="0" max="100" value={sel==null?"":sel} onChange={e=>setSleepFor(vDate,e.target.value)} placeholder="Enter 0\u2013100" style={{...inp,width:"100%",fontFamily:FN.m,fontSize:17,textAlign:"center",marginBottom:8}}/>
+                    {b&&<div style={{fontSize:11,color:C.textSec||C.text,lineHeight:1.5}}>{b.meaning}</div>}
+                    {sel==null&&<div style={{fontSize:11,color:C.textDim,lineHeight:1.5,fontStyle:"italic",fontFamily:FN.h}}>Enter the score from Garmin Connect.</div>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Averages */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
+                {[["7-day",sleepStats.avg],["All-time",avgAll],["Best",sleepStats.best],["Nights",all.length]].map(([l2,v])=>(
+                  <div key={l2} style={{...card,padding:"13px 6px",textAlign:"center"}}>
+                    <div style={{fontSize:19,fontWeight:800,color:l2==="Nights"?C.text:sleepColor(v),fontFamily:FN.m,lineHeight:1}}>{v??"\u2014"}</div>
+                    <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:5}}>{l2}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 30-day trend */}
+              <div style={{...card,marginBottom:14}}>
+                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:12}}>
+                  <span style={{...lbl,margin:0}}>Last 30 Nights</span>
+                  <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>tap a night to edit</span>
+                </div>
+                <div className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",alignItems:"flex-end",paddingBottom:4}}>
+                  {strip.map(d=>{const h=d.score==null?4:Math.max(6,(d.score/100)*70);return(
+                    <div key={d.key} onClick={()=>setVDate(new Date(d.key+"T12:00:00"))} style={{flex:"0 0 30px",display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",opacity:d.isSel?1:0.85}}>
+                      <div style={{fontSize:8,fontFamily:FN.m,fontWeight:700,color:d.score==null?C.textDim:sleepColor(d.score)}}>{d.score??""}</div>
+                      <div style={{width:"100%",height:h,background:d.score==null?C.surfaceDim:sleepColor(d.score),borderRadius:3,border:d.isSel?`1.5px solid ${C.accent}`:"none",transition:"height 0.4s ease"}}/>
+                      <div style={{fontSize:7,color:d.isToday?C.accent:C.textDim,fontWeight:d.isSel?800:400}}>{d.dayNum}</div>
+                    </div>
+                  );})}
+                </div>
+              </div>
+
+              {/* What the number means (Garmin's official bands) */}
+              <div style={{...card,marginBottom:14}}>
+                <div style={{...lbl,marginBottom:4}}>What Your Score Means</div>
+                <div style={{fontSize:10,color:C.textDim,marginBottom:13,lineHeight:1.5}}>Garmin's 0\u2013100 score (Firstbeat Analytics) blends <b>sleep duration</b> vs. the 7\u20139h guideline, <b>sleep quality</b> (light/deep/REM balance, awakenings, restlessness) and <b>overnight recovery</b> from your HRV.</div>
+                {SLEEP_BANDS.map(bd=>{const isYou=sel!=null&&sel>=bd.min&&sel<=bd.max;return(
+                  <div key={bd.name} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 10px",marginBottom:6,borderRadius:9,background:isYou?`${bd.color}1A`:C.surfaceDim,border:`1px solid ${isYou?bd.color:"transparent"}`}}>
+                    <div style={{width:44,flexShrink:0,textAlign:"center"}}>
+                      <div style={{fontSize:12,fontWeight:800,color:bd.color,fontFamily:FN.m,lineHeight:1}}>{bd.min}\u2013{bd.max}</div>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:700,color:bd.color}}>{bd.name}{isYou&&<span style={{fontSize:8,color:C.textDim,marginLeft:6,fontWeight:600}}>\u2190 YOU</span>}</div>
+                      <div style={{fontSize:10,color:C.textDim,lineHeight:1.45,marginTop:2}}>{bd.meaning}</div>
+                    </div>
+                  </div>
+                );})}
+                <div style={{fontSize:9,color:C.textDim,lineHeight:1.5,marginTop:8,fontStyle:"italic",fontFamily:FN.h}}>Garmin's global average is 72, and only ~5% of users average Excellent. A single bad night means little \u2014 the weekly trend is the signal.</div>
+              </div>
+
+              {/* Your distribution */}
+              {all.length>0&&<div style={{...card,marginBottom:14}}>
+                <div style={{...lbl,marginBottom:12}}>Your Nights by Band</div>
+                {dist.map(bd=>{const pct=all.length?Math.round(bd.n/all.length*100):0;return(
+                  <div key={bd.name} style={{marginBottom:9}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{fontSize:11,fontWeight:700,color:bd.color}}>{bd.name}</span>
+                      <span style={{fontSize:10,fontFamily:FN.m,color:C.textDim}}>{bd.n} night{bd.n===1?"":"s"} \u00B7 {pct}%</span>
+                    </div>
+                    <div style={{height:7,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:bd.color,borderRadius:4,transition:"width 0.5s ease"}}/></div>
+                  </div>
+                );})}
+              </div>}
+            </div>);
+          })()}
+
           {/* ═══════════ FOOD DATABASE ═══════════ */}
           {gView==="database"&&(()=>{
             const FOOD_ICONS={protein:"🥩",meat:"🥩",beef:"🥩",steak:"🥩",chicken:"🍗",turkey:"🍗",poultry:"🍗",fish:"🐟",salmon:"🐟",egg:"🥚",eggs:"🥚",dairy:"🥛",milk:"🥛",yogurt:"🥛",cheese:"🧀",fruit:"🍎",apple:"🍎",banana:"🍌",berry:"🫐",vegetable:"🥦",veggie:"🥦",broccoli:"🥦",salad:"🥗",carbs:"🍚",rice:"🍚",bread:"🍞",bagel:"🥯",pasta:"🍝",noodle:"🍝",potato:"🥔",oats:"🥣",oatmeal:"🥣",snack:"🍪",dessert:"🍰",sweet:"🍰",drink:"🥤","fast food":"🍔",burger:"🍔",supplement:"💊",shake:"🥤",coffee:"☕",nut:"🥜"};
