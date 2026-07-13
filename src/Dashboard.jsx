@@ -105,10 +105,10 @@ const FOCUS_ORANGE_G="#FB923C",FOCUS_PURPLE_G="#A78BFA";
 // (vs. the 7-9h guideline, age-adjusted), sleep QUALITY (light/deep/REM balance, awakenings,
 // restlessness) and overnight RECOVERY (HRV / parasympathetic activity).
 const SLEEP_BANDS=[
-  {name:"Excellent",min:90,max:100,color:"#22C55E",meaning:"Restorative sleep \u2014 good duration, healthy stage balance and strong HRV recovery. Rare: only ~5% of Garmin users average here. Green light to train hard."},
+  {name:"Excellent",min:90,max:100,color:"#22C55E",meaning:"Restorative sleep — good duration, healthy stage balance and strong HRV recovery. Rare: only ~5% of Garmin users average here. Green light to train hard."},
   {name:"Good",min:80,max:89,color:"#84CC16",meaning:"Solid, above-average night. Your body recovered well. Normal training load is fine."},
-  {name:"Fair",min:60,max:79,color:"#F59E0B",meaning:"The most common range (global average is 72). Sleep was adequate but not restorative \u2014 short, fragmented, or stage-skewed. Moderate training; consider trimming intensity 10\u201320%."},
-  {name:"Poor",min:0,max:59,color:"#EF4444",meaning:"Significantly compromised \u2014 too short, heavily fragmented, or low HRV recovery. Common causes: alcohol, late training, illness, stress. Prioritise recovery over intensity."},
+  {name:"Fair",min:60,max:79,color:"#F59E0B",meaning:"The most common range (global average is 72). Sleep was adequate but not restorative — short, fragmented, or stage-skewed. Moderate training; consider trimming intensity 10–20%."},
+  {name:"Poor",min:0,max:59,color:"#EF4444",meaning:"Significantly compromised — too short, heavily fragmented, or low HRV recovery. Common causes: alcohol, late training, illness, stress. Prioritise recovery over intensity."},
 ];
 const CSS=`
 @keyframes checkStamp{0%{transform:scale(0.6);opacity:0}50%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:1}}
@@ -131,6 +131,43 @@ const CSS=`
 .perfect-crown{position:absolute;top:1px;right:2px;z-index:3;font-size:7px;line-height:1;color:#FBE9A8;text-shadow:0 0 4px rgba(232,196,106,0.9)}
 @keyframes goalComplete{0%{transform:scale(1);opacity:1}35%{transform:scale(1.03)}70%{opacity:1}100%{transform:scale(0.97);opacity:0;max-height:0;margin-bottom:0}}
 .goal-completing{animation:goalComplete 0.75s cubic-bezier(0.4,0,0.2,1) forwards;overflow:hidden}
+
+/* WEEKLY complete — a teal light sweeps across, the card lifts, then files itself away to the right. */
+@keyframes weeklyDone{0%{transform:translateX(0) scale(1);opacity:1}
+  18%{transform:translateX(0) scale(1.025)}
+  55%{transform:translateX(0) scale(1);opacity:1}
+  100%{transform:translateX(34px) scale(0.95);opacity:0;max-height:0;margin-bottom:0;padding-top:0;padding-bottom:0}}
+@keyframes weeklySweep{0%{transform:translateX(-120%) skewX(-16deg);opacity:0}
+  25%{opacity:1}70%{opacity:1}100%{transform:translateX(260%) skewX(-16deg);opacity:0}}
+.weekly-done{position:relative;overflow:hidden;isolation:isolate;
+  animation:weeklyDone 0.95s cubic-bezier(0.34,1.2,0.44,1) forwards;
+  box-shadow:0 0 0 1px rgba(52,226,155,0.7),0 6px 20px -6px rgba(52,226,155,0.45)}
+.weekly-done::after{content:"";position:absolute;top:0;bottom:0;width:45%;z-index:3;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(52,226,155,0.55),transparent);
+  animation:weeklySweep 0.85s ease-out forwards}
+
+/* MONTHLY complete — the big one. Gold ignites from the centre, the card swells, then collapses. */
+@keyframes monthlyDone{0%{transform:scale(1);opacity:1}
+  14%{transform:scale(1.06)}
+  30%{transform:scale(1.02)}
+  62%{transform:scale(1.03);opacity:1}
+  100%{transform:scale(0.9);opacity:0;max-height:0;margin-bottom:0;padding-top:0;padding-bottom:0}}
+@keyframes goldIgnite{0%{opacity:0;transform:scale(0.4)}
+  22%{opacity:1;transform:scale(1)}
+  70%{opacity:0.85;transform:scale(1.05)}
+  100%{opacity:0;transform:scale(1.25)}}
+@keyframes goldRays{0%{opacity:0;transform:rotate(0deg) scale(0.6)}
+  30%{opacity:0.9}100%{opacity:0;transform:rotate(38deg) scale(1.5)}}
+.monthly-done{position:relative;overflow:hidden;isolation:isolate;
+  animation:monthlyDone 1.15s cubic-bezier(0.34,1.15,0.4,1) forwards;
+  box-shadow:0 0 0 1px rgba(232,196,106,0.9),0 8px 28px -6px rgba(232,196,106,0.5)}
+.monthly-done::before{content:"";position:absolute;inset:-40%;z-index:2;pointer-events:none;
+  background:conic-gradient(from 0deg,transparent 0deg,rgba(251,233,168,0.55) 12deg,transparent 24deg,transparent 45deg,rgba(251,233,168,0.5) 57deg,transparent 69deg,transparent 90deg,rgba(251,233,168,0.55) 102deg,transparent 114deg,transparent 135deg,rgba(251,233,168,0.5) 147deg,transparent 159deg,transparent 180deg,rgba(251,233,168,0.55) 192deg,transparent 204deg,transparent 225deg,rgba(251,233,168,0.5) 237deg,transparent 249deg,transparent 270deg,rgba(251,233,168,0.55) 282deg,transparent 294deg,transparent 315deg,rgba(251,233,168,0.5) 327deg,transparent 339deg);
+  animation:goldRays 1.05s ease-out forwards}
+.monthly-done::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(circle at 50% 50%,rgba(251,233,168,0.85) 0%,rgba(232,196,106,0.45) 32%,transparent 68%);
+  animation:goldIgnite 1.05s ease-out forwards}
+.monthly-done>*{position:relative;z-index:3}
 .focus-grid{display:grid;grid-template-columns:1fr;gap:14px}
 @media(min-width:760px){.focus-grid{grid-template-columns:1.7fr 1fr;align-items:start}.focus-grid>.fg-main{grid-row:1/span 2}}
 @keyframes rowDim{0%{background:rgba(245,158,11,0.12)}100%{background:transparent}}
@@ -804,6 +841,8 @@ export default function Dashboard(){
   const dietCalRef=useRef(null);
   const wkCalRef=useRef(null);
   const goalCalRef=useRef(null);
+  const sleepCalRef=useRef(null);
+  useEffect(()=>{if(gView==="sleep"&&sleepCalRef.current)sleepCalRef.current.scrollLeft=sleepCalRef.current.scrollWidth;},[gView]);
   useEffect(()=>{if(tab==="goals"&&goalCalRef.current){goalCalRef.current.scrollLeft=goalCalRef.current.scrollWidth;}},[tab,gTab]);
   useEffect(()=>{if(menuTab==="workout"&&gView==="workouts"&&!gSplit&&wkCalRef.current){wkCalRef.current.scrollLeft=wkCalRef.current.scrollWidth;}},[menuTab,gView,gSplit]);
 
@@ -1065,9 +1104,9 @@ export default function Dashboard(){
     return{id:a.id,text:a.text,kind:"action",actionText:a.dailyAction||(a.goalType==="measurable"?`${a.text} — study session`:a.text),implementationIntention:a.implementationIntention,complete:hit};
   }).filter(g=>!g.complete),[aspirations,checks,now]);
 
-  const toggleWeeklyStep=(goalId,stepId)=>{const g=wGoals.find(x=>x.id===goalId);const s=g&&(g.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setWGoals(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&g){const after=(g.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId);}};
-  const setWeeklyCount=(goalId,newCount)=>{const g=wGoals.find(x=>x.id===goalId);if(!g)return;const tgt=g.target||1;const nc=Math.max(0,Math.min(tgt,newCount));logFocusCompletion(nc-(g.current||0));setWGoals(p=>p.map(x=>x.id===goalId?{...x,current:nc}:x));if(nc>=tgt&&(g.current||0)<tgt)completeGoalAnim(goalId);};
-  const toggleMonthlyStep=(goalId,stepId)=>{const a=aspirations.find(x=>x.id===goalId);const s=a&&(a.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setAspirations(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&a){const after=(a.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId);}};
+  const toggleWeeklyStep=(goalId,stepId)=>{const g=wGoals.find(x=>x.id===goalId);const s=g&&(g.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setWGoals(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&g){const after=(g.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId,"weekly");}};
+  const setWeeklyCount=(goalId,newCount)=>{const g=wGoals.find(x=>x.id===goalId);if(!g)return;const tgt=g.target||1;const nc=Math.max(0,Math.min(tgt,newCount));logFocusCompletion(nc-(g.current||0));setWGoals(p=>p.map(x=>x.id===goalId?{...x,current:nc}:x));if(nc>=tgt&&(g.current||0)<tgt)completeGoalAnim(goalId,"weekly");};
+  const toggleMonthlyStep=(goalId,stepId)=>{const a=aspirations.find(x=>x.id===goalId);const s=a&&(a.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setAspirations(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&a){const after=(a.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId,"monthly");}};
   const toggleMonthlyAction=(goalId)=>{const on=!!(checks[dk(now)]||{})[goalId];if(!on)flashChecked(goalId);setChecks(p=>({...p,[dk(now)]:{...(p[dk(now)]||{}),[goalId]:!on}}));logFocusCompletion(on?-1:1);if(!on)celebrateGoal();};
 
   // Graduation check — runs when aspirationProgress updates
@@ -2097,10 +2136,19 @@ ${body}
     setChecks(p=>({...p,[key]:{...(p[key]||{}),[t.id]:!on}}));
   };
   // ── #1/#7 Goal completion: same animation as focus tasks, then remove from the active list ──
-  const completeGoalAnim=(id,after)=>{
-    setCompletingGoal(p=>({...p,[id]:true}));
+  const completeGoalAnim=(id,kind,after)=>{
+    setCompletingGoal(p=>({...p,[id]:kind||"weekly"}));
     celebrateGoal();
-    setTimeout(()=>{ setCompletingGoal(p=>{const c={...p};delete c[id];return c;}); if(after)after(); },760);
+    const dur=kind==="monthly"?1200:1000;
+    setTimeout(()=>{ setCompletingGoal(p=>{const c={...p};delete c[id];return c;}); if(after)after(); },dur);
+  };
+  // A goal is "done" when it hits 100%. Done goals leave the active list and move to Completed.
+  const isWeeklyDone=(g)=>{const st=g.steps||[];return st.length?st.every(x=>x.done):(g.target>0&&(g.current||0)>=g.target);};
+  const isMonthlyDone=(a)=>{
+    if(a.goalType==="measurable")return (Number(a.totalHours)||0)>0&&(Number(a.hoursLogged)||0)>=(Number(a.totalHours)||0);
+    const st=a.steps||[];if(st.length)return st.every(x=>x.done);
+    if(a.goalType==="check")return !!a.done;
+    return false;
   };
   // ── CALENDAR-CALIBRATED PERIODS ──
   // Weekly goals live inside a real Sun–Sat week; monthly goals inside a real calendar month.
@@ -2124,7 +2172,7 @@ ${body}
     for(let i=1;i<=mEnd.getDate();i++){const d=new Date(now.getFullYear(),now.getMonth(),i);
       monthDays.push({key:dk(d),dayNum:i,isToday:dk(d)===dk(now),isPast:d<new Date(dk(now)+"T00:00:00")});}
     return{wStart,wEnd,mStart,mEnd,daysLeftWeek,daysLeftMonth,weekDays,monthDays,
-      weekLabel:`${wStart.toLocaleDateString("en-US",{month:"short",day:"numeric"})} \u2013 ${wEnd.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`,
+      weekLabel:`${wStart.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${wEnd.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`,
       monthLabel:now.toLocaleDateString("en-US",{month:"long",year:"numeric"})};
   },[now]);
   // ROLLOVER — idempotent: only writes when the calendar period ACTUALLY changed.
@@ -2217,7 +2265,7 @@ ${body}
     const total=Number(a.totalHours)||0;
     const next=Math.max(0,Math.round(((Number(a.hoursLogged)||0)+delta)*10)/10);
     const capped=total>0?Math.min(total,next):next;
-    if(total>0&&capped>=total&&(Number(a.hoursLogged)||0)<total)celebrateGoal();
+    if(total>0&&capped>=total&&(Number(a.hoursLogged)||0)<total)completeGoalAnim(id,"monthly");
     return{...a,hoursLogged:capped};
   }));
 
@@ -2539,7 +2587,7 @@ ${body}
           <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:440,background:C.surface,borderRadius:"20px 20px 0 0",padding:"22px 20px 28px",maxHeight:"86vh",overflowY:"auto"}}>
             <div style={{...lbl,marginBottom:6}}>Carry into {c.kind==="month"?monthName:"next week"}</div>
             <div style={{fontSize:13,color:C.textSec||C.text,lineHeight:1.5,marginBottom:16}}>
-              <b>{c.goal.text}</b> \u2014 <b>{c.remaining}{c.kind==="month"?"h":""}</b> remaining.
+              <b>{c.goal.text}</b> — <b>{c.remaining}{c.kind==="month"?"h":""}</b> remaining.
               {c.kind==="month"&&<> Spread evenly that's <b>{evenPerDay}h/day</b> across {days} days.</>}
             </div>
             {c.kind==="month"?(<>
@@ -2548,7 +2596,7 @@ ${body}
                 {[evenPerDay,Math.round(evenPerDay*1.5*10)/10,Math.round(evenPerDay*2*10)/10].filter((v,i,arr)=>v>0&&arr.indexOf(v)===i).map(v=>(
                   <button key={v} onClick={()=>answerCarry(c,"carried",v)} className="press" style={{flex:1,minWidth:90,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,padding:"12px 8px",cursor:"pointer",fontFamily:FN.b}}>
                     <div style={{fontSize:17,fontWeight:800,color:C.accent,fontFamily:FN.m,lineHeight:1}}>{v}h</div>
-                    <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:4}}>per day \u00B7 {Math.ceil(c.remaining/v)}d</div>
+                    <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:4}}>per day · {Math.ceil(c.remaining/v)}d</div>
                   </button>
                 ))}
               </div>
@@ -2615,7 +2663,7 @@ ${body}
           {k:"food",l:"Eaten",v:`${calEaten}`,c:MACRO.calories.color,pct:calGoal?Math.min(100,calEaten/calGoal*100):0,go:goDiet},
           {k:"water",l:"Water",v:`${water}`,c:MACRO.water.color,pct:waterGoal?Math.min(100,water/waterGoal*100):0,go:goDiet},
           {k:"workout",l:"Workout",v:wVal,c:workedOut?C.green:C.textDim,pct:workedOut?100:0,go:()=>{setMenuTab("workout");setGView("workouts");setTab(null);}},
-          {k:"sleep",l:"Sleep",v:(daySleep==null?"\u2014":String(daySleep)),c:sleepColor(daySleep),pct:daySleep==null?0:Math.min(100,daySleep),go:()=>{setMenuTab("workout");setGView("sleep");setTab(null);}},
+          {k:"sleep",l:"Sleep",v:(daySleep==null?"—":String(daySleep)),c:sleepColor(daySleep),pct:daySleep==null?0:Math.min(100,daySleep),go:()=>{setMenuTab("workout");setGView("sleep");setTab(null);}},
         ];return(
           <div style={{display:"flex",gap:5,padding:"7px 10px 3px"}}>{tiles.map(t=>{const perf=t.k==="tasks"&&isPerfect(dayPct);return(
             <div key={t.k} onClick={t.go||undefined} className={`${t.go?"press":""}${perf?" perfect-day":""}`} style={{flex:1,minWidth:0,background:perf?perfectBg:C.surfaceDim,borderRadius:10,padding:"9px 7px",cursor:t.go?"pointer":"default"}}>
@@ -2780,7 +2828,7 @@ ${body}
               const total=goal.total!=null?goal.total:(goal.target!=null?goal.target:0);
               const pct=total>0?Math.round(Math.min(100,done/total*100)):0;
               const complete=total>0&&pct>=100;
-              return(<div className={completingGoal[goal.id]?"goal-completing":""} style={{marginBottom:8,borderRadius:12,background:C.surface,border:`1px solid ${complete?color:C.hairline}`,borderLeft:`3px solid ${color}`,overflow:"hidden",transition:"border-color 0.3s ease"}}>
+              return(<div className={completingGoal[goal.id]==="monthly"?"monthly-done":completingGoal[goal.id]?"weekly-done":""} style={{marginBottom:8,borderRadius:12,background:C.surface,border:`1px solid ${complete?color:C.hairline}`,borderLeft:`3px solid ${color}`,overflow:"hidden",transition:"border-color 0.3s ease"}}>
                 <div onClick={()=>setFocusCollapsed(p=>({...p,[goal.id]:!p[goal.id]}))} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",cursor:"pointer"}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:9,fontFamily:FN.m,color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>{badge}</div>
@@ -2832,9 +2880,9 @@ ${body}
                 <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color:FOCUS_PURPLE,textTransform:"uppercase",letterSpacing:"0.12em"}}>From your goals</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{goalFocusTasks.length}</span></div>
                 {goalFocusTasks.map(t=>{const done=!!(checks[dk(now)]||{})[t.id];const flash=justChecked[t.id];return(
                   <div key={t.id} onClick={()=>toggleGoalTask(t)} className={`task-row${flash?" just-checked":""}`} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${FOCUS_PURPLE}`,cursor:"pointer"}}>
-                    <div style={{width:20,height:20,borderRadius:4,flexShrink:0,border:`1.5px solid ${done?C.greenBright:C.textDim}`,background:done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:11,fontWeight:800,animation:flash?"checkStamp 0.4s ease":"none"}}>{done&&"\u2713"}</div>
+                    <div style={{width:20,height:20,borderRadius:4,flexShrink:0,border:`1.5px solid ${done?C.greenBright:C.textDim}`,background:done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:11,fontWeight:800,animation:flash?"checkStamp 0.4s ease":"none"}}>{done&&"✓"}</div>
                     <div style={{flex:1,minWidth:0}}>
-                      <span style={{fontSize:9,fontFamily:FN.m,color:FOCUS_PURPLE,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Goal \u00B7 {t.hours}h today</span>
+                      <span style={{fontSize:9,fontFamily:FN.m,color:FOCUS_PURPLE,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Goal · {t.hours}h today</span>
                       <div style={{position:"relative",fontSize:14,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:done?C.textDim:C.text}}>{t.text}<span style={{position:"absolute",left:0,top:"52%",height:1.5,width:"100%",background:C.green,transformOrigin:"left center",transform:done&&!flash?"scaleX(1)":"scaleX(0)",animation:flash?"strikeSweep 0.32s ease forwards":"none",opacity:done?1:0}}/></div>
                       <div style={{marginTop:6,display:"flex",alignItems:"center",gap:7}}><div style={{flex:1,height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${t.pct}%`,background:t.pct>=100?C.greenBright:FOCUS_PURPLE,borderRadius:2,transition:"width 0.45s ease"}}/></div><span style={{fontSize:9,fontFamily:FN.m,color:C.textDim,fontWeight:700}}>{t.done}/{t.total}h</span></div>
                     </div>
@@ -3089,7 +3137,7 @@ ${body}
 
               {/* Headline numbers */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
-                {[["Avg",avg,sleepColor(avg)],["Best",best,sleepColor(best)],["Worst",worst,sleepColor(worst)],["Variance","\u00B1"+sd,C.textDim]].map(([l2,v,clr])=>(
+                {[["Avg",avg,sleepColor(avg)],["Best",best,sleepColor(best)],["Worst",worst,sleepColor(worst)],["Variance","±"+sd,C.textDim]].map(([l2,v,clr])=>(
                   <div key={l2} style={{background:C.surfaceDim,borderRadius:9,padding:"10px 4px",textAlign:"center"}}>
                     <div style={{fontSize:19,fontWeight:800,color:clr,fontFamily:FN.m,lineHeight:1}}>{v}</div>
                     <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:4}}>{l2}</div>
@@ -3111,7 +3159,7 @@ ${body}
                 </ResponsiveContainer>
               </div>
               <div style={{fontSize:10,color:vsGarmin>=0?C.greenBright:(C.amber||"#E8A33D"),fontFamily:FN.m,marginBottom:14}}>
-                You average <b>{avg}</b> \u2014 {vsGarmin>=0?`${vsGarmin} above`:`${Math.abs(vsGarmin)} below`} Garmin's global average of 72.
+                You average <b>{avg}</b> — {vsGarmin>=0?`${vsGarmin} above`:`${Math.abs(vsGarmin)} below`} Garmin's global average of 72.
               </div>
 
               {/* Band distribution */}
@@ -3142,7 +3190,7 @@ ${body}
                 <div style={{fontSize:10,color:C.textDim,lineHeight:1.5,marginTop:9,fontStyle:"italic",fontFamily:FN.h}}>
                   {Math.abs(trainAvg-restAvg)<3?"Training days and rest days score about the same for you."
                     :trainAvg>restAvg?`You sleep ${trainAvg-restAvg} points better on days you train.`
-                    :`You sleep ${restAvg-trainAvg} points worse on days you train \u2014 late or intense sessions can suppress overnight recovery.`}
+                    :`You sleep ${restAvg-trainAvg} points worse on days you train — late or intense sessions can suppress overnight recovery.`}
                 </div>
               </div>}
             </div>);
@@ -3226,21 +3274,54 @@ ${body}
             </div>
           </div>
 
-          {/* Photo Progress — horizontal scroll like calendar */}
-          <div style={{...card,marginBottom:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div style={{fontSize:13,fontWeight:700}}>Photo Progress</div>
-              <div style={{fontSize:11,color:C.textDim}}>📸 {allPhotos.length} · 🔥 {photoStreak}d</div>
-            </div>
-            {allPhotos.length===0?<div style={{textAlign:"center",padding:20,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>No proof yet — start tracking your progress.</div>:
-            <div className="hide-scroll" style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
-              {allPhotos.map((p,i)=>(<div key={i} style={{flex:"0 0 88px",width:88}}>
-                <div style={{width:88,height:88,borderRadius:12,overflow:"hidden",background:C.surfaceDim,position:"relative"}}>{p.img?<img src={p.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📸</div>}</div>
-                <div style={{fontSize:9,color:C.textDim,marginTop:4,textAlign:"center",fontWeight:600}}>{fd(p.date)}</div>
-                <div style={{fontSize:8,color:C.textDim,textAlign:"center",marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.taskName}</div>
-              </div>))}
-            </div>}
-          </div>
+          {/* Sleep Score — replaces the old photo strip */}
+          {(()=>{
+            const strip=[];for(let i=13;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=dk(d);
+              strip.push({key:k,label:d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,1),dayNum:d.getDate(),
+                score:typeof sleepLog[k]==="number"?sleepLog[k]:null});}
+            const vals=strip.filter(x=>x.score!=null).map(x=>x.score);
+            const avg=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):null;
+            const all=Object.values(sleepLog).filter(v=>typeof v==="number");
+            const avgAll=all.length?Math.round(all.reduce((a,b)=>a+b,0)/all.length):null;
+            const trend=(()=>{const h=vals.slice(-7),p=vals.slice(-14,-7);
+              if(h.length<2||p.length<2)return null;
+              const a1=h.reduce((a,b)=>a+b,0)/h.length,a2=p.reduce((a,b)=>a+b,0)/p.length;
+              return Math.round(a1-a2);})();
+            // Streak of nights at or above Garmin's global average (72)
+            let streak=0;for(let i=strip.length-1;i>=0;i--){if(strip[i].score!=null&&strip[i].score>=72)streak++;else if(strip[i].score!=null)break;}
+            return(
+            <div style={{...card,marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <div style={{fontSize:13,fontWeight:700}}>Sleep Score</div>
+                <div style={{fontSize:11,color:C.textDim,fontFamily:FN.m}}>
+                  {avg!=null?<>14d avg <b style={{color:sleepColor(avg)}}>{avg}</b></>:"No data yet"}
+                  {streak>0&&<> · 🔥 {streak}d</>}
+                </div>
+              </div>
+              {vals.length===0
+                ?<div style={{textAlign:"center",padding:20,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:12}}>Log a Garmin sleep score in Health → Sleep to see it here.</div>
+                :<>
+                <div style={{display:"flex",alignItems:"flex-end",gap:3,height:66,marginBottom:10}}>
+                  {strip.map(d=>{const h=d.score==null?0:Math.max(5,(d.score/100)*52);return(
+                    <div key={d.key} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <div style={{fontSize:7,fontFamily:FN.m,fontWeight:700,color:d.score==null?"transparent":sleepColor(d.score)}}>{d.score??"0"}</div>
+                      <div title={d.score==null?"no data":String(d.score)} style={{width:"100%",height:h,background:d.score==null?C.surfaceDim:sleepColor(d.score),borderRadius:3,transition:"height 0.4s ease"}}/>
+                      <div style={{fontSize:7,color:C.textDim}}>{d.label}</div>
+                    </div>
+                  );})}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,paddingTop:10,borderTop:`1px solid ${C.hairline}`}}>
+                  {[["14-day",avg,sleepColor(avg)],["All-time",avgAll,sleepColor(avgAll)],
+                    ["vs last wk",trend==null?"—":(trend>0?`+${trend}`:String(trend)),trend==null?C.textDim:trend>=0?C.greenBright:C.red]].map(([l2,v,clr])=>(
+                    <div key={l2} style={{textAlign:"center"}}>
+                      <div style={{fontSize:17,fontWeight:800,color:clr,fontFamily:FN.m,lineHeight:1}}>{v??"—"}</div>
+                      <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:4}}>{l2}</div>
+                    </div>
+                  ))}
+                </div>
+                </>}
+            </div>);
+          })()}
 
           {/* Recent Reflections */}
           {Object.keys(reflections).length>0&&<div style={{...card,marginBottom:14}}>
@@ -3293,7 +3374,7 @@ ${body}
                 <span style={{fontSize:11,fontWeight:800,color:C.text,textTransform:"uppercase",letterSpacing:"0.08em"}}>{calInfo.monthLabel}</span>
                 <span style={{fontSize:9,fontFamily:FN.m,color:C.textDim}}>
                   <span style={{color:calInfo.daysLeftWeek<=2?(C.amber||"#E8A33D"):C.textDim}}>Week resets in {calInfo.daysLeftWeek}d</span>
-                  {" \u00B7 "}
+                  {" · "}
                   <span style={{color:calInfo.daysLeftMonth<=3?(C.amber||"#E8A33D"):C.textDim}}>Month in {calInfo.daysLeftMonth}d</span>
                 </span>
               </div>
@@ -3307,7 +3388,7 @@ ${body}
                     <div style={{fontSize:9,fontWeight:600,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{dy.dayName}</div>
                     <div className="hero-num" style={{fontSize:16,color:dy.isToday?C.accent:C.text}}>{dy.dayNum}</div>
                     <div style={{fontFamily:FN.m,fontSize:8,fontWeight:700,color:dy.hits>0?C.greenBright:C.textDim,marginTop:1,whiteSpace:"nowrap",overflow:"hidden"}}>
-                      {dy.isMonthEndDay?"M\u2022END":dy.isWeekEndDay?"W\u2022END":dy.hits>0?dy.hits:"\u00B7"}
+                      {dy.isMonthEndDay?"M•END":dy.isWeekEndDay?"W•END":dy.hits>0?dy.hits:"·"}
                     </div>
                   </div>
                 ))}
@@ -3323,14 +3404,14 @@ ${body}
           {gTab==="monthly"&&<div>
             <button onClick={()=>setShowGoalCreator(true)} className="press" style={{...btnB,width:"100%",padding:"14px 0",fontSize:12,marginBottom:14}}>+ New Monthly Goal</button>
             {aspirations.filter(a=>!a.graduated).length===0&&<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:14}}>No goals yet. What are you working toward?</div>}
-            {aspirations.filter(a=>!a.graduated).map(a=>{const p=aspirationProgress.find(x=>x.id===a.id);const pct=p?.pct||0;const typeBadge=a.goalType==="measurable"?"📐":a.goalType==="outcome"?"🎯":"🔄";return(
+            {aspirations.filter(a=>!a.graduated&&(!isMonthlyDone(a)||completingGoal[a.id])).map(a=>{const p=aspirationProgress.find(x=>x.id===a.id);const pct=p?.pct||0;const typeBadge=a.goalType==="measurable"?"📐":a.goalType==="outcome"?"🎯":"🔄";return(
               <SwipeRow key={a.id} onDelete={()=>removeGoal(a.id)} bg={C.surface} padY={14}>
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:a.goalType==="habit"||a.goalType==="measurable"?8:0}}>
                   <span style={{fontSize:14}}>{typeBadge}</span>
                   <div style={{flex:1}}>
                     <div style={{fontSize:14,fontWeight:600,color:C.text}}>{a.text}</div>
                     <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:2}}>
-                      {a.goalType==="measurable"&&(()=>{const pl=goalPlan[a.id];return pl?`${pl.done}/${pl.total}h \u00B7 ${pl.pct}%`:`${a.hoursLogged||0}/${a.totalHours}h`;})()}
+                      {a.goalType==="measurable"&&(()=>{const pl=goalPlan[a.id];return pl?`${pl.done}/${pl.total}h · ${pl.pct}%`:`${a.hoursLogged||0}/${a.totalHours}h`;})()}
                       {a.goalType==="outcome"&&`${(a.steps||[]).filter(s=>s.done).length}/${(a.steps||[]).length} steps`}
                       {a.goalType==="habit"&&`${p?.daysHit||0}/${a.targetDays} days · ${p?.onPace?"on pace":"behind"}`}
                     </div>
@@ -3352,7 +3433,7 @@ ${body}
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
                       <span style={{fontSize:9,color:pl.onPace?C.greenBright:(C.amber||"#E8A33D"),fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",flex:1}}>{pl.onPace?"On pace":`Behind by ${pl.behindBy}h`}</span>
                       {[0.5,1,2].map(h=>(<button key={h} onClick={()=>logGoalHours(a.id,h)} className="press" style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 9px",fontSize:10,fontWeight:700,color:C.text,fontFamily:FN.m,cursor:"pointer"}}>+{h}h</button>))}
-                      <button onClick={()=>logGoalHours(a.id,-0.5)} className="press" style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 8px",fontSize:10,fontWeight:700,color:C.textDim,fontFamily:FN.m,cursor:"pointer"}}>\u2212</button>
+                      <button onClick={()=>logGoalHours(a.id,-0.5)} className="press" style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 8px",fontSize:10,fontWeight:700,color:C.textDim,fontFamily:FN.m,cursor:"pointer"}}>−</button>
                     </div>
                   </div>
                 );})()}
@@ -3363,6 +3444,19 @@ ${body}
                 </div>);})}</div></>);})()}
               </SwipeRow>
             );})}
+            {(()=>{const done=aspirations.filter(a=>!a.graduated&&isMonthlyDone(a)&&!completingGoal[a.id]);if(done.length===0)return null;return(<>
+              <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color:GOLD,textTransform:"uppercase",letterSpacing:"0.12em"}}>Completed this month</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{done.length}</span></div>
+              {done.map(a=>(
+                <div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:6,borderRadius:10,background:C.surfaceDim,border:`1px solid ${GOLD}44`,borderLeft:`3px solid ${GOLD}`,opacity:0.85}}>
+                  <span style={{color:GOLD,fontSize:13,fontWeight:800}}>✦</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12.5,color:C.textDim,textDecoration:"line-through"}}>{a.text}</div>
+                    {a.goalType==="measurable"&&<div style={{fontSize:9,color:GOLD,fontFamily:FN.m,marginTop:2}}>{a.hoursLogged}/{a.totalHours}h complete</div>}
+                  </div>
+                  <button onClick={()=>removeGoal(a.id)} title="Delete" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 5px"}}>🗑</button>
+                </div>
+              ))}
+            </>);})()}
           </div>}
 
           {/* ─── WEEKLY (auto-derived) ─── */}
@@ -3379,7 +3473,7 @@ ${body}
             </div>}
 
             {wGoals.length===0&&!showAddWeekly&&<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>No weekly goals yet — create one above.</div>}
-            {wGoals.map(g=>{
+            {wGoals.filter(g=>!isWeeklyDone(g)||completingGoal[g.id]).map(g=>{
               const active=weeklyActiveStep(g);
               const hasSteps=g.steps&&g.steps.length>0;
               const pct=hasSteps?Math.round((g.steps.filter(s=>s.done).length/g.steps.length)*100):Math.min(100,((g.current||0)/(g.target||1))*100);
@@ -3388,7 +3482,8 @@ ${body}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <span style={{fontSize:13,fontWeight:600,color:C.text}}>{g.text}</span>
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                    {!hasSteps&&<button onClick={()=>openGoalEdit(g,"weekly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px"}}>edit</button>}
+                    <button onClick={()=>openGoalEdit(g,"weekly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px"}}>edit</button>
+                    <button onClick={()=>{if(window.confirm(`Delete "${g.text}"?`))setWGoals(p=>p.filter(x=>x.id!==g.id));}} title="Delete" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 5px"}}>🗑</button>
                     {hasSteps?<span style={{fontFamily:FN.m,fontSize:11,fontWeight:700,color:C.accent}}>{pct}%</span>:<>
                       <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?{...x,current:Math.max(0,(x.current||0)-1)}:x))} style={{...btnG,padding:"3px 10px",fontSize:12}}>−</button>
                       <span style={{fontFamily:FN.m,fontSize:12,fontWeight:700,minWidth:40,textAlign:"center"}}>{g.current||0}/{g.target}</span>
@@ -3400,6 +3495,17 @@ ${body}
                 <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",marginTop:4}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:C.accent,borderRadius:2,transition:"width 0.5s ease"}}/></div>
               </SwipeRow>
             );})}
+            {(()=>{const done=wGoals.filter(g=>isWeeklyDone(g)&&!completingGoal[g.id]);if(done.length===0)return null;return(<>
+              <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color:C.greenBright,textTransform:"uppercase",letterSpacing:"0.12em"}}>Completed</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{done.length}</span></div>
+              {done.map(g=>(
+                <div key={g.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",marginBottom:6,borderRadius:10,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${C.greenBright}`,opacity:0.75}}>
+                  <span style={{color:C.greenBright,fontSize:13,fontWeight:800}}>✓</span>
+                  <span style={{flex:1,fontSize:12.5,color:C.textDim,textDecoration:"line-through"}}>{g.text}</span>
+                  <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?((x.steps||[]).length?{...x,steps:x.steps.map(st=>({...st,done:false}))}:{...x,current:0}):x))} title="Reopen" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,padding:"2px 5px"}}>↺</button>
+                  <button onClick={()=>{if(window.confirm(`Delete "${g.text}"?`))setWGoals(p=>p.filter(x=>x.id!==g.id));}} title="Delete" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 5px"}}>🗑</button>
+                </div>
+              ))}
+            </>);})()}
 
             {/* Auto-derived weekly pacing forecast from monthly goals (read-only — these steps are completed via the Monthly goal itself) */}
             {weeklyTargets.length>0&&<div style={{marginTop:20}}><div style={{...lbl,marginBottom:8}}>Weekly Pace — from Monthly Goals</div>
@@ -4061,91 +4167,80 @@ ${body}
           {gView==="sleep"&&(()=>{
             const sel=sleepFor(vDate);
             const b=SLEEP_BANDS.find(x=>sel!=null&&sel>=x.min&&sel<=x.max);
-            // 30-day strip
             const strip=[];for(let i=29;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=dk(d);
-              strip.push({key:k,dayNum:d.getDate(),dayName:d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2),
+              strip.push({key:k,date:d,dayNum:d.getDate(),dayName:d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2),
                 score:typeof sleepLog[k]==="number"?sleepLog[k]:null,isSel:k===vk,isToday:k===dk(now)});}
             const all=Object.values(sleepLog).filter(v=>typeof v==="number");
             const avgAll=all.length?Math.round(all.reduce((a,c)=>a+c,0)/all.length):null;
+            const last7=strip.slice(-7).filter(x=>x.score!=null).map(x=>x.score);
+            const avg7=last7.length?Math.round(last7.reduce((a,c)=>a+c,0)/last7.length):null;
+            const best=all.length?Math.max(...all):null;
             const dist=SLEEP_BANDS.map(bd=>({...bd,n:all.filter(v=>v>=bd.min&&v<=bd.max).length}));
             return(<div>
-              {/* Day-scoped entry */}
-              <div style={{...card,marginBottom:14}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-                  <span style={{...lbl,margin:0}}>{isToday?"Last night":fd(vDate)}</span>
-                  <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>Garmin Sleep Score</span>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:16}}>
-                  <Ring value={sel||0} goal={100} size={96} stroke={10} color={sleepColor(sel)}>
-                    <div style={{fontSize:26,fontWeight:800,color:sel==null?C.textDim:C.text,fontFamily:FN.m,lineHeight:1}}>{sel==null?"\u2014":sel}</div>
-                    <div style={{fontSize:7,color:sleepColor(sel),fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:2}}>{b?b.name:""}</div>
-                  </Ring>
-                  <div style={{flex:1}}>
-                    <input type="number" inputMode="numeric" min="0" max="100" value={sel==null?"":sel} onChange={e=>setSleepFor(vDate,e.target.value)} placeholder="Enter 0\u2013100" style={{...inp,width:"100%",fontFamily:FN.m,fontSize:17,textAlign:"center",marginBottom:8}}/>
-                    {b&&<div style={{fontSize:11,color:C.textSec||C.text,lineHeight:1.5}}>{b.meaning}</div>}
-                    {sel==null&&<div style={{fontSize:11,color:C.textDim,lineHeight:1.5,fontStyle:"italic",fontFamily:FN.h}}>Enter the score from Garmin Connect.</div>}
-                  </div>
-                </div>
-              </div>
-
-              {/* Averages */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
-                {[["7-day",sleepStats.avg],["All-time",avgAll],["Best",sleepStats.best],["Nights",all.length]].map(([l2,v])=>(
-                  <div key={l2} style={{...card,padding:"13px 6px",textAlign:"center"}}>
-                    <div style={{fontSize:19,fontWeight:800,color:l2==="Nights"?C.text:sleepColor(v),fontFamily:FN.m,lineHeight:1}}>{v??"\u2014"}</div>
-                    <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:5}}>{l2}</div>
+              {/* Scrolling day calendar — same as Diet / Workouts. Tap a day to view or edit it. */}
+              <div ref={sleepCalRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",padding:"4px 0",marginBottom:14}}>
+                {strip.map(d=>(
+                  <div key={d.key} onClick={()=>setVDate(d.date)} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:"pointer",
+                    background:d.isSel?C.accent:d.score!=null?`${sleepColor(d.score)}26`:"transparent",
+                    border:d.isSel?"1px solid transparent":d.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,transition:"all 0.2s ease"}}>
+                    <div style={{fontSize:9,fontWeight:600,color:d.isSel?"#0B1120":C.textDim,textTransform:"uppercase"}}>{d.dayName}</div>
+                    <div className="hero-num" style={{fontSize:15,color:d.isSel?"#0B1120":d.isToday?C.accent:C.text}}>{d.dayNum}</div>
+                    <div style={{fontFamily:FN.m,fontSize:9,fontWeight:700,color:d.isSel?"rgba(11,17,32,0.75)":d.score!=null?sleepColor(d.score):C.textDim,marginTop:1}}>{d.score!=null?d.score:"·"}</div>
                   </div>
                 ))}
               </div>
 
-              {/* 30-day trend */}
-              <div style={{...card,marginBottom:14}}>
-                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:12}}>
-                  <span style={{...lbl,margin:0}}>Last 30 Nights</span>
-                  <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>tap a night to edit</span>
+              {/* Day entry — ring on the left, everything else in its own column (no overlap) */}
+              <div style={{...card,marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:14}}>
+                  <span style={{...lbl,margin:0}}>{vk===dk(now)?"Last night":fd(vDate)}</span>
+                  <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>Garmin Sleep Score</span>
                 </div>
-                <div className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",alignItems:"flex-end",paddingBottom:4}}>
-                  {strip.map(d=>{const h=d.score==null?4:Math.max(6,(d.score/100)*70);return(
-                    <div key={d.key} onClick={()=>setVDate(new Date(d.key+"T12:00:00"))} style={{flex:"0 0 30px",display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",opacity:d.isSel?1:0.85}}>
-                      <div style={{fontSize:8,fontFamily:FN.m,fontWeight:700,color:d.score==null?C.textDim:sleepColor(d.score)}}>{d.score??""}</div>
-                      <div style={{width:"100%",height:h,background:d.score==null?C.surfaceDim:sleepColor(d.score),borderRadius:3,border:d.isSel?`1.5px solid ${C.accent}`:"none",transition:"height 0.4s ease"}}/>
-                      <div style={{fontSize:7,color:d.isToday?C.accent:C.textDim,fontWeight:d.isSel?800:400}}>{d.dayNum}</div>
-                    </div>
-                  );})}
+                <div style={{display:"flex",alignItems:"center",gap:18}}>
+                  <div style={{flexShrink:0}}>
+                    <Ring value={sel||0} goal={100} size={92} stroke={9} color={sleepColor(sel)}>
+                      <div style={{fontSize:24,fontWeight:800,color:sel==null?C.textDim:C.text,fontFamily:FN.m,lineHeight:1}}>{sel==null?"—":sel}</div>
+                    </Ring>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    {b&&<div style={{display:"inline-block",fontSize:9,fontWeight:800,color:b.color,background:`${b.color}22`,border:`1px solid ${b.color}55`,borderRadius:6,padding:"3px 8px",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>{b.name} · {b.min}–{b.max}</div>}
+                    <input type="number" inputMode="numeric" min="0" max="100" value={sel==null?"":sel} onChange={e=>setSleepFor(vDate,e.target.value)} placeholder="Enter 0–100" style={{...inp,width:"100%",boxSizing:"border-box",fontFamily:FN.m,fontSize:16,textAlign:"center"}}/>
+                  </div>
                 </div>
+                {b&&<div style={{fontSize:11,color:C.textSec||C.text,lineHeight:1.55,marginTop:12,paddingTop:12,borderTop:`1px solid ${C.hairline}`}}>{b.meaning}</div>}
+                {sel==null&&<div style={{fontSize:11,color:C.textDim,lineHeight:1.55,marginTop:12,paddingTop:12,borderTop:`1px solid ${C.hairline}`,fontStyle:"italic",fontFamily:FN.h}}>Open Garmin Connect → Sleep, and enter the score for this night.</div>}
               </div>
 
-              {/* What the number means (Garmin's official bands) */}
-              <div style={{...card,marginBottom:14}}>
-                <div style={{...lbl,marginBottom:4}}>What Your Score Means</div>
-                <div style={{fontSize:10,color:C.textDim,marginBottom:13,lineHeight:1.5}}>Garmin's 0\u2013100 score (Firstbeat Analytics) blends <b>sleep duration</b> vs. the 7\u20139h guideline, <b>sleep quality</b> (light/deep/REM balance, awakenings, restlessness) and <b>overnight recovery</b> from your HRV.</div>
-                {SLEEP_BANDS.map(bd=>{const isYou=sel!=null&&sel>=bd.min&&sel<=bd.max;return(
-                  <div key={bd.name} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 10px",marginBottom:6,borderRadius:9,background:isYou?`${bd.color}1A`:C.surfaceDim,border:`1px solid ${isYou?bd.color:"transparent"}`}}>
-                    <div style={{width:44,flexShrink:0,textAlign:"center"}}>
-                      <div style={{fontSize:12,fontWeight:800,color:bd.color,fontFamily:FN.m,lineHeight:1}}>{bd.min}\u2013{bd.max}</div>
+              {/* Averages */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+                {[["7-day",avg7],["All-time",avgAll],["Best",best]].map(([l2,v])=>(
+                  <div key={l2} style={{...card,padding:"12px 6px",textAlign:"center",marginBottom:0}}>
+                    <div style={{fontSize:20,fontWeight:800,color:v==null?C.textDim:sleepColor(v),fontFamily:FN.m,lineHeight:1}}>{v??"—"}</div>
+                    <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.05em",marginTop:5}}>{l2}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* What the numbers mean (Garmin's official bands) */}
+              <div style={{...card}}>
+                <div style={{...lbl,marginBottom:4}}>What the score means</div>
+                <div style={{fontSize:10,color:C.textDim,lineHeight:1.5,marginBottom:12}}>Garmin blends sleep duration, stage balance (deep / REM / light), restlessness and overnight recovery into one 0–100 score. The global average is <b style={{color:C.text}}>72</b>.</div>
+                {dist.map(bd=>(
+                  <div key={bd.name} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 0",borderTop:`1px solid ${C.hairline}`}}>
+                    <div style={{flexShrink:0,width:52,textAlign:"center"}}>
+                      <div style={{fontSize:9,fontWeight:800,color:bd.color,fontFamily:FN.m}}>{bd.min}–{bd.max}</div>
+                      <div style={{height:3,background:bd.color,borderRadius:2,marginTop:4}}/>
                     </div>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:700,color:bd.color}}>{bd.name}{isYou&&<span style={{fontSize:8,color:C.textDim,marginLeft:6,fontWeight:600}}>\u2190 YOU</span>}</div>
-                      <div style={{fontSize:10,color:C.textDim,lineHeight:1.45,marginTop:2}}>{bd.meaning}</div>
+                      <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8}}>
+                        <span style={{fontSize:11,fontWeight:800,color:bd.color,textTransform:"uppercase",letterSpacing:"0.05em"}}>{bd.name}</span>
+                        <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m,flexShrink:0}}>{bd.n} {bd.n===1?"night":"nights"}</span>
+                      </div>
+                      <div style={{fontSize:10.5,color:C.textSec||C.text,lineHeight:1.5,marginTop:3}}>{bd.meaning}</div>
                     </div>
                   </div>
-                );})}
-                <div style={{fontSize:9,color:C.textDim,lineHeight:1.5,marginTop:8,fontStyle:"italic",fontFamily:FN.h}}>Garmin's global average is 72, and only ~5% of users average Excellent. A single bad night means little \u2014 the weekly trend is the signal.</div>
+                ))}
               </div>
-
-              {/* Your distribution */}
-              {all.length>0&&<div style={{...card,marginBottom:14}}>
-                <div style={{...lbl,marginBottom:12}}>Your Nights by Band</div>
-                {dist.map(bd=>{const pct=all.length?Math.round(bd.n/all.length*100):0;return(
-                  <div key={bd.name} style={{marginBottom:9}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                      <span style={{fontSize:11,fontWeight:700,color:bd.color}}>{bd.name}</span>
-                      <span style={{fontSize:10,fontFamily:FN.m,color:C.textDim}}>{bd.n} night{bd.n===1?"":"s"} \u00B7 {pct}%</span>
-                    </div>
-                    <div style={{height:7,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:bd.color,borderRadius:4,transition:"width 0.5s ease"}}/></div>
-                  </div>
-                );})}
-              </div>}
             </div>);
           })()}
 
