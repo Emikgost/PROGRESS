@@ -55,9 +55,34 @@ let pctBg=p=>{if(p<=0)return "transparent";const v=Math.max(0,Math.min(100,p));c
   const h=v>=90?Math.round(100+((v-90)/10)*40):v>=70?Math.round(30+((v-70)/20)*25):Math.round((v/70)*18);
   return `hsla(${h},80%,50%,${a})`;
 };
-// ─── PERFECT DAY (100%) — emerald + gold. Deliberately unlike any other state. ───
-const EMERALD_DEEP="#04613F",EMERALD="#059669",EMERALD_LIT="#10B981";
-const GOLD="#E8C46A",GOLD_LIT="#FBE9A8",GOLD_DEEP="#B8942F";
+// ─── COMPLETION LADDER ───────────────────────────────────────────────────────
+// One helper drives the whole staircase off the single percentage: the fill deepens,
+// the number brightens + bolds, and three thresholds add markers (50% border, 90%
+// accent hairline, 100% full accent ring). Same red→amber→green hue ramp as pctBg,
+// so every rung stays in one family — a perfect day is just the top of the ladder.
+const ladderHue=v=>v>=90?Math.round(100+((v-90)/10)*40):v>=70?Math.round(30+((v-70)/20)*25):Math.round((v/70)*18);
+let dayLadder=p=>{
+  const v=Math.max(0,Math.min(100,p||0));
+  if(v<=0)return{fill:"transparent",border:`1px solid ${C.hairline}`,ring:"none",num:C.textDim,weight:600,perfect:false};
+  const h=ladderHue(v);
+  const aMax=C.mode==="light"?0.42:0.54, aMin=C.mode==="light"?0.06:0.10;
+  const a=+(aMin+(v/100)*(aMax-aMin)).toFixed(3);                 // fill depth scales with completion
+  const lum=Math.round((C.mode==="light"?42:52)+(v/100)*14);      // number brightens as you climb
+  const weight=v>=70?800:v>=45?700:600;                           // …and firms up
+  const num=`hsl(${h},${v>=70?86:80}%,${lum}%)`;
+  const perfect=v>=100;
+  // Thresholds
+  let border=`1px solid ${C.hairline}`;
+  if(v>=50)border=`1px solid hsla(${h},70%,50%,${(0.22+(v/100)*0.4).toFixed(2)})`; // 50%: defined shape
+  let ring="none";
+  if(perfect)      ring=`0 0 0 1.5px ${C.accent}, inset 0 0 0 1px ${C.mode==="light"?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.14)"}`;
+  else if(v>=90)   ring=`0 0 0 1px ${C.accentMed||C.accent}`;                       // 90%: accent whisper
+  return{fill:`hsla(${h},80%,50%,${a})`,border,ring,num,weight,perfect,h};
+};
+// ─── PERFECT DAY (100%) — deep muted jade with soft champagne. Jewel-toned, calm, not neon. ───
+// Tuned to sit beside the app's warm navy + parchment + amber palette rather than fight it.
+const EMERALD_DEEP="#0E3B34",EMERALD="#1C5A4A",EMERALD_LIT="#2E7D63";
+const GOLD="#D8B77A",GOLD_LIT="#F0DCA8",GOLD_DEEP="#A6864A";
 const isPerfect=p=>Math.round(p||0)>=100;
 const perfectBg=`linear-gradient(145deg,${EMERALD_DEEP} 0%,${EMERALD} 48%,${EMERALD_LIT} 100%)`;
 let pctBorder=p=>{if(p<=0)return "transparent";const r=Math.round(248+(52-248)*(p/100));const g=Math.round(113+(211-113)*(p/100));const b=Math.round(113+(153-113)*(p/100));return `rgba(${r},${g},${b},0.55)`;};
@@ -89,6 +114,23 @@ function applyTheme(palette){
   const h=v>=90?Math.round(100+((v-90)/10)*40):v>=70?Math.round(30+((v-70)/20)*25):Math.round((v/70)*18);
   return `hsla(${h},80%,50%,${a})`;
 };
+  dayLadder=p=>{
+    const v=Math.max(0,Math.min(100,p||0));
+    if(v<=0)return{fill:"transparent",border:`1px solid ${C.hairline}`,ring:"none",num:C.textDim,weight:600,perfect:false};
+    const h=ladderHue(v);
+    const aMax=C.mode==="light"?0.42:0.54, aMin=C.mode==="light"?0.06:0.10;
+    const a=+(aMin+(v/100)*(aMax-aMin)).toFixed(3);
+    const lum=Math.round((C.mode==="light"?42:52)+(v/100)*14);
+    const weight=v>=70?800:v>=45?700:600;
+    const num=`hsl(${h},${v>=70?86:80}%,${lum}%)`;
+    const perfect=v>=100;
+    let border=`1px solid ${C.hairline}`;
+    if(v>=50)border=`1px solid hsla(${h},70%,50%,${(0.22+(v/100)*0.4).toFixed(2)})`;
+    let ring="none";
+    if(perfect)      ring=`0 0 0 1.5px ${C.accent}, inset 0 0 0 1px ${C.mode==="light"?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.14)"}`;
+    else if(v>=90)   ring=`0 0 0 1px ${C.accentMed||C.accent}`;
+    return{fill:`hsla(${h},80%,50%,${a})`,border,ring,num,weight,perfect,h};
+  };
   pctBorder=p=>{if(p<=0)return "transparent";const r=Math.round(248+(52-248)*(p/100));const g=Math.round(113+(211-113)*(p/100));const b=Math.round(113+(153-113)*(p/100));return `rgba(${r},${g},${b},0.55)`;};
   card={background:C.surface,borderRadius:14,padding:20,border:`1px solid ${C.hairline}`,boxShadow:C.shadow};
   lbl={fontFamily:FN.b,fontSize:11,fontWeight:600,color:C.textDim,marginBottom:14,textTransform:"uppercase",letterSpacing:"0.08em"};
@@ -113,22 +155,25 @@ const SLEEP_BANDS=[
 const CSS=`
 @keyframes checkStamp{0%{transform:scale(0.6);opacity:0}50%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:1}}
 @keyframes strikeSweep{0%{transform:scaleX(0)}100%{transform:scaleX(1)}}
+@keyframes perfectGlow{0%{box-shadow:0 0 0 1px var(--acc)}40%{box-shadow:0 0 0 2px var(--acc),0 0 14px -2px var(--acc)}100%{box-shadow:0 0 0 1.5px var(--acc)}}
+.perfect-cell{animation:perfectGlow 1.4s ease-out}
 @keyframes goldSheen{0%{transform:translateX(-140%) skewX(-18deg)}55%{transform:translateX(240%) skewX(-18deg)}100%{transform:translateX(240%) skewX(-18deg)}}
-@keyframes goldPulse{0%,100%{opacity:0.55}50%{opacity:1}}
-/* A 100% day: emerald field, gold filigree corners, gold hairline frame, slow sheen. */
+@keyframes goldPulse{0%,100%{opacity:0.6}50%{opacity:0.92}}
+/* A 100% day: deep jade field, a fine champagne frame, faint corner light, a slow soft sheen.
+   Reads like polished malachite with a gold inlay — jewel-toned but calm, matching the theme. */
 .perfect-day{position:relative;overflow:hidden;isolation:isolate;
-  box-shadow:0 0 0 1px rgba(232,196,106,0.85),0 2px 10px -2px rgba(4,97,63,0.55),inset 0 1px 0 rgba(251,233,168,0.28)}
+  box-shadow:0 0 0 1px rgba(216,183,122,0.55),0 3px 12px -4px rgba(14,59,52,0.5),inset 0 1px 0 rgba(240,220,168,0.16)}
 .perfect-day::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
   background:
-    radial-gradient(circle at 12% 12%,rgba(251,233,168,0.42) 0,transparent 34%),
-    radial-gradient(circle at 88% 88%,rgba(251,233,168,0.30) 0,transparent 34%),
-    repeating-linear-gradient(135deg,rgba(232,196,106,0.16) 0 1px,transparent 1px 7px);
-  animation:goldPulse 3.6s ease-in-out infinite}
-.perfect-day::after{content:"";position:absolute;top:0;bottom:0;width:38%;z-index:1;pointer-events:none;
-  background:linear-gradient(90deg,transparent,rgba(251,233,168,0.5),transparent);
-  animation:goldSheen 4.2s ease-in-out infinite}
+    radial-gradient(circle at 15% 12%,rgba(240,220,168,0.24) 0,transparent 42%),
+    radial-gradient(circle at 86% 90%,rgba(240,220,168,0.14) 0,transparent 40%),
+    repeating-linear-gradient(135deg,rgba(216,183,122,0.06) 0 1px,transparent 1px 9px);
+  animation:goldPulse 5s ease-in-out infinite}
+.perfect-day::after{content:"";position:absolute;top:0;bottom:0;width:34%;z-index:1;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(240,220,168,0.28),transparent);
+  animation:goldSheen 6.5s ease-in-out infinite}
 .perfect-day>*{position:relative;z-index:2}
-.perfect-crown{position:absolute;top:1px;right:2px;z-index:3;font-size:7px;line-height:1;color:#FBE9A8;text-shadow:0 0 4px rgba(232,196,106,0.9)}
+.perfect-crown{position:absolute;top:1px;right:2px;z-index:3;font-size:7px;line-height:1;color:#F0DCA8;text-shadow:0 0 4px rgba(216,183,122,0.7)}
 @keyframes goalComplete{0%{transform:scale(1);opacity:1}35%{transform:scale(1.03)}70%{opacity:1}100%{transform:scale(0.97);opacity:0;max-height:0;margin-bottom:0}}
 .goal-completing{animation:goalComplete 0.75s cubic-bezier(0.4,0,0.2,1) forwards;overflow:hidden}
 
@@ -758,6 +803,8 @@ export default function Dashboard(){
   const[perGramOpen,setPerGramOpen]=useState(null); // food id whose per-gram block is expanded
   const[dietGoals,setDietGoals]=useState(defDietGoals);
   const[dietDate,setDietDate]=useState(()=>dk(new Date()));
+  const[dietSub,setDietSub]=useState("today"); // today (log) | trends (analytics)
+  const[showFoodDB,setShowFoodDB]=useState(false); // Food Database drawer (was its own tab)
   const[showDietGoals,setShowDietGoals]=useState(false);
   const[dietAdd,setDietAdd]=useState({name:"",grams:"",calories:"",protein:"",carbs:"",fat:""}); // quick-add buffer
   // ─── HEALTH: Progress filters ───
@@ -2634,16 +2681,16 @@ ${body}
         {curPage==="today"&&<>
         <div style={{display:"flex",alignItems:"center",gap:4,padding:"0 12px"}}>
           <div ref={calRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",flex:1,padding:"4px 0"}}>
-            {calDays.map((d,i)=>{const sel=vk===d.key;const perf=isPerfect(d.pct);return(
-              <div key={i} onClick={()=>{setVDate(d.date);setTab("today");setMenuTab(null);}} className={perf?"perfect-day":""} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:"pointer",
-                background:perf?perfectBg:(sel?C.accent:d.pct>0?pctBg(d.pct):"transparent"),
-                border:perf?"1px solid transparent":(sel?"1px solid transparent":d.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`),
-                outline:perf&&sel?`2px solid ${GOLD_LIT}`:"none",outlineOffset:perf&&sel?1:0,
-                transition:"all 0.2s ease"}}>
-                {perf&&<span className="perfect-crown">✦</span>}
-                <div style={{fontSize:9,fontWeight:600,color:perf?GOLD_LIT:sel?"#0B1120":C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{d.dayName}</div>
-                <div className="hero-num" style={{fontSize:16,color:perf?"#FFFDF5":sel?"#0B1120":d.isToday?C.accent:C.text,textShadow:perf?"0 1px 6px rgba(4,97,63,0.85)":"none"}}>{d.dayNum}</div>
-                <div style={{fontFamily:FN.m,fontSize:9,fontWeight:800,color:perf?GOLD_LIT:sel?"rgba(11,17,32,0.7)":d.pct>0?pC(d.pct):C.textDim,marginTop:1,letterSpacing:perf?"0.02em":"normal"}}>{d.pct>0?`${d.pct}%`:"—"}</div>
+            {calDays.map((d,i)=>{const sel=vk===d.key;const L=dayLadder(d.pct);const perf=L.perfect;return(
+              <div key={i} onClick={()=>{setVDate(d.date);setTab("today");setMenuTab(null);}} className={perf?"perfect-cell":""} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:"pointer",
+                "--acc":C.accent,
+                background:sel?C.accent:L.fill,
+                border:sel?"1px solid transparent":(d.isToday&&!perf?`1px solid ${C.accent}`:L.border),
+                boxShadow:sel?"none":L.ring,
+                transition:"background 0.3s ease,box-shadow 0.3s ease"}}>
+                <div style={{fontSize:9,fontWeight:600,color:sel?"#0B1120":C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{d.dayName}</div>
+                <div className="hero-num" style={{fontSize:16,color:sel?"#0B1120":d.isToday?C.accent:C.text}}>{d.dayNum}</div>
+                <div style={{fontFamily:FN.m,fontSize:9,fontWeight:L.weight,color:sel?"rgba(11,17,32,0.7)":d.pct>0?L.num:C.textDim,marginTop:1}}>{d.pct>0?`${d.pct}%`:"—"}</div>
               </div>
             );})}
           </div>
@@ -2651,11 +2698,12 @@ ${body}
         </div>
         {showFullCal&&<div className="card-enter" style={{...card,margin:"4px 12px 0",padding:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><button onClick={()=>setVDate(new Date(vDate.getFullYear(),vDate.getMonth()-1,1))} style={btnG}>‹</button><span style={{fontSize:13,fontWeight:700}}>{vDate.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span><button onClick={()=>setVDate(new Date(vDate.getFullYear(),vDate.getMonth()+1,1))} style={btnG}>›</button></div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:9,color:C.textDim,fontWeight:600}}>{d}</div>)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth(),1).getDay()}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth()+1,0).getDate()}).map((_,i)=>{const cd=new Date(vDate.getFullYear(),vDate.getMonth(),i+1);const cp=dayHabitPct(dk(cd));const perf=isPerfect(cp);const selD=vDate.getDate()===i+1;return(<div key={i+1} onClick={()=>{setVDate(cd);setShowFullCal(false);}} className={perf?"perfect-day":""} style={{textAlign:"center",padding:"5px 0",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:perf?800:selD?700:400,
-  background:perf?perfectBg:(selD?C.goldBright:cp>0?pctBg(cp):"transparent"),
-  color:perf?"#FFFDF5":selD?"#fff":C.text,
-  outline:perf&&selD?`2px solid ${GOLD_LIT}`:"none",outlineOffset:perf&&selD?1:0,
-  textShadow:perf?"0 1px 5px rgba(4,97,63,0.8)":"none"}}>{i+1}</div>);})}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:9,color:C.textDim,fontWeight:600}}>{d}</div>)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth(),1).getDay()}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth()+1,0).getDate()}).map((_,i)=>{const cd=new Date(vDate.getFullYear(),vDate.getMonth(),i+1);const cp=dayHabitPct(dk(cd));const L=dayLadder(cp);const perf=L.perfect;const selD=vDate.getDate()===i+1;return(<div key={i+1} onClick={()=>{setVDate(cd);setShowFullCal(false);}} className={perf?"perfect-cell":""} style={{textAlign:"center",padding:"5px 0",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:selD?700:L.weight===800?600:400,
+  "--acc":C.accent,
+  background:selD?C.goldBright:L.fill,
+  border:selD?"1px solid transparent":L.border,
+  boxShadow:selD?"none":L.ring,
+  color:selD?"#fff":cp>0?L.num:C.text}}>{i+1}</div>);})}</div>
         </div>}
         {/* Today at a Glance — compact, lives in the sticky header so it stays visible while scrolling */}
         {(()=>{const tk=vk;const dd=diet[tk]||{};const calEaten=Math.round(dd.calories||0),calGoal=dietGoals.calories||0;const water=Math.round(dd.water||0),waterGoal=dietGoals.water||0;const wkT=wHist.filter(w=>w.date===tk);const splits=[...new Set(wkT.map(w=>w.split))];const workedOut=splits.length>0;const wVal=workedOut?(splits.length>1?`${splits.length}×`:(splits[0].charAt(0).toUpperCase()+splits[0].slice(1))):"—";const daySleep=(typeof sleepLog[tk]==="number"?sleepLog[tk]:null);const goDiet=()=>{setMenuTab("workout");setGView("diet");setTab(null);};const tiles=[
@@ -2666,10 +2714,10 @@ ${body}
           {k:"sleep",l:"Sleep",v:(daySleep==null?"—":String(daySleep)),c:sleepColor(daySleep),pct:daySleep==null?0:Math.min(100,daySleep),go:()=>{setMenuTab("workout");setGView("sleep");setTab(null);}},
         ];return(
           <div style={{display:"flex",gap:5,padding:"7px 10px 3px"}}>{tiles.map(t=>{const perf=t.k==="tasks"&&isPerfect(dayPct);return(
-            <div key={t.k} onClick={t.go||undefined} className={`${t.go?"press":""}${perf?" perfect-day":""}`} style={{flex:1,minWidth:0,background:perf?perfectBg:C.surfaceDim,borderRadius:10,padding:"9px 7px",cursor:t.go?"pointer":"default"}}>
-              <div style={{fontSize:9,color:perf?GOLD_LIT:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:3}}>{t.l}</div>
-              <div style={{fontSize:18,fontWeight:800,color:perf?"#FFFDF5":t.c,fontFamily:FN.m,lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textShadow:perf?"0 1px 6px rgba(4,97,63,0.85)":"none"}}>{t.v}</div>
-              <div style={{height:4,background:perf?"rgba(4,97,63,0.55)":C.surface,borderRadius:2,overflow:"hidden",marginTop:7}}><div style={{height:"100%",width:`${t.pct}%`,background:perf?`linear-gradient(90deg,${GOLD_DEEP},${GOLD_LIT})`:t.c,borderRadius:2,transition:"width 0.5s ease"}}/></div>
+            <div key={t.k} onClick={t.go||undefined} className={`${t.go?"press":""}${perf?" perfect-cell":""}`} style={{flex:1,minWidth:0,background:C.surfaceDim,borderRadius:10,padding:"9px 7px",cursor:t.go?"pointer":"default","--acc":C.accent,boxShadow:perf?`0 0 0 1.5px ${C.accent}`:"none"}}>
+              <div style={{fontSize:9,color:perf?C.accent:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:3}}>{t.l}</div>
+              <div style={{fontSize:18,fontWeight:800,color:t.c,fontFamily:FN.m,lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.v}</div>
+              <div style={{height:4,background:C.surface,borderRadius:2,overflow:"hidden",marginTop:7}}><div style={{height:"100%",width:`${t.pct}%`,background:t.c,borderRadius:2,transition:"width 0.5s ease"}}/></div>
             </div>
           );})}</div>
         );})()}
@@ -3763,7 +3811,7 @@ ${body}
         </Overlay>
         {menuTab==="workout"&&<div className="tab-content">
           {/* ═══ HEALTH SUB-NAV ═══ */}
-          <div style={{display:"flex",gap:6,marginBottom:18,overflowX:"auto"}} className="hide-scroll">{[{k:"workouts",l:"My Workouts"},{k:"diet",l:"Diet"},{k:"sleep",l:"Sleep"},{k:"database",l:"Food Database"},{k:"progress",l:"Progress"}].map(v=>{const on=gView===v.k;return(<button key={v.k} onClick={()=>{setGView(v.k);if(v.k!=="workouts")setGSplit(null);}} style={{flexShrink:0,padding:"8px 18px",borderRadius:22,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:700,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",transition:"all 0.2s ease"}}>{v.l}</button>);})}</div>
+          <div style={{display:"flex",gap:6,marginBottom:18,overflowX:"auto"}} className="hide-scroll">{[{k:"workouts",l:"My Workouts"},{k:"diet",l:"Diet"},{k:"sleep",l:"Sleep"},{k:"progress",l:"Progress"}].map(v=>{const on=gView===v.k;return(<button key={v.k} onClick={()=>{setGView(v.k);if(v.k!=="workouts")setGSplit(null);}} style={{flexShrink:0,padding:"8px 18px",borderRadius:22,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:700,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",transition:"all 0.2s ease"}}>{v.l}</button>);})}</div>
 
           {/* ═══════════ MY WORKOUTS ═══════════ */}
           {gView==="workouts"&&!gSplit&&<div>
@@ -3893,6 +3941,14 @@ ${body}
                 {!isToday&&<button onClick={()=>setDietDate(dk(now))} style={{fontSize:9,fontWeight:700,color:C.textDim,background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:6,padding:"3px 8px",cursor:"pointer",fontFamily:FN.b}}>Today</button>}
               </div>
 
+              {/* Sub-tabs: Today (log) vs Trends (analytics) — calm, grouped, à la Focus */}
+              <div style={{display:"flex",gap:6,marginBottom:16}}>
+                {[{k:"today",l:"Today"},{k:"trends",l:"Trends"}].map(t=>{const on=dietSub===t.k;return(
+                  <button key={t.k} onClick={()=>setDietSub(t.k)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.06em",transition:"all 0.2s ease"}}>{t.l}</button>
+                );})}
+              </div>
+
+              {dietSub==="today"&&<>
               {/* Section 1 — Today's Progress (bars primary, calorie ring kept) */}
               <div style={{...card,marginBottom:14}}>
                 <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:18}}>
@@ -3924,87 +3980,13 @@ ${body}
                 </div>
               </div>
 
-              {/* Section 3 — Nutrition Distribution (% of goal) */}
-              {totalMacroG>0&&<div style={{...card,marginBottom:14}}>
-                <div style={{...lbl,marginBottom:12}}>Nutrition Distribution</div>
-                {[{k:"protein",clr:MACRO.protein.color},{k:"carbs",clr:carbClr},{k:"fat",clr:MACRO.fat.color}].map(({k,clr})=>{const val=d[k]||0,goal=g[k]||1;const pct=Math.round(val/goal*100);return(
-                  <div key={k} style={{marginBottom:12}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}><span style={{fontSize:12,fontWeight:700,color:clr}}>{MACRO[k].label}</span><span style={{fontSize:11,fontFamily:FN.m,color:C.textDim}}>{Math.round(val)} / {goal}g <b style={{color:clr,fontWeight:800,marginLeft:4}}>{pct}%</b></span></div>
-                    <div style={{height:7,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,pct)}%`,background:clr,borderRadius:4,transition:"width 0.5s ease"}}/></div>
-                  </div>
-                );})}
-              </div>}
-
-              {/* Goal projection — where today is trending based on current pace */}
-              {isToday&&(()=>{const curCal=d.calories||0;if(curCal<=0)return null;const h=now.getHours()+now.getMinutes()/60;const frac=Math.max(0.15,Math.min(1,(h-7)/14));if(frac>=0.98)return null;const pj=k=>Math.round((d[k]||0)/frac);const over=pj("calories")>(g.calories||0);return(
-                <div style={{...card,marginBottom:14}}>
-                  <div style={{...lbl,marginBottom:3}}>Projected Finish</div>
-                  <div style={{fontSize:10,color:C.textDim,marginBottom:13}}>If you keep today's pace{over?" · trending over your goal":""}</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
-                    {[["calories","Cal"],["protein","P"],["carbs","C"],["fat","F"]].map(([k,l2])=>(<div key={k} style={{textAlign:"center"}}><div style={{fontSize:20,fontWeight:800,color:k==="calories"&&over?C.red:MACRO[k].color,fontFamily:FN.m,lineHeight:1}}>{pj(k)}</div><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:4}}>{l2}</div></div>))}
-                  </div>
-                </div>);
-              })()}
-
-              {/* This Week — averages, consistency, most-logged */}
-              {dietInsights.loggedCount>0&&<div style={{...card,marginBottom:14}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><span style={{...lbl,margin:0}}>This Week</span><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{dietInsights.loggedCount} days logged</span></div>
-                <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:16}}>
-                  <Ring value={dietInsights.consistency} goal={100} size={72} stroke={7} color={dietInsights.consistency>=80?C.greenBright:dietInsights.consistency>=50?(C.amber||"#E8A33D"):C.red}><div style={{fontSize:17,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1}}>{dietInsights.consistency}<span style={{fontSize:9}}>%</span></div></Ring>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Consistency</div>
-                    {[["Protein goal",dietInsights.proteinHit,MACRO.protein.color],["Calories in range",dietInsights.calWithin,MACRO.calories.color],["Water goal",dietInsights.waterHit,MACRO.water.color]].map(([l2,v,clr])=>(<div key={l2} style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:4}}><span style={{color:C.textDim}}>{l2}</span><span style={{fontFamily:FN.m,fontWeight:700,color:clr}}>{v}/{dietInsights.loggedCount} days</span></div>))}
-                  </div>
-                </div>
-                <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Daily Average</div>
-                <div style={{display:"flex",gap:6,marginBottom:12}}>{[["calories","Cal"],["protein","P"],["carbs","C"],["fat","F"],["water","Water"]].map(([k,l2])=>(<div key={k} style={{flex:1,background:C.surfaceDim,borderRadius:8,padding:"9px 2px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:MACRO[k].color,fontFamily:FN.m,lineHeight:1}}>{dietInsights.avg[k]}</div><div style={{fontSize:7,color:C.textDim,textTransform:"uppercase",marginTop:3}}>{l2}</div></div>))}</div>
-                {dietInsights.mostLogged.length>0&&<div style={{fontSize:10,color:C.textDim,lineHeight:1.5}}>Most logged: {dietInsights.mostLogged.map(([nm,c])=>`${nm} (${c}×)`).join(" · ")}</div>}
-              </div>}
-
-              {/* Food trends — this month vs last */}
-              {foodTrends.length>0&&<div style={{...card,marginBottom:14}}>
-                <div style={{...lbl,marginBottom:12}}>Food Trends <span style={{fontSize:8,color:C.textDim,fontWeight:500,textTransform:"none",letterSpacing:0}}>vs last month</span></div>
-                {foodTrends.map(t=>(<div key={t.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:C.text,fontWeight:600}}>{t.name}</span><span style={{fontSize:12,fontFamily:FN.m,fontWeight:800,color:t.pct>0?C.greenBright:C.red}}>{t.pct>0?"↑":"↓"} {Math.abs(t.pct)}%</span></div>))}
-              </div>}
-
-              {/* Smart suggestions — data-driven, non-judgmental */}
-              {isToday&&(()=>{const tips=[];const h=now.getHours();if(dietInsights.avg.protein>0&&h>=14&&(d.protein||0)<dietInsights.avg.protein*0.55)tips.push("You're a bit behind your usual protein for this time of day.");if((dietGoals.water||0)>0&&h>=15&&(d.water||0)<(dietGoals.water||64)*0.5)tips.push("You typically drink more water by now — a couple more cups keeps you on pace.");if(dietInsights.avg.calories>0&&h>=19&&(d.calories||0)<dietInsights.avg.calories*0.6)tips.push("You've eaten lighter than your weekly average today.");if(!tips.length)return null;return(
-                <div style={{...card,marginBottom:14,borderLeft:`3px solid ${C.accent}`}}>
-                  <div style={{...lbl,marginBottom:10}}>Suggestions</div>
-                  {tips.map((t,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:i<tips.length-1?9:0,alignItems:"flex-start"}}><span style={{color:C.accent,fontSize:13,lineHeight:1.4}}>·</span><span style={{fontSize:12,color:C.textSec||C.text,lineHeight:1.5}}>{t}</span></div>))}
-                </div>);
-              })()}
-
-              {/* Water tracker — ounce goal, each cup holds cupOz ounces */}
-              {(()=>{
-                const cupOz=Math.max(1,g.cupOz||8);
-                const goalOz=Math.max(cupOz,g.water||64);
-                const consumed=d.water||0;
-                const numCups=Math.max(1,Math.ceil(goalOz/cupOz));
-                const cap=numCups*cupOz;
-                const pct=Math.min(100,consumed/goalOz*100);
-                return(<div style={{...card,marginBottom:12}}>
-                  <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:4}}>
-                    <div style={{...lbl,margin:0}}>Water</div>
-                    <span style={{fontSize:13,fontWeight:700,color:MACRO.water.color,fontFamily:FN.m}}>{Math.round(consumed)} <span style={{fontSize:10,color:C.textDim}}>/ {goalOz} oz</span></span>
-                  </div>
-                  <div style={{fontSize:10,color:C.textDim,marginBottom:12}}>{Math.max(0,goalOz-consumed).toFixed(0)} oz left · {cupOz} oz per cup</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
-                    {Array.from({length:numCups}).map((_,i)=>{
-                      const lvl=Math.max(0,Math.min(1,(consumed-i*cupOz)/cupOz)); // 0..1 fill of this cup
-                      const filled=lvl>=1;
-                      return(<button key={i} onClick={()=>setDietMetric("water",Math.min(cap,(i+1)*cupOz===consumed?i*cupOz:(i+1)*cupOz))} title={`${cupOz} oz`} style={{width:32,height:40,borderRadius:"4px 4px 9px 9px",border:`2px solid ${lvl>0?MACRO.water.color:C.hairline}`,background:"transparent",cursor:"pointer",transition:"all 0.2s ease",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:2,overflow:"hidden",position:"relative"}}>
-                        <div style={{width:"100%",height:`${lvl*100}%`,background:filled?MACRO.water.color:`${MACRO.water.color}88`,borderRadius:3,transition:"height 0.3s ease"}}/>
-                      </button>);
-                    })}
-                  </div>
-                  <div style={{height:6,background:C.surfaceDim,borderRadius:3,overflow:"hidden",marginBottom:12}}><div style={{height:"100%",width:`${pct}%`,background:MACRO.water.color,borderRadius:3,transition:"width 0.5s ease"}}/></div>
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={()=>setDietMetric("water",Math.max(0,consumed-cupOz))} style={{...btnG,flex:1}}>− Cup</button>
-                    <button onClick={()=>setDietMetric("water",Math.min(cap,consumed+cupOz))} style={{...btnB,flex:1}}>+ Cup ({cupOz}oz)</button>
-                  </div>
-                </div>);
-              })()}
+              {/* ── FOOD LOG lives at the bottom of Today; analytics move to Trends ── */}
+              {/* Open the full Food Database as a drawer (it used to be its own tab) */}
+              <button onClick={()=>setShowFoodDB(true)} className="press" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"13px 0",marginBottom:12,borderRadius:12,border:`1px solid ${C.hairline}`,background:C.surfaceDim,color:C.text,fontSize:12.5,fontWeight:700,fontFamily:FN.b,cursor:"pointer"}}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.2" strokeLinecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                Browse Food Database
+                <span style={{fontSize:10,color:C.textDim,fontFamily:FN.m}}>{foodDB.length}</span>
+              </button>
 
               {/* ═══ Quick Add — type "Chicken 220" (one per line) ═══ */}
               {foodDB.length>0&&<div style={{...card,marginBottom:12}}>
@@ -4097,6 +4079,36 @@ ${body}
               </div>
               );})()}
 
+              {/* Water tracker — ounce goal, each cup holds cupOz ounces */}
+              {(()=>{
+                const cupOz=Math.max(1,g.cupOz||8);
+                const goalOz=Math.max(cupOz,g.water||64);
+                const consumed=d.water||0;
+                const numCups=Math.max(1,Math.ceil(goalOz/cupOz));
+                const cap=numCups*cupOz;
+                const pct=Math.min(100,consumed/goalOz*100);
+                return(<div style={{...card,marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:4}}>
+                    <div style={{...lbl,margin:0}}>Water</div>
+                    <span style={{fontSize:13,fontWeight:700,color:MACRO.water.color,fontFamily:FN.m}}>{Math.round(consumed)} <span style={{fontSize:10,color:C.textDim}}>/ {goalOz} oz</span></span>
+                  </div>
+                  <div style={{fontSize:10,color:C.textDim,marginBottom:12}}>{Math.max(0,goalOz-consumed).toFixed(0)} oz left · {cupOz} oz per cup</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+                    {Array.from({length:numCups}).map((_,i)=>{
+                      const lvl=Math.max(0,Math.min(1,(consumed-i*cupOz)/cupOz)); // 0..1 fill of this cup
+                      const filled=lvl>=1;
+                      return(<button key={i} onClick={()=>setDietMetric("water",Math.min(cap,(i+1)*cupOz===consumed?i*cupOz:(i+1)*cupOz))} title={`${cupOz} oz`} style={{width:32,height:40,borderRadius:"4px 4px 9px 9px",border:`2px solid ${lvl>0?MACRO.water.color:C.hairline}`,background:"transparent",cursor:"pointer",transition:"all 0.2s ease",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:2,overflow:"hidden",position:"relative"}}>
+                        <div style={{width:"100%",height:`${lvl*100}%`,background:filled?MACRO.water.color:`${MACRO.water.color}88`,borderRadius:3,transition:"height 0.3s ease"}}/>
+                      </button>);
+                    })}
+                  </div>
+                  <div style={{height:6,background:C.surfaceDim,borderRadius:3,overflow:"hidden",marginBottom:12}}><div style={{height:"100%",width:`${pct}%`,background:MACRO.water.color,borderRadius:3,transition:"width 0.5s ease"}}/></div>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={()=>setDietMetric("water",Math.max(0,consumed-cupOz))} style={{...btnG,flex:1}}>− Cup</button>
+                    <button onClick={()=>setDietMetric("water",Math.min(cap,consumed+cupOz))} style={{...btnB,flex:1}}>+ Cup ({cupOz}oz)</button>
+                  </div>
+                </div>);
+              })()}
               {/* Today's Timeline — chronological, grouped into meals (inferred by time), collapsible */}
               {(()=>{const entries=(diet[dietDate]&&diet[dietDate].entries)||[];if(entries.length===0)return null;
                 const MEALS={Breakfast:{icon:"🍳",clr:"#F5B301"},Lunch:{icon:"🥗",clr:"#34C759"},Dinner:{icon:"🍽️",clr:"#5AA9FF"},Snack:{icon:"🍎",clr:"#FF6B6B"}};
@@ -4161,6 +4173,62 @@ ${body}
                   </div>
                 </div>);
               })()}
+              </>}
+
+              {dietSub==="trends"&&<>
+              {/* Section 3 — Nutrition Distribution (% of goal) */}
+              {totalMacroG>0&&<div style={{...card,marginBottom:14}}>
+                <div style={{...lbl,marginBottom:12}}>Nutrition Distribution</div>
+                {[{k:"protein",clr:MACRO.protein.color},{k:"carbs",clr:carbClr},{k:"fat",clr:MACRO.fat.color}].map(({k,clr})=>{const val=d[k]||0,goal=g[k]||1;const pct=Math.round(val/goal*100);return(
+                  <div key={k} style={{marginBottom:12}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}><span style={{fontSize:12,fontWeight:700,color:clr}}>{MACRO[k].label}</span><span style={{fontSize:11,fontFamily:FN.m,color:C.textDim}}>{Math.round(val)} / {goal}g <b style={{color:clr,fontWeight:800,marginLeft:4}}>{pct}%</b></span></div>
+                    <div style={{height:7,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,pct)}%`,background:clr,borderRadius:4,transition:"width 0.5s ease"}}/></div>
+                  </div>
+                );})}
+              </div>}
+
+              {/* Goal projection — where today is trending based on current pace */}
+              {isToday&&(()=>{const curCal=d.calories||0;if(curCal<=0)return null;const h=now.getHours()+now.getMinutes()/60;const frac=Math.max(0.15,Math.min(1,(h-7)/14));if(frac>=0.98)return null;const pj=k=>Math.round((d[k]||0)/frac);const over=pj("calories")>(g.calories||0);return(
+                <div style={{...card,marginBottom:14}}>
+                  <div style={{...lbl,marginBottom:3}}>Projected Finish</div>
+                  <div style={{fontSize:10,color:C.textDim,marginBottom:13}}>If you keep today's pace{over?" · trending over your goal":""}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+                    {[["calories","Cal"],["protein","P"],["carbs","C"],["fat","F"]].map(([k,l2])=>(<div key={k} style={{textAlign:"center"}}><div style={{fontSize:20,fontWeight:800,color:k==="calories"&&over?C.red:MACRO[k].color,fontFamily:FN.m,lineHeight:1}}>{pj(k)}</div><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:4}}>{l2}</div></div>))}
+                  </div>
+                </div>);
+              })()}
+
+              {/* This Week — averages, consistency, most-logged */}
+              {dietInsights.loggedCount>0&&<div style={{...card,marginBottom:14}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><span style={{...lbl,margin:0}}>This Week</span><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{dietInsights.loggedCount} days logged</span></div>
+                <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:16}}>
+                  <Ring value={dietInsights.consistency} goal={100} size={72} stroke={7} color={dietInsights.consistency>=80?C.greenBright:dietInsights.consistency>=50?(C.amber||"#E8A33D"):C.red}><div style={{fontSize:17,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1}}>{dietInsights.consistency}<span style={{fontSize:9}}>%</span></div></Ring>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Consistency</div>
+                    {[["Protein goal",dietInsights.proteinHit,MACRO.protein.color],["Calories in range",dietInsights.calWithin,MACRO.calories.color],["Water goal",dietInsights.waterHit,MACRO.water.color]].map(([l2,v,clr])=>(<div key={l2} style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:4}}><span style={{color:C.textDim}}>{l2}</span><span style={{fontFamily:FN.m,fontWeight:700,color:clr}}>{v}/{dietInsights.loggedCount} days</span></div>))}
+                  </div>
+                </div>
+                <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Daily Average</div>
+                <div style={{display:"flex",gap:6,marginBottom:12}}>{[["calories","Cal"],["protein","P"],["carbs","C"],["fat","F"],["water","Water"]].map(([k,l2])=>(<div key={k} style={{flex:1,background:C.surfaceDim,borderRadius:8,padding:"9px 2px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:MACRO[k].color,fontFamily:FN.m,lineHeight:1}}>{dietInsights.avg[k]}</div><div style={{fontSize:7,color:C.textDim,textTransform:"uppercase",marginTop:3}}>{l2}</div></div>))}</div>
+                {dietInsights.mostLogged.length>0&&<div style={{fontSize:10,color:C.textDim,lineHeight:1.5}}>Most logged: {dietInsights.mostLogged.map(([nm,c])=>`${nm} (${c}×)`).join(" · ")}</div>}
+              </div>}
+
+              {/* Food trends — this month vs last */}
+              {foodTrends.length>0&&<div style={{...card,marginBottom:14}}>
+                <div style={{...lbl,marginBottom:12}}>Food Trends <span style={{fontSize:8,color:C.textDim,fontWeight:500,textTransform:"none",letterSpacing:0}}>vs last month</span></div>
+                {foodTrends.map(t=>(<div key={t.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:C.text,fontWeight:600}}>{t.name}</span><span style={{fontSize:12,fontFamily:FN.m,fontWeight:800,color:t.pct>0?C.greenBright:C.red}}>{t.pct>0?"↑":"↓"} {Math.abs(t.pct)}%</span></div>))}
+              </div>}
+
+              {/* Smart suggestions — data-driven, non-judgmental */}
+              {isToday&&(()=>{const tips=[];const h=now.getHours();if(dietInsights.avg.protein>0&&h>=14&&(d.protein||0)<dietInsights.avg.protein*0.55)tips.push("You're a bit behind your usual protein for this time of day.");if((dietGoals.water||0)>0&&h>=15&&(d.water||0)<(dietGoals.water||64)*0.5)tips.push("You typically drink more water by now — a couple more cups keeps you on pace.");if(dietInsights.avg.calories>0&&h>=19&&(d.calories||0)<dietInsights.avg.calories*0.6)tips.push("You've eaten lighter than your weekly average today.");if(!tips.length)return null;return(
+                <div style={{...card,marginBottom:14,borderLeft:`3px solid ${C.accent}`}}>
+                  <div style={{...lbl,marginBottom:10}}>Suggestions</div>
+                  {tips.map((t,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:i<tips.length-1?9:0,alignItems:"flex-start"}}><span style={{color:C.accent,fontSize:13,lineHeight:1.4}}>·</span><span style={{fontSize:12,color:C.textSec||C.text,lineHeight:1.5}}>{t}</span></div>))}
+                </div>);
+              })()}
+
+
+              </>}
             </div>);
           })()}
           {/* ═══════════ SLEEP ═══════════ */}
@@ -4245,7 +4313,7 @@ ${body}
           })()}
 
           {/* ═══════════ FOOD DATABASE ═══════════ */}
-          {gView==="database"&&(()=>{
+          {showFoodDB&&(()=>{
             const FOOD_ICONS={protein:"🥩",meat:"🥩",beef:"🥩",steak:"🥩",chicken:"🍗",turkey:"🍗",poultry:"🍗",fish:"🐟",salmon:"🐟",egg:"🥚",eggs:"🥚",dairy:"🥛",milk:"🥛",yogurt:"🥛",cheese:"🧀",fruit:"🍎",apple:"🍎",banana:"🍌",berry:"🫐",vegetable:"🥦",veggie:"🥦",broccoli:"🥦",salad:"🥗",carbs:"🍚",rice:"🍚",bread:"🍞",bagel:"🥯",pasta:"🍝",noodle:"🍝",potato:"🥔",oats:"🥣",oatmeal:"🥣",snack:"🍪",dessert:"🍰",sweet:"🍰",drink:"🥤","fast food":"🍔",burger:"🍔",supplement:"💊",shake:"🥤",coffee:"☕",nut:"🥜"};
             const foodIcon=(f)=>{const hay=[...(f.tags||[]),f.name].join(" ").toLowerCase();for(const k in FOOD_ICONS){if(hay.includes(k))return FOOD_ICONS[k];}return null;};
             const relDay=(ts)=>{if(!ts)return "—";const d=Math.floor((Date.now()-new Date(new Date(ts).toDateString()).getTime())/86400000);if(d<=0)return "Today";if(d===1)return "Yesterday";if(d<7)return `${d}d ago`;return fd(ts);};
@@ -4256,7 +4324,12 @@ ${body}
             else if(dbSort==="newest")list=[...list].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
             else list=[...list].sort((a,b)=>(statFor(b.name)?.last||0)-(statFor(a.name)?.last||0));
             if(dbSort!=="favorites")list=[...list].sort((a,b)=>{const fa=favFoods.includes(a.id),fb=favFoods.includes(b.id);return fa===fb?0:fa?-1:1;});
-            return(<div>
+            return(<div onClick={e=>e.stopPropagation()} data-drawer style={{position:"fixed",inset:0,zIndex:500,background:C.bg,display:"flex",flexDirection:"column"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px",borderBottom:`1px solid ${C.hairline}`,flexShrink:0}}>
+                <span style={{fontSize:16,fontWeight:800,fontFamily:FN.h,fontStyle:"italic",color:C.text}}>Food Database</span>
+                <button onClick={()=>setShowFoodDB(false)} style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,color:C.text,borderRadius:9,width:34,height:34,fontSize:18,cursor:"pointer",lineHeight:1}}>×</button>
+              </div>
+              <div style={{flex:1,overflowY:"auto",padding:"14px 16px 90px"}}><div>
               <div style={{position:"relative",marginBottom:12}}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2" strokeLinecap="round" style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)"}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                 <input value={dbSearch} onChange={e=>setDbSearch(e.target.value)} placeholder="Search foods or tags…" style={{...inp,width:"100%",paddingLeft:36}}/>
@@ -4316,7 +4389,7 @@ ${body}
                   <div style={{display:"flex",gap:8}}><button onClick={()=>setEditFood(null)} style={{...btnG,flex:1}}>Cancel</button><button onClick={()=>saveEditFood(editFood)} style={{...btnB,flex:2}}>Save</button></div>
                 </div>
               </div>}
-            </div>);
+            </div></div></div>);
           })()}
 
           {gView==="progress"&&(()=>{
