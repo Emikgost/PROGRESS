@@ -899,7 +899,17 @@ export default function Dashboard(){
      Existing habits (no dates) count on every day; removing sets removedOn so past days stay frozen. */
   const habitActiveOn=(h,k)=>{const d=new Date(k);if(h.createdOn&&d<new Date(h.createdOn))return false;if(h.removedOn&&d>=new Date(h.removedOn))return false;return true;};
   const activeTodos=(k)=>todos.filter(t=>habitActiveOn(t,k));
-  const dayHabitRoster=(k)=>[...activeTodos(k),...aspirations.filter(a=>a.graduated)];
+  /* Graduated goals also act as daily habits — but only from the day they became one, FORWARD.
+     Adding a habit today must never rewrite the score of days you already lived. Archived/retired
+     goals reuse the `graduated` flag internally, so they're excluded from the habit roster here. */
+  const graduatedHabitsOn=(k)=>aspirations.filter(a=>{
+    if(!a.graduated||a.status==="archived")return false;
+    const start=a.graduatedAt||a.created||a.createdOn;
+    if(start&&new Date(k)<new Date(start))return false;   // day predates the habit → not counted
+    if(a.removedOn&&new Date(k)>=new Date(a.removedOn))return false;
+    return true;
+  });
+  const dayHabitRoster=(k)=>[...activeTodos(k),...graduatedHabitsOn(k)];
   const dayHabitPct=(k)=>{const all=dayHabitRoster(k);if(all.length===0)return 0;const ch=checks[k]||{};return Math.round(all.filter(t=>ch[t.id]).length/all.length*100);};
   const removeHabit=(id)=>setTodos(p=>p.map(t=>t.id===id?{...t,removedOn:dk(now)}:t)); // soft-delete: keep on past days, drop from today onward
   const focusTasks=focusByDate[vk]||[];
@@ -983,8 +993,8 @@ export default function Dashboard(){
 
   // Habits = recurring routine todos + graduated habit-tracker items. Inlined (rather than referencing the
   // `habits` memo declared further below) so these formulas don't depend on declaration order.
-  const streak=useMemo(()=>{const hit=(d)=>{const k=dk(d);const roster=[...todos.filter(t=>habitActiveOn(t,k)),...aspirations.filter(a=>a.graduated)];const tot=roster.length;if(tot===0)return false;return roster.filter(t=>(checks[k]||{})[t.id]).length>=tot*0.5;};let s=0;const d=new Date();d.setDate(d.getDate()-1);while(hit(d)){s++;d.setDate(d.getDate()-1);}if(hit(new Date()))s++;return s;},[checks,todos,aspirations]);
-  const longestHabitStreak=useMemo(()=>{const hb=[...todos,...aspirations.filter(a=>a.graduated)];const tot=hb.length;if(tot===0)return 0;const keys=Object.keys(checks).sort();let mx=0,cu=0;for(const k of keys){if(hb.filter(t=>(checks[k]||{})[t.id]).length>=tot*0.5){cu++;mx=Math.max(mx,cu);}else cu=0;}return mx;},[checks,todos,aspirations]);
+  const streak=useMemo(()=>{const hit=(d)=>{const k=dk(d);const roster=dayHabitRoster(k);const tot=roster.length;if(tot===0)return false;return roster.filter(t=>(checks[k]||{})[t.id]).length>=tot*0.5;};let s=0;const d=new Date();d.setDate(d.getDate()-1);while(hit(d)){s++;d.setDate(d.getDate()-1);}if(hit(new Date()))s++;return s;},[checks,todos,aspirations]);
+  const longestHabitStreak=useMemo(()=>{const keys=Object.keys(checks).sort();let mx=0,cu=0;for(const k of keys){const hb=dayHabitRoster(k);const tot=hb.length;if(tot===0){cu=0;continue;}if(hb.filter(t=>(checks[k]||{})[t.id]).length>=tot*0.5){cu++;mx=Math.max(mx,cu);}else cu=0;}return mx;},[checks,todos,aspirations]);
 
   /* ─── Today Completion — HABITS ONLY (per spec). Daily Tasks, Weekly/Monthly goal steps are Focus,
      and are deliberately excluded so the Today screen measures consistency, not productivity. ─── */
@@ -1027,7 +1037,7 @@ export default function Dashboard(){
     const base={id:uid(),text:gcName.trim(),created:dk(now),status:"active",graduated:false,monthsAtTarget:0};
     let goal;
     if(gcOverride){
-      goal={...base,goalType:"established",targetDays:parseInt(gcTarget)||20,dailyAction:gcAction.trim()||gcName.trim(),graduated:true};
+      goal={...base,goalType:"established",targetDays:parseInt(gcTarget)||20,dailyAction:gcAction.trim()||gcName.trim(),graduated:true,graduatedAt:dk(now)};
     }else if(gcType==="measurable"){
       const totalH=parseInt(gcHours)||20;
       const deadlineDate=gcDeadline?new Date(gcDeadline):new Date(now.getFullYear(),now.getMonth()+2,0);
@@ -1372,9 +1382,8 @@ export default function Dashboard(){
     const dayCount=Math.max(1,Math.round((new Date(dk(end))-new Date(dk(start)))/86400000)+1);
 
     // Habits
-    const habitAll=[...todos,...aspirations.filter(a=>a.graduated)];
     let habitSum=0,habitDays=0;
-    Object.keys(checks).filter(inRange).forEach(k=>{if(habitAll.length===0)return;const ch=checks[k]||{};habitSum+=habitAll.filter(t=>ch[t.id]).length/habitAll.length*100;habitDays++;});
+    Object.keys(checks).filter(inRange).forEach(k=>{const habitAll=dayHabitRoster(k);if(habitAll.length===0)return;const ch=checks[k]||{};habitSum+=habitAll.filter(t=>ch[t.id]).length/habitAll.length*100;habitDays++;});
     const habitAvg=habitDays>0?Math.round(habitSum/habitDays):0;
     // Focus
     const focusEntries=Object.entries(focusCompletionLog).filter(([k])=>inRange(k));
