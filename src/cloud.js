@@ -52,6 +52,16 @@ export function getCloudStatus() { return { ...status }; }
 
 function renderBadge() {
   if (typeof document === "undefined" || !document.body) return;
+  // Hidden by default now that sync is stable. A Settings toggle sets this flag to "1"
+  // when the user wants to watch sync status; otherwise we never show the badge and
+  // clean up any existing one. Sync logic itself is unaffected.
+  let visible = false;
+  try { visible = localStorage.getItem("sync-badge-visible") === "1"; } catch (e) {}
+  if (!visible) {
+    const existing = document.getElementById("sync-badge");
+    if (existing) existing.remove();
+    return;
+  }
   let el = document.getElementById("sync-badge");
   if (!el) {
     el = document.createElement("div");
