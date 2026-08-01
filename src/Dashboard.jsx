@@ -314,7 +314,8 @@ function Ring({value,goal,size=120,stroke=12,color,children}){
 const seedWH=[{id:"h6",date:"2026-03-15",split:"upper",exercises:[{name:"Bench Press",sets:[{w:50,r:10},{w:60,r:6}]},{name:"Lat Pull Down",sets:[{w:54,r:8},{w:59,r:7}]}]}];
 const seedBW=[{date:"2025-10-01",weight:72.5},{date:"2026-01-01",weight:74.5},{date:"2026-03-01",weight:75.2},{date:"2026-03-29",weight:75.8}];
 const seedTx={"2026-03-01":[{id:"t14",type:"out",amount:26.5,desc:"Sunday"}],"2026-03-06":[{id:"t16",type:"in",amount:30,desc:"Income"}]};
-const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000,focusTransferHour:22};
+const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000,focusTransferHour:22,
+  nwMin:0,nwTarget:1000,debtMax:1000,debtTarget:0,planDay:0};
 
 // ─── Budget categories (spec's taxonomy) ───
 const TX_CATEGORIES=["Food","Transportation","Housing","Utilities","Entertainment","Shopping","Healthcare","Travel","Investments","Subscriptions","Income","Transfers","Other"];
@@ -746,6 +747,9 @@ export default function Dashboard(){
   const[chains,setChains]=useState([]); // [{id, name, taskIds:[], color}]
   const[reflections,setReflections]=useState({}); // {dateKey: [{prompt, answer, time}]}
   const[reviews,setReviews]=useState({}); // {weekKey: {numbers, kept, dropped, priorities, time}}
+  const[weekPlan,setWeekPlan]=useState({}); // {weekKey: {planned:true, allocations:{goalId:hours}}}
+  const[showWeekPlan,setShowWeekPlan]=useState(false);
+  const[planDraft,setPlanDraft]=useState({}); // goalId -> hours for the current planning session
   const[weekPriorities,setWeekPriorities]=useState([]); // current week's top 3
   const[showQuick,setShowQuick]=useState(false);
   const[quickText,setQuickText]=useState("");
@@ -875,9 +879,17 @@ export default function Dashboard(){
   const[accounts,setAccounts]=useState({checking:"",savings:"",cash:"",investment:"",credit:""});
   const[subscriptions,setSubscriptions]=useState([]); // [{id,name,cost,billDay,category}]
   const[budgetSub,setBudgetSub]=useState("current"); // current (dashboard) | overview (analytics)
+  const[finGoals,setFinGoals]=useState([]); // [{id,name,target,deadline,icon,createdOn}] — progress auto-tracked from tagged txns
+  const[showFinGoal,setShowFinGoal]=useState(false);
+  const[finGoalDraft,setFinGoalDraft]=useState({name:"",target:"",deadline:"",icon:"🎯"});
+  const[catBudgets,setCatBudgets]=useState({}); // {category: monthlyLimit}
+  const[showBudgetEdit,setShowBudgetEdit]=useState(false);
   const[txRules,setTxRules]=useState({}); // learned merchant-keyword -> category (persisted)
   const[catPrompt,setCatPrompt]=useState(null); // {desc, record, day} — ask-once when confidence is low
   const[showFinSnap,setShowFinSnap]=useState(true);
+  // Sync status badge (from cloud.js) — hidden by default now that sync is stable; toggled in Settings.
+  const[syncBadge,setSyncBadge]=useState(()=>{try{return localStorage.getItem("sync-badge-visible")==="1";}catch(e){return false;}});
+  const toggleSyncBadge=()=>setSyncBadge(v=>{const nv=!v;try{nv?localStorage.setItem("sync-badge-visible","1"):localStorage.removeItem("sync-badge-visible");}catch(e){}if(!nv){const el=document.getElementById("sync-badge");if(el)el.remove();}return nv;});
   const[subForm,setSubForm]=useState({name:"",cost:"",billDay:"",category:""});
   const[subDayOpen,setSubDayOpen]=useState(false); // toggles the billing-day calendar picker
   const[addSub,setAddSub]=useState(false);
@@ -1184,7 +1196,7 @@ export default function Dashboard(){
 
   const toggleWeeklyStep=(goalId,stepId)=>{const g=wGoals.find(x=>x.id===goalId);const s=g&&(g.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setWGoals(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&g){const after=(g.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId,"weekly");}};
   const setWeeklyCount=(goalId,newCount)=>{const g=wGoals.find(x=>x.id===goalId);if(!g)return;const tgt=g.target||1;const nc=Math.max(0,Math.min(tgt,newCount));logFocusCompletion(nc-(g.current||0));setWGoals(p=>p.map(x=>x.id===goalId?{...x,current:nc}:x));if(nc>=tgt&&(g.current||0)<tgt)completeGoalAnim(goalId,"weekly");};
-  const toggleMonthlyStep=(goalId,stepId)=>{const a=aspirations.find(x=>x.id===goalId);const s=a&&(a.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setAspirations(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&a){const after=(a.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId,"monthly");}};
+  const toggleMonthlyStep=(goalId,stepId)=>{const a=aspirations.find(x=>x.id===goalId);const s=a&&(a.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setAspirations(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st),lastProgress:turningOn?dk(now):x.lastProgress}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&a){const after=(a.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId,"monthly");}};
   const toggleMonthlyAction=(goalId)=>{const on=!!(checks[dk(now)]||{})[goalId];if(!on)flashChecked(goalId);setChecks(p=>({...p,[dk(now)]:{...(p[dk(now)]||{}),[goalId]:!on}}));logFocusCompletion(on?-1:1);if(!on)celebrateGoal();};
 
   // Graduation check — runs when aspirationProgress updates
@@ -1813,7 +1825,7 @@ ${body}
       if(d.aspirations)setAspirations(d.aspirations);
       if(d.videoJournal)setVideoJournal(d.videoJournal);if(d.writtenJournal)setWrittenJournal(d.writtenJournal);
       if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",credit:"",...d.accounts});
-      if(d.subscriptions)setSubscriptions(d.subscriptions);if(d.txRules)setTxRules(d.txRules);
+      if(d.subscriptions)setSubscriptions(d.subscriptions);if(d.txRules)setTxRules(d.txRules);if(d.weekPlan)setWeekPlan(d.weekPlan);if(d.finGoals)setFinGoals(d.finGoals);if(d.catBudgets)setCatBudgets(d.catBudgets);
       if(d.focusCompletionLog)setFocusCompletionLog(d.focusCompletionLog);
       if(d.habitOrder)setHabitOrder(d.habitOrder);
       // Migrate photoLog from main blob to separate key (one-time)
@@ -1888,10 +1900,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -2150,6 +2162,63 @@ ${body}
     return{stats,groups};
   },[wHist,splits,strRange,exMeta,bwLog]);
 
+  // ── Multi-dimensional strength progress ── answers "am I getting stronger?" across
+  // weight, reps, volume, estimated 1RM (Epley), and consistency — not just top weight.
+  const strengthProgress=useMemo(()=>{
+    const cut=strRange==="all"?null:new Date(Date.now()-parseInt(strRange)*86400000);
+    // Per exercise, per session: best set by est-1RM, plus session volume.
+    const byEx={};
+    wHist.forEach(w=>{
+      if(cut&&new Date(w.date)<cut)return;
+      (w.exercises||[]).forEach(ex=>{
+        const meta=getMeta(ex.name);if(meta.mode==="time")return; // strength = weighted only
+        const sets=ex.sets||[];if(!sets.length)return;
+        let vol=0,bestE=0,bestW=0,bestReps=0,topSet=null;
+        sets.forEach(s=>{const load=effLoad(s,meta),reps=s.r||0;vol+=load*reps;
+          const e=load*(1+reps/30); // Epley 1RM
+          if(e>bestE){bestE=e;bestW=load;bestReps=reps;topSet={w:load,r:reps};}});
+        if(vol<=0&&bestE<=0)return;
+        (byEx[ex.name]=byEx[ex.name]||[]).push({date:w.date,vol:Math.round(vol),e1rm:Math.round(bestE*10)/10,w:bestW,reps:bestReps});
+      });
+    });
+    const exercises=Object.entries(byEx).map(([name,sess])=>{
+      sess.sort((a,b)=>new Date(a.date)-new Date(b.date));
+      const first=sess[0],last=sess[sess.length-1];
+      const e1rmChange=last.e1rm-first.e1rm;
+      const e1rmPct=first.e1rm>0?Math.round(e1rmChange/first.e1rm*100):0;
+      const volChange=last.vol-first.vol;
+      const volPct=first.vol>0?Math.round(volChange/first.vol*100):0;
+      const wChange=last.w-first.w;
+      const repChange=last.reps-first.reps;
+      const prE=Math.max(...sess.map(s=>s.e1rm));
+      const prVol=Math.max(...sess.map(s=>s.vol));
+      const improving=e1rmChange>0||volChange>0;
+      return{name,sessions:sess,count:sess.length,first,last,e1rmChange:Math.round(e1rmChange*10)/10,e1rmPct,volChange,volPct,wChange,repChange,prE:Math.round(prE*10)/10,prVol,improving};
+    }).filter(e=>e.count>=1);
+    // Overall strength score: composite of est-1RM improvement, volume improvement, and consistency.
+    const withHistory=exercises.filter(e=>e.count>=2);
+    let score=0,scoreParts=null;
+    if(withHistory.length){
+      const avgE1rmPct=withHistory.reduce((a,e)=>a+e.e1rmPct,0)/withHistory.length;
+      const avgVolPct=withHistory.reduce((a,e)=>a+e.volPct,0)/withHistory.length;
+      const improvingShare=withHistory.filter(e=>e.improving).length/withHistory.length;
+      // 30-day training consistency: distinct training days / expected (~3.5/wk over the window)
+      const winDays=strRange==="all"?90:parseInt(strRange);
+      const cutC=new Date(Date.now()-winDays*86400000);
+      const trainDays=new Set(wHist.filter(w=>new Date(w.date)>=cutC).map(w=>w.date)).size;
+      const expected=Math.max(1,Math.round(winDays/7*3.5));
+      const consistency=Math.min(1,trainDays/expected);
+      // score 0..100: strength gains (50%) + volume gains (25%) + consistency (25%)
+      const strScore=Math.max(0,Math.min(50,25+avgE1rmPct*1.5));
+      const volScore=Math.max(0,Math.min(25,12.5+avgVolPct*0.5));
+      const conScore=consistency*25;
+      score=Math.round(strScore+volScore+conScore);
+      scoreParts={avgE1rmPct:Math.round(avgE1rmPct),avgVolPct:Math.round(avgVolPct),improvingShare:Math.round(improvingShare*100),consistency:Math.round(consistency*100),trainDays,expected};
+    }
+    exercises.sort((a,b)=>b.e1rmPct-a.e1rmPct);
+    return{exercises,score,scoreParts,hasData:withHistory.length>0};
+  },[wHist,strRange,exMeta,bwLog,splits]);
+
   /* ─── HEALTH: Nutrition history for the grouped bar chart ─── */
   const nutritionRows=useMemo(()=>{
     const cut=nutriRange==="all"?null:new Date(Date.now()-parseInt(nutriRange)*86400000);
@@ -2253,6 +2322,14 @@ ${body}
   const weekKeyOf=(d)=>{const s2=new Date(d);s2.setDate(s2.getDate()-s2.getDay());return dk(s2);};
   const monthKeyOf=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
   const gpWeekKey=weekKeyOf(now), gpMonthKey=monthKeyOf(now);
+  // Weekly planning prompt: fires on your planning day if this week isn't planned yet.
+  const planReady=now.getDay()===(settings.planDay??0)&&!(weekPlan[gpWeekKey]?.planned);
+  const openWeekPlan=()=>{
+    const draft={};aspirations.filter(a=>a.goalType==="measurable"&&!a.graduated&&a.status!=="archived").forEach(a=>{
+      const pl=goalPlan[a.id];draft[a.id]=pl?Math.min(pl.remaining,pl.perWeek||Math.ceil((pl.remaining||0)/2)):0;});
+    setPlanDraft(draft);setShowWeekPlan(true);
+  };
+  const saveWeekPlan=()=>{setWeekPlan(p=>({...p,[gpWeekKey]:{planned:true,allocations:{...planDraft},at:dk(now)}}));setShowWeekPlan(false);};
   // Calendar facts the app can act on.
   const calInfo=useMemo(()=>{
     const wStart=new Date(now); wStart.setDate(wStart.getDate()-wStart.getDay());
@@ -2363,8 +2440,35 @@ ${body}
     const next=Math.max(0,Math.round(((Number(a.hoursLogged)||0)+delta)*10)/10);
     const capped=total>0?Math.min(total,next):next;
     if(total>0&&capped>=total&&(Number(a.hoursLogged)||0)<total)completeGoalAnim(id,"monthly");
-    return{...a,hoursLogged:capped};
+    return{...a,hoursLogged:capped,lastProgress:delta>0?dk(now):a.lastProgress};
   }));
+  // ── Smart suggestions: which goals are stalled or behind pace, so they feel alive ──
+  const goalSuggestions=useMemo(()=>{
+    const out={};const today=new Date(dk(now));
+    aspirations.filter(a=>!a.graduated&&a.status!=="archived").forEach(a=>{
+      // days since last progress
+      const lp=a.lastProgress||a.created||a.createdOn;
+      if(lp){const days=Math.round((today-new Date(lp))/86400000);
+        if(days>=7)out[a.id]={txt:`No progress in ${days} days`,tone:"warn"};}
+      // pace vs deadline for measurable (hours) goals
+      if(a.goalType==="measurable"&&a.deadline){
+        const total=Number(a.totalHours)||0,done=Number(a.hoursLogged)||0,left=total-done;
+        const daysLeft=Math.ceil((new Date(a.deadline)-today)/86400000);
+        if(left>0&&daysLeft>0&&total>0){
+          const created=new Date(a.created||a.createdOn||dk(now));
+          const elapsed=Math.max(1,Math.round((today-created)/86400000));
+          const rate=done/elapsed; // hrs/day so far
+          const projDays=rate>0?Math.ceil(left/rate):Infinity;
+          if(projDays>daysLeft){const over=projDays-daysLeft;
+            out[a.id]={txt:rate>0?`At this pace, ~${over>=14?Math.round(over/7)+" weeks":over+" days"} late`:`No pace yet — ${left}h left in ${daysLeft}d`,tone:"behind"};}
+          else if(!out[a.id])out[a.id]={txt:`On track · ${left}h left, ${daysLeft}d`,tone:"ok"};
+        }
+      }
+      // deadline passed
+      if(a.deadline&&new Date(a.deadline)<today&&!out[a.id])out[a.id]={txt:"Past deadline",tone:"behind"};
+    });
+    return out;
+  },[aspirations,now]);
 
   /* ─── Budget: calendar plumbing ─── */
   const bY=bMonth.getFullYear(),bM=bMonth.getMonth(),bDIM=new Date(bY,bM+1,0).getDate(),bFD=new Date(bY,bM,1).getDay(),bCM=bY===now.getFullYear()&&bM===now.getMonth();
@@ -2399,6 +2503,14 @@ ${body}
     const m={};allTx.forEach(t=>{const dt=new Date(t.date);if(dt.getFullYear()===bY&&dt.getMonth()===bM&&t.type==="out"){const c=t.category||"Other";m[c]=(m[c]||0)+t.amount;}});
     return Object.entries(m).map(([name,value])=>({name,value:Math.round(value*100)/100,color:CAT_COLORS[name]||CAT_COLORS.Other})).sort((a,b)=>b.value-a.value);
   },[allTx,bY,bM]);
+  // Budget vs actual — per category with a set limit
+  const budgetVsActual=useMemo(()=>{
+    const spent={};spendByCategory.forEach(c=>{spent[c.name]=c.value;});
+    return Object.entries(catBudgets).filter(([,lim])=>parseFloat(lim)>0).map(([cat,lim])=>{
+      const budget=parseFloat(lim),actual=spent[cat]||0,pct=Math.round(actual/budget*100);
+      return{cat,budget,actual,pct,over:actual>budget,color:CAT_COLORS[cat]||CAT_COLORS.Other};
+    }).sort((a,b)=>b.pct-a.pct);
+  },[catBudgets,spendByCategory]);
   const spendByMonth=useMemo(()=>{
     const arr=[];for(let i=5;i>=0;i--){const base=new Date(bY,bM-i,1);const y=base.getFullYear(),m=base.getMonth();
       let inc=0,exp=0;allTx.forEach(t=>{const dt=new Date(t.date);if(dt.getFullYear()===y&&dt.getMonth()===m&&t.type!=="transfer"){if(t.type==="in")inc+=t.amount;else exp+=t.amount;}});
@@ -2431,6 +2543,67 @@ ${body}
   // ── Net worth & debt HISTORY, derived from the ledger ──
   // Walk from the starting balances forward through every transaction, snapshotting net worth and
   // debt at the end of each day that had activity. Populates the trend graphs immediately.
+  // ── Financial goals: progress auto-tracked from transactions tagged with goalId ──
+  const finGoalProgress=useMemo(()=>{
+    const sums={};allTx.forEach(t=>{if(t.goalId){sums[t.goalId]=(sums[t.goalId]||0)+(t.type==="in"?t.amount:t.type==="out"?-t.amount:t.amount);}});
+    return finGoals.map(g=>{
+      const saved=Math.max(0,Math.round((sums[g.id]||0)*100)/100);
+      const target=parseFloat(g.target)||0;
+      const pct=target>0?Math.min(100,Math.round(saved/target*100)):0;
+      // ETA: from contribution rate since goal creation
+      let eta=null,monthlyRate=0;
+      const contribs=allTx.filter(t=>t.goalId===g.id).sort((a,b)=>new Date(a.date)-new Date(b.date));
+      if(contribs.length>=1&&saved>0&&saved<target){
+        const start=new Date(g.createdOn||contribs[0].date);
+        const days=Math.max(1,(Date.now()-start)/86400000);
+        monthlyRate=Math.round((saved/days)*30);
+        if(monthlyRate>0){const monthsLeft=(target-saved)/monthlyRate;const d=new Date();d.setMonth(d.getMonth()+Math.ceil(monthsLeft));eta=d.toLocaleDateString("en-US",{month:"short",year:"numeric"});}
+      }
+      // on-track vs deadline
+      let pace=null;
+      if(g.deadline&&saved<target){const dl=new Date(g.deadline);const monthsToDeadline=Math.max(0.1,(dl-Date.now())/(30*86400000));const needPerMonth=(target-saved)/monthsToDeadline;
+        pace={need:Math.round(needPerMonth),onTrack:monthlyRate>=needPerMonth&&monthlyRate>0};}
+      return{...g,saved,target,pct,eta,monthlyRate,pace,done:saved>=target&&target>0};
+    });
+  },[finGoals,allTx]);
+  const addFinGoal=()=>{const d=finGoalDraft;if(!d.name.trim()||!(parseFloat(d.target)>0))return;
+    setFinGoals(p=>[...p,{id:uid(),name:d.name.trim(),target:parseFloat(d.target),deadline:d.deadline||"",icon:d.icon||"🎯",createdOn:dk(now)}]);
+    setFinGoalDraft({name:"",target:"",deadline:"",icon:"🎯"});setShowFinGoal(false);};
+  const removeFinGoal=(id)=>{setFinGoals(p=>p.filter(g=>g.id!==id));setTxns(p=>{const n={};for(const k in p)n[k]=(p[k]||[]).map(t=>t.goalId===id?{...t,goalId:undefined}:t);return n;});};
+
+  // ── Financial Health Score (0–100): weighted composite of the metrics that matter ──
+  // ── Recurring payment detection ── finds repeated same-merchant, similar-amount charges
+  const recurringDetected=useMemo(()=>{
+    const byMerchant={};
+    allTx.filter(t=>t.type==="out"&&t.desc).forEach(t=>{const key=t.desc.toLowerCase().trim();(byMerchant[key]=byMerchant[key]||[]).push(t);});
+    const found=[];
+    Object.entries(byMerchant).forEach(([key,txs])=>{
+      if(txs.length<2)return;
+      txs.sort((a,b)=>new Date(a.date)-new Date(b.date));
+      // gaps between charges
+      const gaps=[];for(let i=1;i<txs.length;i++)gaps.push((new Date(txs[i].date)-new Date(txs[i-1].date))/86400000);
+      const avgGap=gaps.reduce((a,b)=>a+b,0)/gaps.length;
+      const amounts=txs.map(t=>t.amount);
+      const avgAmt=amounts.reduce((a,b)=>a+b,0)/amounts.length;
+      const lastAmt=amounts[amounts.length-1],firstAmt=amounts[0];
+      let cadence=null;
+      if(avgGap>=25&&avgGap<=35)cadence="monthly";
+      else if(avgGap>=6&&avgGap<=8)cadence="weekly";
+      else if(avgGap>=350&&avgGap<=380)cadence="yearly";
+      else if(avgGap>=13&&avgGap<=16)cadence="biweekly";
+      if(!cadence)return;
+      const lastDate=new Date(txs[txs.length-1].date);
+      const nextDate=new Date(lastDate);nextDate.setDate(nextDate.getDate()+Math.round(avgGap));
+      const daysSinceLast=Math.round((Date.now()-lastDate)/86400000);
+      found.push({name:txs[0].desc,cadence,avgAmt:Math.round(avgAmt*100)/100,count:txs.length,category:txs[txs.length-1].category||"Other",
+        nextDate:dk(nextDate),priceIncrease:lastAmt>firstAmt*1.05?Math.round((lastAmt-firstAmt)/firstAmt*100):0,
+        daysSinceLast,unused:daysSinceLast>avgGap*2});
+    });
+    return found.sort((a,b)=>a.name.localeCompare(b.name));
+  },[allTx]);
+  // Upcoming recurring in the next 30 days
+  const upcomingRecurring=useMemo(()=>recurringDetected.filter(r=>{const d=(new Date(r.nextDate)-Date.now())/86400000;return d>=-3&&d<=30;}).sort((a,b)=>new Date(a.nextDate)-new Date(b.nextDate)),[recurringDetected]);
+
   const worthHistory=useMemo(()=>{
     const bal={checking:parseFloat(accounts.checking)||0,savings:parseFloat(accounts.savings)||0,credit:parseFloat(accounts.credit)||0,investment:parseFloat(accounts.investment)||0};
     const dates=[...new Set(allTx.map(t=>t.date))].sort();
@@ -2460,8 +2633,75 @@ ${body}
   const debt=Math.max(0,acctNow.credit);
   const netWorthGoal=parseFloat(settings.netWorthGoal)||1000;
   const debtThreshold=parseFloat(settings.debtWarningThreshold)||1000;
-  const netWorthColor=gradColor(netWorth<=0?0:Math.min(1,netWorth/netWorthGoal));
-  const debtColor=gradColor(1-Math.min(1,debt/Math.max(1,debtThreshold)));
+  // Configurable ranges (fall back to legacy single-value settings if unset).
+  const bNwMin=parseFloat(settings.nwMin)||0;
+  const bNwTarget=parseFloat(settings.nwTarget)||netWorthGoal;
+  const bDebtMax=parseFloat(settings.debtMax)||debtThreshold;
+  const bDebtTarget=parseFloat(settings.debtTarget)||0;
+  // Net worth: red at min → amber → green at target. Debt: red at max → amber → green at target (lower is better).
+  const nwRangePct=bNwTarget<=bNwMin?1:Math.max(0,Math.min(1,(netWorth-bNwMin)/(bNwTarget-bNwMin)));
+  const debtRangePct=bDebtMax<=bDebtTarget?1:Math.max(0,Math.min(1,(bDebtMax-debt)/(bDebtMax-bDebtTarget)));
+  const netWorthColor=gradColor(nwRangePct);
+  const debtColor=gradColor(debtRangePct);
+  // ── Analytical read on the trends: what's actually happening + when you'll hit target ──
+  const worthAnalytics=useMemo(()=>{
+    const H=worthHistory;if(H.length<2)return null;
+    const first=H[0],last=H[H.length-1];
+    const spanDays=Math.max(1,(new Date(last.date)-new Date(first.date))/86400000);
+    const analyze=(key,target,lowerBetter)=>{
+      const vals=H.map(p=>p[key]);
+      const cur=vals[vals.length-1];
+      // 30-day moving average (last point)
+      const cutoff=new Date();cutoff.setDate(cutoff.getDate()-30);
+      const recent=H.filter(p=>new Date(p.date)>=cutoff).map(p=>p[key]);
+      const ma30=recent.length?Math.round(recent.reduce((a,b)=>a+b,0)/recent.length):cur;
+      // average change per 30 days
+      const totalChange=cur-vals[0];
+      const perMonth=Math.round((totalChange/spanDays)*30);
+      // projection to target
+      let etaText=null,etaDays=null;
+      const needed=target-cur;
+      const rate=totalChange/spanDays; // per day
+      if(lowerBetter){
+        if(cur<=target){etaText="Target reached";}
+        else if(rate<0){etaDays=Math.ceil((cur-target)/Math.abs(rate));}
+      }else{
+        if(cur>=target){etaText="Target reached";}
+        else if(rate>0){etaDays=Math.ceil((target-cur)/rate);}
+      }
+      if(etaDays!=null&&etaDays<=3650){const d=new Date();d.setDate(d.getDate()+etaDays);etaText=d.toLocaleDateString("en-US",{month:"short",year:"numeric"});}
+      else if(etaText==null)etaText=lowerBetter?(rate>=0?"Not decreasing":"—"):(rate<=0?"Not growing":"—");
+      // % improvement vs previous month value (~30 days ago)
+      const monthAgo=(()=>{const c=new Date();c.setDate(c.getDate()-30);let best=vals[0];for(const p of H){if(new Date(p.date)<=c)best=p[key];}return best;})();
+      const pctImp=monthAgo!==0?Math.round((cur-monthAgo)/Math.abs(monthAgo)*100):0;
+      return{cur,ma30,perMonth,etaText,pctImp,target};
+    };
+    return{nw:analyze("worth",bNwTarget,false),debt:analyze("debt",bDebtTarget,true)};
+  },[worthHistory,bNwTarget,bDebtTarget]);
+
+  const healthScore=useMemo(()=>{
+    const parts=[];
+    // 1. Savings rate (kept / income) — weight 30
+    const inc=cashFlow.cur.inc, exp=cashFlow.cur.exp;
+    const sr=inc>0?(inc-exp)/inc:0;
+    parts.push({label:"Savings rate",weight:30,pct:Math.max(0,Math.min(1,sr/0.2)),detail:inc>0?`${Math.round(sr*100)}%`:"—"}); // 20%+ = full
+    // 2. Debt-to-net-worth — weight 20 (lower is better)
+    const dti=netWorth>0?debt/Math.max(1,netWorth+debt):1;
+    parts.push({label:"Debt load",weight:20,pct:Math.max(0,Math.min(1,1-dti/0.5)),detail:`${Math.round(dti*100)}% of assets`}); // <0 debt best, 50%+ worst
+    // 3. Emergency fund — months of expenses in savings — weight 25
+    const monthlyExp=exp>0?exp:1;
+    const efMonths=(parseFloat(accounts.savings)||acctNow.savings||0)/monthlyExp;
+    parts.push({label:"Emergency fund",weight:25,pct:Math.max(0,Math.min(1,efMonths/6)),detail:`${efMonths.toFixed(1)} mo`}); // 6 months = full
+    // 4. Investment rate — investments / net worth — weight 15
+    const invShare=netWorth>0?(acctNow.investment||0)/netWorth:0;
+    parts.push({label:"Investing",weight:15,pct:Math.max(0,Math.min(1,invShare/0.4)),detail:`${Math.round(invShare*100)}%`}); // 40%+ = full
+    // 5. Net worth trend — weight 10
+    const nwGrowing=worthAnalytics?worthAnalytics.nw.perMonth:0;
+    parts.push({label:"Net worth trend",weight:10,pct:nwGrowing>0?1:nwGrowing===0?0.5:0.15,detail:nwGrowing>0?`+$${nwGrowing}/mo`:nwGrowing<0?"declining":"flat"});
+    const score=Math.round(parts.reduce((a,p)=>a+p.pct*p.weight,0));
+    return{score,parts};
+  },[cashFlow,netWorth,debt,accounts,acctNow,worthAnalytics]);
+
 
   /* ─── Add / edit / delete a ledger transaction (the only way balances ever change) ─── */
   /* ─── Intelligent transaction categorization ─── learns merchant→category like the workout
@@ -2812,6 +3052,80 @@ ${body}
           </div>
         </div>);
       })()}
+      {/* Weekly planning modal — allocate hours from monthly goals into this week */}
+      {showWeekPlan&&(()=>{
+        const goals=aspirations.filter(a=>a.goalType==="measurable"&&!a.graduated&&a.status!=="archived");
+        const totalPlanned=Object.values(planDraft).reduce((a,b)=>a+(Number(b)||0),0);
+        return(
+        <div onClick={()=>setShowWeekPlan(false)} style={{position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:460,background:C.surface,borderRadius:"20px 20px 0 0",padding:"22px 20px 28px",maxHeight:"86vh",overflowY:"auto"}}>
+            <div style={{...lbl,marginBottom:4}}>Plan this week</div>
+            <div style={{fontSize:11,color:C.textDim,marginBottom:16,lineHeight:1.5}}>Set the hours you want to put toward each goal this week. This becomes your target — daily focus tasks pull from it.</div>
+            {goals.length===0?<div style={{fontSize:12,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,textAlign:"center",padding:20}}>No hour-based goals yet.</div>:
+            goals.map(a=>{const pl=goalPlan[a.id];const rem=pl?pl.remaining:(Number(a.totalHours)||0)-(Number(a.hoursLogged)||0);const v=Number(planDraft[a.id])||0;return(
+              <div key={a.id} style={{padding:"12px 0",borderTop:`1px solid ${C.hairline}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+                  <span style={{fontSize:13,fontWeight:600,color:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{a.text}</span>
+                  <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{rem}h left total</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <button onClick={()=>setPlanDraft(p=>({...p,[a.id]:Math.max(0,Math.round(((Number(p[a.id])||0)-0.5)*10)/10)}))} style={{...btnG,padding:"6px 12px"}}>−</button>
+                  <div style={{flex:1,textAlign:"center"}}>
+                    <span style={{fontSize:20,fontWeight:800,color:v>0?C.accent:C.textDim,fontFamily:FN.m}}>{v}</span>
+                    <span style={{fontSize:11,color:C.textDim,marginLeft:3}}>h</span>
+                  </div>
+                  <button onClick={()=>setPlanDraft(p=>({...p,[a.id]:Math.min(rem,Math.round(((Number(p[a.id])||0)+0.5)*10)/10)}))} style={{...btnB,padding:"6px 12px"}}>+</button>
+                </div>
+              </div>
+            );})}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"16px 0",padding:"10px 12px",background:C.surfaceDim,borderRadius:10}}>
+              <span style={{fontSize:11,color:C.textDim,fontWeight:600}}>This week's total</span>
+              <span style={{fontSize:16,fontWeight:800,color:C.accent,fontFamily:FN.m}}>{Math.round(totalPlanned*10)/10}h</span>
+            </div>
+            <button onClick={saveWeekPlan} style={{...btnB,width:"100%"}}>Lock in this week's plan</button>
+            <button onClick={()=>setShowWeekPlan(false)} style={{...btnG,width:"100%",marginTop:8}}>Cancel</button>
+          </div>
+        </div>);
+      })()}
+      {/* Financial goal creation */}
+      {showFinGoal&&(
+        <div onClick={()=>setShowFinGoal(false)} style={{position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:440,background:C.surface,borderRadius:"20px 20px 0 0",padding:"22px 20px 28px"}}>
+            <div style={{...lbl,marginBottom:14}}>New Financial Goal</div>
+            <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+              {["🎯","🏠","🚗","✈️","💍","🎓","🛟","💰"].map(ic=>(
+                <button key={ic} onClick={()=>setFinGoalDraft(p=>({...p,icon:ic}))} style={{fontSize:20,width:40,height:40,borderRadius:10,border:`1px solid ${finGoalDraft.icon===ic?C.accent:C.hairline}`,background:finGoalDraft.icon===ic?`${C.accent}1A`:"transparent",cursor:"pointer"}}>{ic}</button>
+              ))}
+            </div>
+            <input value={finGoalDraft.name} onChange={e=>setFinGoalDraft(p=>({...p,name:e.target.value}))} placeholder="Goal name (Emergency Fund)" style={{...inp,width:"100%",boxSizing:"border-box",marginBottom:10}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+              <div><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Target</div><div style={{display:"flex",alignItems:"center",gap:3}}><span style={{color:C.textDim}}>$</span><input type="number" inputMode="decimal" value={finGoalDraft.target} onChange={e=>setFinGoalDraft(p=>({...p,target:e.target.value}))} placeholder="10000" style={{...inp,width:"100%",boxSizing:"border-box",fontFamily:FN.m}}/></div></div>
+              <div><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Deadline (optional)</div><input type="date" value={finGoalDraft.deadline} onChange={e=>setFinGoalDraft(p=>({...p,deadline:e.target.value}))} style={{...inp,width:"100%",boxSizing:"border-box",fontFamily:FN.m,fontSize:11}}/></div>
+            </div>
+            <button onClick={addFinGoal} style={{...btnB,width:"100%"}}>Create goal</button>
+            <button onClick={()=>setShowFinGoal(false)} style={{...btnG,width:"100%",marginTop:8}}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {/* Category budget limits editor */}
+      {showBudgetEdit&&(
+        <div onClick={()=>setShowBudgetEdit(false)} style={{position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:440,background:C.surface,borderRadius:"20px 20px 0 0",padding:"22px 20px 28px",maxHeight:"84vh",overflowY:"auto"}}>
+            <div style={{...lbl,marginBottom:4}}>Monthly Budget Limits</div>
+            <div style={{fontSize:11,color:C.textDim,marginBottom:16,lineHeight:1.5}}>Set a monthly cap per category. Leave blank for no limit.</div>
+            {TX_CATEGORIES.filter(c=>!["Income","Transfers"].includes(c)).map(cat=>(
+              <div key={cat} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:`1px solid ${C.hairline}`}}>
+                <span style={{width:9,height:9,borderRadius:2,background:CAT_COLORS[cat],flexShrink:0}}/>
+                <span style={{fontSize:12,color:C.text,flex:1}}>{cat}</span>
+                <div style={{display:"flex",alignItems:"center",gap:3}}><span style={{fontSize:12,color:C.textDim}}>$</span>
+                  <input type="number" inputMode="decimal" value={catBudgets[cat]||""} onChange={e=>setCatBudgets(p=>{const n={...p};if(e.target.value)n[cat]=e.target.value;else delete n[cat];return n;})} placeholder="—" style={{...inp,width:80,fontFamily:FN.m,textAlign:"right"}}/>
+                </div>
+              </div>
+            ))}
+            <button onClick={()=>setShowBudgetEdit(false)} style={{...btnB,width:"100%",marginTop:16}}>Done</button>
+          </div>
+        </div>
+      )}
       <style>{CSS}</style>
 
       {confetti&&<div style={{position:"fixed",inset:0,zIndex:300,pointerEvents:"none",overflow:"hidden"}}>{Array.from({length:30}).map((_,i)=>{const l=Math.random()*100,d=Math.random()*2+1;const c=[C.green,C.goldBright,C.blue,C.orange,"#fff"][Math.floor(Math.random()*5)];return(<div key={i} style={{position:"absolute",left:`${l}%`,top:-10,width:7,height:7,borderRadius:"50%",background:c,animation:`xpFloat ${d}s ease-out forwards`}} />);})}</div>}
@@ -3560,6 +3874,17 @@ ${body}
 
         {/* ═══ GOALS — 4 sub-tabs: Monthly / Weekly / Focus / Habits ═══ */}
         {tab==="goals"&&<div className="tab-content">
+          {/* Weekly planning prompt — fires on your planning day */}
+          {planReady&&aspirations.some(a=>a.goalType==="measurable"&&!a.graduated)&&(
+            <div style={{...card,marginBottom:14,borderLeft:`3px solid ${C.accent}`,background:`linear-gradient(135deg, ${C.accent}14, transparent)`}}>
+              <div style={{fontSize:13,fontWeight:800,color:C.text,fontFamily:FN.h,fontStyle:"italic",marginBottom:4}}>Plan your week</div>
+              <div style={{fontSize:11,color:C.textSec||C.textDim,lineHeight:1.5,marginBottom:11}}>What would you like to accomplish this week? Pull hours from your monthly goals into this week's workload.</div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={openWeekPlan} className="press" style={{...btnB,flex:2}}>Plan this week</button>
+                <button onClick={()=>setWeekPlan(p=>({...p,[gpWeekKey]:{planned:true,skipped:true}}))} className="press" style={{...btnG,flex:1}}>Skip</button>
+              </div>
+            </div>
+          )}
           {/* Shared scrolling calendar for the whole Goals tab — same strip as Diet / Workouts.
               Shows the real week + month boundaries so you can see exactly when things reset. */}
           {(()=>{const days=[];
@@ -3620,6 +3945,12 @@ ${body}
                       {a.goalType==="outcome"&&`${(a.steps||[]).filter(s=>s.done).length}/${(a.steps||[]).length} steps`}
                       {a.goalType==="habit"&&`${p?.daysHit||0}/${a.targetDays} days · ${p?.onPace?"on pace":"behind"}`}
                     </div>
+                    {goalSuggestions[a.id]&&(()=>{const s=goalSuggestions[a.id];const clr=s.tone==="behind"?"#E85B5B":s.tone==="warn"?"#E8A33D":s.tone==="ok"?"#22C55E":C.textDim;return(
+                      <div style={{display:"inline-flex",alignItems:"center",gap:5,marginTop:5,padding:"3px 8px",borderRadius:6,background:`${clr}1A`,border:`1px solid ${clr}44`}}>
+                        <span style={{width:5,height:5,borderRadius:"50%",background:clr,flexShrink:0}}/>
+                        <span style={{fontSize:9.5,fontWeight:700,color:clr,fontFamily:FN.m}}>{s.txt}</span>
+                      </div>);
+                    })()}
                   </div>
                   {a.goalType==="habit"&&a.monthsAtTarget>=3&&<button onClick={()=>graduateGoal(a.id)} className="press" style={{background:C.accent,border:"none",borderRadius:6,padding:"5px 10px",color:C.btnText,fontSize:9,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",cursor:"pointer"}}>Graduate</button>}
                   <button onClick={()=>openGoalEdit(a,"monthly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px",flexShrink:0}}>edit</button>
@@ -4506,6 +4837,74 @@ ${body}
             const toggleEx=(name)=>{const cur=strExSel||exs;const next=cur.includes(name)?cur.filter(x=>x!==name):[...cur,name];setStrExSel(next.length===exs.length?null:next);};
             const colorFor=(name)=>EX_PALETTE[exs.indexOf(name)%EX_PALETTE.length];
             return(<div>
+              {/* ─── Am I getting stronger? — overall strength score ─── */}
+              {(()=>{const sp=strengthProgress;
+                const scoreClr=sp.score>=70?"#22C55E":sp.score>=45?"#E8A33D":"#E85B5B";
+                return(
+                <div style={{...card,marginBottom:14}}>
+                  <div style={{...lbl,marginBottom:2}}>Am I getting stronger?</div>
+                  {!sp.hasData?<div style={{fontSize:11,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,padding:"14px 0"}}>Log a few more sessions per exercise to see your strength trend.</div>:<>
+                  <div style={{display:"flex",alignItems:"center",gap:16,margin:"12px 0 4px"}}>
+                    <div style={{position:"relative",width:88,height:88,flexShrink:0}}>
+                      <svg width="88" height="88" style={{transform:"rotate(-90deg)"}}>
+                        <circle cx="44" cy="44" r="38" fill="none" stroke={C.surfaceDim} strokeWidth="8"/>
+                        <circle cx="44" cy="44" r="38" fill="none" stroke={scoreClr} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${Math.PI*76*sp.score/100} ${Math.PI*76}`}/>
+                      </svg>
+                      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                        <span style={{fontSize:26,fontWeight:800,color:scoreClr,fontFamily:FN.m,lineHeight:1}}>{sp.score}</span>
+                        <span style={{fontSize:7,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em"}}>score</span>
+                      </div>
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:12,fontWeight:700,color:scoreClr,marginBottom:6}}>{sp.score>=70?"Clearly progressing":sp.score>=45?"Holding steady":"Stalling — time to push"}</div>
+                      {[["Est. 1RM",sp.scoreParts.avgE1rmPct],["Volume",sp.scoreParts.avgVolPct]].map(([l,v])=>(
+                        <div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                          <span style={{fontSize:10,color:C.textDim}}>{l} trend</span>
+                          <span style={{fontSize:10,fontWeight:700,fontFamily:FN.m,color:v>=0?"#22C55E":"#E85B5B"}}>{v>=0?"+":""}{v}%</span>
+                        </div>
+                      ))}
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:10,color:C.textDim}}>Consistency</span>
+                        <span style={{fontSize:10,fontWeight:700,fontFamily:FN.m,color:C.text}}>{sp.scoreParts.trainDays} days</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{fontSize:9.5,color:C.textDim,lineHeight:1.5,marginTop:8,paddingTop:8,borderTop:`1px solid ${C.hairline}`}}>{sp.scoreParts.improvingShare}% of your exercises are improving. Score blends strength gains, volume, and how consistently you train.</div>
+                  </>}
+                </div>);
+              })()}
+
+              {/* ─── Per-exercise progress — weight, reps, volume, est 1RM ─── */}
+              {strengthProgress.exercises.length>0&&<div style={{marginBottom:14}}>
+                <div style={{...lbl,marginBottom:10}}>Exercise Progress</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {strengthProgress.exercises.map(e=>{
+                    const clr=e.improving?"#22C55E":"#E85B5B";
+                    return(
+                    <div key={e.name} style={{...card,padding:"12px 14px",marginBottom:0}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:e.count>=2?10:0}}>
+                        <span style={{fontSize:13,fontWeight:700,color:C.text}}>{e.name}</span>
+                        <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{e.count} session{e.count!==1?"s":""}</span>
+                      </div>
+                      {e.count>=2?<>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                          {[["Weight",`${e.wChange>=0?"+":""}${e.wChange}`,e.wChange>0,e.wChange!==0],["Reps",`${e.repChange>=0?"+":""}${e.repChange}`,e.repChange>0,e.repChange!==0],["Volume",`${e.volPct>=0?"+":""}${e.volPct}%`,e.volPct>0,e.volPct!==0]].map(([l,v,good,active])=>(
+                            <div key={l} style={{textAlign:"center",padding:"7px 4px",background:C.surfaceDim,borderRadius:8}}>
+                              <div style={{fontSize:14,fontWeight:800,fontFamily:FN.m,color:!active?C.textDim:good?"#22C55E":"#E85B5B",lineHeight:1}}>{v}</div>
+                              <div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>{l}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:9.5,fontFamily:FN.m}}>
+                          <span style={{color:C.textDim}}>Est. 1RM <b style={{color:clr}}>{e.e1rmPct>=0?"+":""}{e.e1rmPct}%</b> ({e.first.e1rm}→{e.last.e1rm})</span>
+                          <span style={{color:C.textDim}}>PR <b style={{color:C.accent}}>{e.prE}</b></span>
+                        </div>
+                      </>:<div style={{fontSize:9.5,color:C.textDim,fontFamily:FN.m}}>Latest: {e.last.w}×{e.last.reps} · est 1RM {e.last.e1rm} · one session logged</div>}
+                    </div>);
+                  })}
+                </div>
+              </div>}
+
               {/* ─── Section 1: Strength progression ─── */}
               <div style={{...card,marginBottom:14}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
@@ -4660,6 +5059,7 @@ ${body}
           </div>
 
           {budgetSub==="current"&&<>
+
           {/* ═══ NET WORTH ▲ & DEBT ▼ — mirrored trend graphs derived from the ledger ═══ */}
           {(()=>{
             const H=worthHistory;
@@ -4679,22 +5079,54 @@ ${body}
             };
             return(
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-              {/* Net worth — green, trending up */}
-              <div style={{...card,padding:"12px 12px 6px",background:`linear-gradient(160deg, ${GRN}18, ${GRN}04)`,border:`1px solid ${GRN}44`}}>
+              {/* Net worth — color shifts red→amber→green by where you sit in YOUR range */}
+              <div style={{...card,padding:"12px 12px 6px",background:`linear-gradient(160deg, ${netWorthColor}18, ${netWorthColor}04)`,border:`1px solid ${netWorthColor}44`}}>
                 <div style={{fontSize:9,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Net Worth</div>
-                <div style={{fontSize:20,fontWeight:800,color:GRN,fontFamily:FN.m,lineHeight:1.1}}>${netWorth.toFixed(2)}</div>
+                <div style={{fontSize:20,fontWeight:800,color:netWorthColor,fontFamily:FN.m,lineHeight:1.1}}>${netWorth.toFixed(2)}</div>
                 {hasHist&&<div style={{fontSize:9.5,fontFamily:FN.m,color:nwTrend>=0?GRN:RED,marginBottom:2}}>{nwTrend>=0?"▲":"▼"} ${Math.abs(nwTrend).toFixed(0)}</div>}
-                <Spark data={H} keyName="worth" color={GRN} up/>
+                <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",margin:"4px 0 2px"}}><div style={{height:"100%",width:`${Math.round(nwRangePct*100)}%`,background:netWorthColor,borderRadius:2,transition:"width 0.5s ease,background 0.5s ease"}}/></div>
+                <Spark data={H} keyName="worth" color={netWorthColor} up/>
               </div>
-              {/* Debt — red, trending down (goal is decline) */}
-              <div style={{...card,padding:"12px 12px 6px",background:`linear-gradient(160deg, ${RED}18, ${RED}04)`,border:`1px solid ${RED}44`}}>
+              {/* Debt — color shifts red→amber→green as you pay down toward target */}
+              <div style={{...card,padding:"12px 12px 6px",background:`linear-gradient(160deg, ${debtColor}18, ${debtColor}04)`,border:`1px solid ${debtColor}44`}}>
                 <div style={{fontSize:9,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Debt</div>
-                <div style={{fontSize:20,fontWeight:800,color:RED,fontFamily:FN.m,lineHeight:1.1}}>${debt.toFixed(2)}</div>
+                <div style={{fontSize:20,fontWeight:800,color:debtColor,fontFamily:FN.m,lineHeight:1.1}}>${debt.toFixed(2)}</div>
                 {hasHist&&<div style={{fontSize:9.5,fontFamily:FN.m,color:debtTrend<=0?GRN:RED,marginBottom:2}}>{debtTrend<=0?"▼":"▲"} ${Math.abs(debtTrend).toFixed(0)}</div>}
-                <Spark data={H} keyName="debt" color={RED}/>
+                <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",margin:"4px 0 2px"}}><div style={{height:"100%",width:`${Math.round(debtRangePct*100)}%`,background:debtColor,borderRadius:2,transition:"width 0.5s ease,background 0.5s ease"}}/></div>
+                <Spark data={H} keyName="debt" color={debtColor}/>
               </div>
             </div>);
           })()}
+
+          {/* ═══ What the graphs are telling you — the decision layer ═══ */}
+          {worthAnalytics&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+            {[{a:worthAnalytics.nw,label:"Net Worth",lowerBetter:false},{a:worthAnalytics.debt,label:"Debt",lowerBetter:true}].map(({a,label,lowerBetter})=>{
+              const good=lowerBetter?a.perMonth<=0:a.perMonth>=0;
+              const GRN="#22C55E",RED="#E85B5B";
+              return(
+              <div key={label} style={{...card,padding:"11px 12px",marginBottom:0}}>
+                <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:7}}>{label} · trend</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                    <span style={{fontSize:10,color:C.textDim}}>Avg / month</span>
+                    <span style={{fontSize:12,fontWeight:800,fontFamily:FN.m,color:good?GRN:RED}}>{a.perMonth>=0?"+":"−"}${Math.abs(a.perMonth).toLocaleString()}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                    <span style={{fontSize:10,color:C.textDim}}>30-day avg</span>
+                    <span style={{fontSize:11,fontWeight:700,fontFamily:FN.m,color:C.text}}>${a.ma30.toLocaleString()}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                    <span style={{fontSize:10,color:C.textDim}}>vs last month</span>
+                    <span style={{fontSize:11,fontWeight:700,fontFamily:FN.m,color:(lowerBetter?a.pctImp<=0:a.pctImp>=0)?GRN:RED}}>{a.pctImp>=0?"+":""}{a.pctImp}%</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",paddingTop:6,borderTop:`1px solid ${C.hairline}`}}>
+                    <span style={{fontSize:10,color:C.textDim}}>Target {a.etaText==="Target reached"?"":"by"}</span>
+                    <span style={{fontSize:11,fontWeight:800,fontFamily:FN.m,color:a.etaText==="Target reached"?GRN:a.etaText.includes("Not")?RED:C.accent}}>{a.etaText}</span>
+                  </div>
+                </div>
+              </div>);
+            })}
+          </div>}
 
           {/* ═══ ACCOUNT GRID (2×2 — every balance is derived from the ledger below, never typed in directly) ═══ */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
@@ -4720,6 +5152,21 @@ ${body}
                 <span style={{...lbl,margin:0}}>Cash Flow</span>
                 <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{new Date(bY,bM,1).toLocaleDateString("en-US",{month:"long"})} vs prev</span>
               </div>
+              {/* How much of your income you actually keep — proportional split */}
+              {cf.cur.inc>0&&(()=>{
+                const spentPct=Math.min(100,Math.round(cf.cur.exp/cf.cur.inc*100));
+                const keptPct=Math.max(0,100-spentPct);
+                return(<div style={{marginBottom:14}}>
+                  <div style={{display:"flex",height:26,borderRadius:8,overflow:"hidden",border:`1px solid ${C.hairline}`}}>
+                    <div style={{width:`${spentPct}%`,background:RED,display:"flex",alignItems:"center",justifyContent:"center",minWidth:spentPct>12?"auto":0}}>{spentPct>=14&&<span style={{fontSize:9,fontWeight:800,color:"#fff",fontFamily:FN.m}}>{spentPct}%</span>}</div>
+                    <div style={{width:`${keptPct}%`,background:GRN,display:"flex",alignItems:"center",justifyContent:"center"}}>{keptPct>=14&&<span style={{fontSize:9,fontWeight:800,color:"#fff",fontFamily:FN.m}}>{keptPct}%</span>}</div>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginTop:5}}>
+                    <span style={{fontSize:9.5,color:RED,fontWeight:700}}>Spent ${cf.cur.exp.toFixed(0)}</span>
+                    <span style={{fontSize:9.5,color:GRN,fontWeight:700}}>Kept ${(cf.cur.inc-cf.cur.exp).toFixed(0)} of ${cf.cur.inc.toFixed(0)}</span>
+                  </div>
+                </div>);
+              })()}
               {rows.map(([label,cur,prev,color,pct,goodUp],i)=>(
                 <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 0",borderTop:i>0?`1px solid ${C.hairline}`:"none"}}>
                   <div style={{minWidth:0}}>
@@ -4735,9 +5182,40 @@ ${body}
             </div>)})()}
 
 
+
+
           </>}
 
           {budgetSub==="overview"&&<>
+
+          {/* ═══ FINANCIAL GOALS — progress auto-tracked from tagged transactions ═══ */}
+          <div style={{...card,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:finGoalProgress.length?12:0}}>
+              <span style={{...lbl,margin:0}}>Financial Goals</span>
+              <button onClick={()=>setShowFinGoal(true)} className="press" style={{background:C.accent,color:C.btnText,border:"none",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:800,cursor:"pointer"}}>+ Goal</button>
+            </div>
+            {finGoalProgress.length===0?<div style={{fontSize:11,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,padding:"6px 0"}}>Add a goal — emergency fund, house, car — then tag transactions to it to watch it fill.</div>:
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {finGoalProgress.map(g=>{
+                const clr=g.done?"#22C55E":g.pace?(g.pace.onTrack?"#22C55E":"#E8A33D"):C.accent;
+                return(
+                <SwipeRow key={g.id} onDelete={()=>removeFinGoal(g.id)} bg={C.surface} padY={0}>
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:7}}>
+                      <span style={{fontSize:18}}>{g.icon}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:C.text}}>{g.name}</div>
+                        <div style={{fontSize:9.5,color:C.textDim,fontFamily:FN.m}}>${g.saved.toLocaleString()} of ${g.target.toLocaleString()}{g.eta&&!g.done?` · ~${g.eta}`:""}{g.done?" · reached 🎉":""}</div>
+                      </div>
+                      <span style={{fontSize:15,fontWeight:800,color:clr,fontFamily:FN.m}}>{g.pct}%</span>
+                    </div>
+                    <div style={{height:7,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${g.pct}%`,background:clr,borderRadius:4,transition:"width 0.5s ease"}}/></div>
+                    {g.pace&&!g.done&&<div style={{fontSize:9,color:g.pace.onTrack?"#22C55E":"#E8A33D",fontFamily:FN.m,marginTop:5}}>{g.pace.onTrack?`On track — saving $${g.monthlyRate}/mo`:`Need $${g.pace.need}/mo to hit deadline${g.monthlyRate>0?` (now $${g.monthlyRate}/mo)`:""}`}</div>}
+                  </div>
+                </SwipeRow>);
+              })}
+            </div>}
+          </div>
           {/* ═══ MONTHLY INSIGHTS — auto-generated ═══ */}
           {monthInsights.length>0&&<div style={{...card,marginBottom:14}}>
             <div style={{...lbl,marginBottom:10}}>Insights · {new Date(bY,bM,1).toLocaleDateString("en-US",{month:"long"})}</div>
@@ -4748,6 +5226,26 @@ ${body}
               </div>
             ))}
           </div>}
+
+          {/* ═══ BUDGET VS ACTUAL — per-category limits ═══ */}
+          <div style={{...card,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:budgetVsActual.length?12:0}}>
+              <span style={{...lbl,margin:0}}>Budget vs Actual</span>
+              <button onClick={()=>setShowBudgetEdit(true)} className="press" style={{background:C.surfaceDim,color:C.text,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,cursor:"pointer"}}>Set limits</button>
+            </div>
+            {budgetVsActual.length===0?<div style={{fontSize:11,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,padding:"6px 0"}}>Set a monthly limit per category to track spending against your plan.</div>:
+            <div style={{display:"flex",flexDirection:"column",gap:11}}>
+              {budgetVsActual.map(b=>{const clr=b.over?"#E85B5B":b.pct>=80?"#E8A33D":"#22C55E";return(
+                <div key={b.cat}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+                    <span style={{fontSize:11,fontWeight:700,color:C.text}}>{b.cat}</span>
+                    <span style={{fontSize:10,fontFamily:FN.m,color:clr,fontWeight:700}}>${b.actual.toFixed(0)} / ${b.budget.toFixed(0)}{b.over?` · $${(b.actual-b.budget).toFixed(0)} over`:` · ${100-b.pct}% left`}</span>
+                  </div>
+                  <div style={{height:6,background:C.surfaceDim,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,b.pct)}%`,background:clr,borderRadius:3,transition:"width 0.4s ease"}}/></div>
+                </div>
+              );})}
+            </div>}
+          </div>
 
           {/* ═══ SPENDING BY CATEGORY ═══ */}
           {spendByCategory.length>0&&<div style={{...card,marginBottom:14}}>
@@ -4817,6 +5315,37 @@ ${body}
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          {/* ═══ SUBSCRIPTION CENTER — auto-detected recurring payments ═══ */}
+          {recurringDetected.length>0&&<div style={{...card,marginBottom:14}}>
+            <div style={{...lbl,marginBottom:4}}>Detected Recurring</div>
+            <div style={{fontSize:10,color:C.textDim,marginBottom:12,lineHeight:1.4}}>Found automatically from your transaction history.</div>
+            {/* Alerts first */}
+            {recurringDetected.filter(r=>r.priceIncrease>0||r.unused).map(r=>(
+              <div key={r.name+"-alert"} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"7px 9px",marginBottom:6,borderRadius:8,background:r.priceIncrease>0?"#E85B5B14":"#E8A33D14",border:`1px solid ${r.priceIncrease>0?"#E85B5B44":"#E8A33D44"}`}}>
+                <span style={{fontSize:11,marginTop:1}}>{r.priceIncrease>0?"📈":"💤"}</span>
+                <span style={{fontSize:10.5,color:C.text,lineHeight:1.4}}>{r.priceIncrease>0?<>{r.name} increased {r.priceIncrease}% — now ${r.avgAmt.toFixed(2)}/{r.cadence.replace("ly","")}.</>:<>You haven't paid {r.name} in {r.daysSinceLast} days — still using it?</>}</span>
+              </div>
+            ))}
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:recurringDetected.some(r=>r.priceIncrease>0||r.unused)?8:0}}>
+              {recurringDetected.map(r=>(
+                <div key={r.name} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 0",borderTop:`1px solid ${C.hairline}`}}>
+                  <span style={{width:8,height:8,borderRadius:2,background:CAT_COLORS[r.category]||CAT_COLORS.Other,flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:700,color:C.text}}>{r.name}</div>
+                    <div style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{r.cadence} · next ~{fd(r.nextDate)}</div>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:FN.m}}>${r.avgAmt.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+            {(()=>{const mo=recurringDetected.filter(r=>r.cadence==="monthly").reduce((a,r)=>a+r.avgAmt,0);return mo>0?(
+              <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${C.hairline}`,display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontSize:10,color:C.textDim,fontWeight:600}}>Monthly recurring total</span>
+                <span style={{fontSize:13,fontWeight:800,color:C.accent,fontFamily:FN.m}}>${mo.toFixed(2)}/mo</span>
+              </div>
+            ):null;})()}
+          </div>}
 
           {/* ═══ Subscriptions ═══ */}
           <div style={{...card,marginBottom:14}}>
@@ -4889,6 +5418,14 @@ ${body}
                       </select>
                       <span style={{position:"absolute",right:2,fontSize:7,color:C.textDim,pointerEvents:"none"}}>▼</span>
                     </div>}
+                    {!isXfer&&finGoals.length>0&&<div onClick={e=>e.stopPropagation()} style={{marginTop:3,display:"inline-flex",alignItems:"center",gap:4,marginLeft:8,position:"relative"}}>
+                      <span style={{fontSize:9}}>{tx.goalId?(finGoals.find(g=>g.id===tx.goalId)?.icon||"🎯"):"🎯"}</span>
+                      <select value={tx.goalId||""} onChange={e=>{const gid=e.target.value;setTxns(p=>({...p,[bDK(selDay)]:(p[bDK(selDay)]||[]).map(t=>t.id===tx.id?{...t,goalId:gid||undefined}:t)}));}} style={{appearance:"none",background:"transparent",border:"none",color:tx.goalId?C.accent:C.textDim,fontSize:9.5,fontWeight:700,fontFamily:FN.b,cursor:"pointer",padding:"1px 14px 1px 0"}}>
+                        <option value="" style={{color:"#000"}}>no goal</option>
+                        {finGoals.map(g=><option key={g.id} value={g.id} style={{color:"#000"}}>{g.name}</option>)}
+                      </select>
+                      <span style={{position:"absolute",right:2,fontSize:7,color:C.textDim,pointerEvents:"none"}}>▼</span>
+                    </div>}
                   </div>
                   <span style={{fontSize:12,fontWeight:700,color:clr,flexShrink:0}}>${tx.amount.toFixed(2)}</span>
                   <button onClick={e=>{e.stopPropagation();rTx(selDay,tx.id);}} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:13,flexShrink:0}}>×</button>
@@ -4925,7 +5462,6 @@ ${body}
               </div>
             </div>}
           </div>
-          <div style={{...card,marginTop:12}}><div style={lbl}>Breakdown</div><div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:30}}><ResponsiveContainer width={180} height={180}><PieChart><Pie data={[{name:"Income",value:Math.max(bTot.i,0.01)},{name:"Expenses",value:Math.max(bTot.o,0.01)}]} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={3} dataKey="value" stroke="none"><Cell fill={C.green} /><Cell fill={C.red} /></Pie><Tooltip content={<Tip />} /></PieChart></ResponsiveContainer><div>{[{l:"Income",v:`$${bTot.i.toFixed(2)}`,c:C.green},{l:"Expenses",v:`$${bTot.o.toFixed(2)}`,c:C.red}].map((s,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><div style={{width:10,height:10,borderRadius:3,background:s.c}} /><div><div style={{fontSize:11,color:C.textDim}}>{s.l}</div><div style={{fontSize:14,fontWeight:700,color:s.c}}>{s.v}</div></div></div>))}</div></div></div>
           </>}
         </div>}
 
@@ -4963,6 +5499,18 @@ ${body}
         <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Time Ranges</div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Morning Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.morningStart} onChange={e=>setSettings(p=>({...p,morningStart:parseInt(e.target.value)||5}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.morningEnd} onChange={e=>setSettings(p=>({...p,morningEnd:parseInt(e.target.value)||12}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Night Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.nightStart} onChange={e=>setSettings(p=>({...p,nightStart:parseInt(e.target.value)||18}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.nightEnd} onChange={e=>setSettings(p=>({...p,nightEnd:parseInt(e.target.value)||23}))} style={{...numI,width:60}} /></div></div>
+        <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Planning Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,planDay:i}))} style={{...pill((settings.planDay??0)===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
+
+        {/* Sync status badge — off by default; flip on to watch the little sync indicator */}
+        <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.textDim}}>Show sync status badge</div>
+            <div style={{fontSize:10,color:C.textDim,opacity:0.7,marginTop:2,lineHeight:1.4}}>A small indicator showing cloud sync activity. Off by default.</div>
+          </div>
+          <button onClick={toggleSyncBadge} style={{flexShrink:0,width:46,height:26,borderRadius:13,border:"none",background:syncBadge?C.accent:C.hairline,position:"relative",cursor:"pointer",transition:"background 0.2s ease"}}>
+            <span style={{position:"absolute",top:3,left:syncBadge?23:3,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 0.2s ease",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+          </button>
+        </div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Review Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,reviewDay:i}))} style={{...pill(settings.reviewDay===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
 
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Carry unfinished focus to next day at</div>
@@ -4988,8 +5536,21 @@ ${body}
           </div>
         </div>
 
-                <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Net Worth Goal — green at</div><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:C.textDim,fontSize:13}}>$</span><input type="number" min="1" value={settings.netWorthGoal} onChange={e=>setSettings(p=>({...p,netWorthGoal:e.target.value}))} style={{...numI,width:90}} /></div></div>
-        <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Debt Warning — red at</div><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:C.textDim,fontSize:13}}>$</span><input type="number" min="1" value={settings.debtWarningThreshold} onChange={e=>setSettings(p=>({...p,debtWarningThreshold:e.target.value}))} style={{...numI,width:90}} /></div></div>
+        {/* ─── FINANCIAL RANGES — define what red / amber / green mean for you ─── */}
+        <div style={{marginBottom:20,padding:"14px 16px",background:C.surfaceDim,borderRadius:12}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:4}}>Net Worth range</div>
+          <div style={{fontSize:10,color:C.textDim,marginBottom:10,lineHeight:1.5}}>Red at the low end, green when you hit target.</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Low (red)</div><div style={{display:"flex",alignItems:"center",gap:3}}><span style={{color:C.textDim,fontSize:12}}>$</span><input type="number" inputMode="decimal" value={settings.nwMin} onChange={e=>setSettings(p=>({...p,nwMin:e.target.value}))} style={{...numI,width:"100%",fontFamily:FN.m}}/></div></div>
+            <div><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Target (green)</div><div style={{display:"flex",alignItems:"center",gap:3}}><span style={{color:C.textDim,fontSize:12}}>$</span><input type="number" inputMode="decimal" value={settings.nwTarget} onChange={e=>setSettings(p=>({...p,nwTarget:e.target.value,netWorthGoal:e.target.value}))} style={{...numI,width:"100%",fontFamily:FN.m}}/></div></div>
+          </div>
+          <div style={{fontSize:12,fontWeight:700,color:C.text,margin:"16px 0 4px"}}>Debt range</div>
+          <div style={{fontSize:10,color:C.textDim,marginBottom:10,lineHeight:1.5}}>Red at the high end, green as you pay it down to target.</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>High (red)</div><div style={{display:"flex",alignItems:"center",gap:3}}><span style={{color:C.textDim,fontSize:12}}>$</span><input type="number" inputMode="decimal" value={settings.debtMax} onChange={e=>setSettings(p=>({...p,debtMax:e.target.value,debtWarningThreshold:e.target.value}))} style={{...numI,width:"100%",fontFamily:FN.m}}/></div></div>
+            <div><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Target (green)</div><div style={{display:"flex",alignItems:"center",gap:3}}><span style={{color:C.textDim,fontSize:12}}>$</span><input type="number" inputMode="decimal" value={settings.debtTarget} onChange={e=>setSettings(p=>({...p,debtTarget:e.target.value}))} style={{...numI,width:"100%",fontFamily:FN.m}}/></div></div>
+          </div>
+        </div>
 
         {/* Full Monthly View */}
         <div style={{marginTop:16,padding:"14px",background:C.surfaceDim,borderRadius:12,border:`1px solid ${C.hairline}`}}>
