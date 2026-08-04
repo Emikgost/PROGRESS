@@ -336,18 +336,107 @@ const AUTOCORRECT={
   independant:"independent",knowlege:"knowledge",lenght:"length",maintainance:"maintenance",occassion:"occasion",
   persistant:"persistent",priviledge:"privilege",recomend:"recommend",refered:"referred",relevent:"relevant",
   succesful:"successful",suprise:"surprise",suprised:"surprised",wellcome:"welcome",yesteday:"yesterday",
-  everytime:"every time",everyday:"every day",atleast:"at least",infront:"in front",incase:"in case"
+  everytime:"every time",everyday:"every day",atleast:"at least",infront:"in front",incase:"in case",
+  aswell:"as well",infact:"in fact",ofcourse:"of course",eachother:"each other",noone:"no one",
+  wanna:"want to",gotta:"got to",kinda:"kind of",sorta:"sort of",lotta:"lot of",outta:"out of",
+  cuz:"because",cus:"because",bcuz:"because",bc:"because",tho:"though",thoe:"though",
+  acomplish:"accomplish",acheive:"achieve",acheived:"achieved",adress:"address",arent:"aren't",
+  athiest:"atheist",awya:"away",begining:"beginning",beleif:"belief",bizarre:"bizarre",
+  buisness:"business",buiness:"business",catagory:"category",cemetary:"cemetery",changable:"changeable",
+  cieling:"ceiling",collectable:"collectible",comittee:"committee",completly:"completely",
+  concious:"conscious",curiousity:"curiosity",dissapoint:"disappoint",dissapear:"disappear",
+  ecstacy:"ecstasy",embarassed:"embarrassed",enterance:"entrance",especialy:"especially",
+  exagerate:"exaggerate",excede:"exceed",exellent:"excellent",experiance:"experience",
+  familar:"familiar",Febuary:"February",fourty:"forty",fullfil:"fulfill",gaurd:"guard",
+  greatful:"grateful",harrass:"harass",heirarchy:"hierarchy",humourous:"humorous",
+  hygeine:"hygiene",immediatly:"immediately",independ:"independent",intresting:"interesting",
+  interupt:"interrupt",irresistable:"irresistible",jist:"gist",lazyness:"laziness",
+  liason:"liaison",libary:"library",lisence:"license",loosing:"losing",millenium:"millennium",
+  miniscule:"minuscule",mischevious:"mischievous",mispell:"misspell",noticable:"noticeable",
+  occassionally:"occasionally",occurance:"occurrence",oppurtunity:"opportunity",parliment:"parliament",
+  passtime:"pastime",percieve:"perceive",perseverence:"perseverance",posession:"possession",
+  potatoe:"potato",preceeding:"preceding",prefered:"preferred",pronounciation:"pronunciation",
+  publically:"publicly",questionaire:"questionnaire",readible:"readable",realy:"really",
+  reccomend:"recommend",rediculous:"ridiculous",religous:"religious",repetition:"repetition",
+  rythm:"rhythm",secratary:"secretary",sieze:"seize",sincerly:"sincerely",speach:"speech",
+  succesfully:"successfully",tendancy:"tendency",threshhold:"threshold",tounge:"tongue",
+  twelth:"twelfth",tyrany:"tyranny",underate:"underrate",unforseen:"unforeseen",unfortunatly:"unfortunately",
+  vaccuum:"vacuum",vegeterian:"vegetarian",vehical:"vehicle",visable:"visible",whereever:"wherever",
+  wief:"wife",youself:"yourself",abbout:"about",allready:"already",allmost:"almost",alway:"always",
+  anyways:"anyway",apparant:"apparent",arround:"around",beautifull:"beautiful",carefull:"careful",
+  choosen:"chosen",comfrotable:"comfortable",completley:"completely",coudl:"could",defiantly:"definitely",
+  didnt:"didn't",diffrent:"different",dont:"don't",easilly:"easily",eventualy:"eventually",
+  finaly:"finally",follwing:"following",forcast:"forecast",foward:"forward",fromr:"from",
+  fucntion:"function",gaurantee:"guarantee",generaly:"generally",happier:"happier",hopefull:"hopeful",
+  imediately:"immediately",interseting:"interesting",kwno:"know",lieing:"lying",litle:"little",
+  livley:"lively",loveley:"lovely",morging:"morning",neice:"niece",nervouse:"nervous",
+  offen:"often",oftenly:"often",peaceful:"peaceful",peapl:"people",peeople:"people",pepole:"people",
+  poeple:"people",practicaly:"practically",quater:"quarter",quiet:"quiet",realise:"realize",
+  recieving:"receiving",reguard:"regard",relized:"realized",responsability:"responsibility",
+  saftey:"safety",selfes:"selves",similarily:"similarly",somthing:"something",sometihng:"something",
+  soon:"soon",strenght:"strength",stroy:"story",succed:"succeed",sucess:"success",tehm:"them",
+  thankyou:"thank you",themself:"themselves",tho:"though",throught:"throughout",togeather:"together",
+  tomarrow:"tomorrow",toughts:"thoughts",twon:"town",usualy:"usually",vist:"visit",watn:"want",
+  weird:"weird",whant:"want",whitch:"which",wnat:"want",wokr:"work",worls:"world",yesturday:"yesterday"
 };
 // Words we should NOT auto-"correct" even though they look like fixable lowercase forms — context-dependent.
 // its/it's, your/you're, then/than, their/there/they're handled as SUGGESTIONS, never auto-applied.
-const CONFUSABLES=[
-  {re:/\byour\s+(welcome|going|coming|right|the|a|an|so|too|very)\b/gi,msg:"“your” → “you're”?",fix:m=>m.replace(/\byour\b/i,"you're")},
-  {re:/\byou're\s+(car|house|dog|phone|book|name|turn|fault|mom|dad|friend)\b/gi,msg:"“you're” → “your”?",fix:m=>m.replace(/\byou're\b/i,"your")},
-  {re:/\bits\s+(a|the|going|been|not|so|too|very|really|just)\b/gi,msg:"“its” → “it's”?",fix:m=>m.replace(/\bits\b/i,"it's")},
-  {re:/\bthen\s+(me|him|her|them|us|you|before|ever|the other)\b/gi,msg:"“then” → “than”?",fix:m=>m.replace(/\bthen\b/i,"than")},
-  {re:/\bshould of\b/gi,msg:"“should of” → “should have”",fix:()=>"should have"},
-  {re:/\bcould of\b/gi,msg:"“could of” → “could have”",fix:()=>"could have"},
-  {re:/\bwould of\b/gi,msg:"“would of” → “would have”",fix:()=>"would have"}
+// ─── Grammar / style / punctuation rule set (inspired by the categories Grammarly checks) ───
+// Each rule: {re, msg, fix, type}. `fix` gets the full match, returns the replacement (or null to
+// suggest-only). `type` drives the label color. All rule-based & on-device — no AI, no network.
+const GRAMMAR_RULES=[
+  // ── Commonly confused words (context-cued so we don't over-fire) ──
+  {type:"word",re:/\byour\s+(welcome|going|coming|gonna|being|getting|doing|the|a|an|so|too|very|really|about|not)\b/gi,msg:"“your” → “you're”",fix:m=>m.replace(/\byour\b/i,"you're")},
+  {type:"word",re:/\byou're\s+(car|house|dog|cat|phone|book|name|turn|fault|mom|dad|friend|family|life|job|idea|room|hand|face|body|hair|eyes)\b/gi,msg:"“you're” → “your”",fix:m=>m.replace(/\byou're\b/i,"your")},
+  {type:"word",re:/\bits\s+(a|the|going|been|not|so|too|very|really|just|been|time|my|your|his|her|our)\b/gi,msg:"“its” → “it's”",fix:m=>m.replace(/\bits\b/i,"it's")},
+  {type:"word",re:/\bit's\s+(color|colour|shape|size|name|place|way|own|edge|side|top|bottom|end|value)\b/gi,msg:"“it's” → “its”",fix:m=>m.replace(/\bit's\b/i,"its")},
+  {type:"word",re:/\bthere\s+(are\s+)?(going|is|was|were|has|have|will|can|could|should|would)\b/gi,msg:"check “there / their / they're”",fix:null},
+  {type:"word",re:/\btheir\s+(is|are|was|were|going to|gonna)\b/gi,msg:"“their” → “they're” or “there”",fix:null},
+  {type:"word",re:/\bthey're\s+(car|house|dog|book|name|stuff|things|house|home|room|parents|kids)\b/gi,msg:"“they're” → “their”",fix:m=>m.replace(/\bthey're\b/i,"their")},
+  {type:"word",re:/\bthen\s+(me|him|her|them|us|you|mine|yours|ever|before|the others?)\b/gi,msg:"“then” → “than”",fix:m=>m.replace(/\bthen\b/i,"than")},
+  {type:"word",re:/\b(bigger|smaller|better|worse|more|less|faster|slower|rather|greater|older|younger|taller|higher|lower)\s+then\b/gi,msg:"“then” → “than”",fix:m=>m.replace(/\bthen\b/i,"than")},
+  {type:"word",re:/\baffect\s+(on|of)\b/gi,msg:"maybe “effect” (noun)",fix:null},
+  {type:"word",re:/\bto\s+(much|many|late|early|far|close|big|small|hard|soft|fast|slow|good|bad|often)\b/gi,msg:"“to” → “too”",fix:m=>m.replace(/\bto\b/i,"too")},
+  {type:"word",re:/\bloose\s+(it|the game|weight|control|track|my|your|his|her)\b/gi,msg:"“loose” → “lose”",fix:m=>m.replace(/\bloose\b/i,"lose")},
+  {type:"word",re:/\bdefinitely\b/gi,msg:null,fix:null}, // placeholder (kept for future)
+  // ── "of" for "have" ──
+  {type:"grammar",re:/\b(should|could|would|must|might|may)\s+of\b/gi,msg:"“of” → “have”",fix:m=>m.replace(/\bof\b/i,"have")},
+  // ── Double negatives ──
+  {type:"grammar",re:/\b(don't|doesn't|didn't|can't|won't|wouldn't|couldn't|ain't)\s+(no|nothing|nobody|none|never|nowhere)\b/gi,msg:"Double negative",fix:null},
+  // ── a/an agreement ──
+  {type:"grammar",re:/\ba\s+([aeiouAEIOU]\w+)/g,msg:"“a” → “an” before a vowel",fix:m=>m.replace(/^a\s/,"an ")},
+  {type:"grammar",re:/\ban\s+([^aeiouAEIOU\s]\w*)/g,msg:"“an” → “a” before a consonant",fix:m=>m.replace(/^an\s/,"a ")},
+  // ── Subject-verb agreement (common cases) ──
+  {type:"grammar",re:/\b(he|she|it)\s+(dont|don't)\b/gi,msg:"“don't” → “doesn't”",fix:m=>m.replace(/\b(dont|don't)\b/i,"doesn't")},
+  {type:"grammar",re:/\b(they|we|you|i)\s+(doesn't|dosen't)\b/gi,msg:"“doesn't” → “don't”",fix:m=>m.replace(/\bdoesn't\b/i,"don't")},
+  {type:"grammar",re:/\b(he|she|it)\s+(were)\b/gi,msg:"“were” → “was”",fix:m=>m.replace(/\bwere\b/i,"was")},
+  {type:"grammar",re:/\b(they|we|you)\s+(was)\b/gi,msg:"“was” → “were”",fix:m=>m.replace(/\bwas\b/i,"were")},
+  {type:"grammar",re:/\b(i)\s+(is|are|was\s+were)\b/gi,msg:"“I” subject-verb",fix:null},
+  {type:"grammar",re:/\b(he|she|it)\s+have\b/gi,msg:"“have” → “has”",fix:m=>m.replace(/\bhave\b/i,"has")},
+  // ── Punctuation & spacing ──
+  {type:"punct",re:/\s+([,.!?;:])/g,msg:"Remove space before punctuation",fix:m=>m.trim()},
+  {type:"punct",re:/([,.!?;:])([A-Za-z])/g,msg:"Add a space after punctuation",fix:m=>m[0]+" "+m[1]},
+  {type:"punct",re:/([!?]){3,}/g,msg:"Too many punctuation marks",fix:m=>m[0]},
+  {type:"punct",re:/\.{2}(?!\.)/g,msg:"Did you mean an ellipsis “…”?",fix:()=>"…"},
+  // ── Capitalization ──
+  {type:"cap",re:/(^|[.!?]\s+)([a-z])/g,msg:"Capitalize the first letter",fix:m=>m.replace(/([a-z])$/,c=>c.toUpperCase()),capOffset:true},
+  {type:"cap",re:/\bi\b/g,msg:"“i” → “I”",fix:()=>"I"},
+  {type:"cap",re:/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|june|july|august|september|october|november|december)\b/g,msg:"Capitalize (day/month)",fix:m=>m[0].toUpperCase()+m.slice(1)},
+  // ── Repeated words ──
+  {type:"grammar",re:/\b(\w+)\s+\1\b/gi,msg:m=>`Repeated word “${m.split(/\s+/)[0]}”`,fix:m=>m.split(/\s+/)[0]},
+  // ── Wordy / readability ──
+  {type:"style",re:/\bin order to\b/gi,msg:"“in order to” → “to”",fix:()=>"to"},
+  {type:"style",re:/\bdue to the fact that\b/gi,msg:"“due to the fact that” → “because”",fix:()=>"because"},
+  {type:"style",re:/\bat this point in time\b/gi,msg:"“at this point in time” → “now”",fix:()=>"now"},
+  {type:"style",re:/\bin the event that\b/gi,msg:"“in the event that” → “if”",fix:()=>"if"},
+  {type:"style",re:/\ba large number of\b/gi,msg:"“a large number of” → “many”",fix:()=>"many"},
+  {type:"style",re:/\bthe majority of\b/gi,msg:"“the majority of” → “most”",fix:()=>"most"},
+  {type:"style",re:/\beach and every\b/gi,msg:"“each and every” → “every”",fix:()=>"every"},
+  {type:"style",re:/\bvery unique\b/gi,msg:"“unique” is already absolute",fix:()=>"unique"},
+  {type:"style",re:/\breally very\b/gi,msg:"Wordy — trim to one",fix:()=>"very"},
+  {type:"style",re:/\bbasically\b/gi,msg:"Filler — consider removing",fix:null},
+  {type:"style",re:/\bactually\b/gi,msg:"Filler — consider removing",fix:null},
+  {type:"style",re:/\bin my opinion i think\b/gi,msg:"Redundant — pick one",fix:()=>"I think"}
 ];
 
 const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000,focusTransferHour:22,
@@ -2853,30 +2942,46 @@ ${body}
   // Grammar / style scan → array of {index,length,message,fix?} for underlines & suggestions.
   const scanWriting=(text)=>{
     if(!text)return [];
-    const issues=[];
-    // double words: "the the"
-    let m;const dbl=/\b(\w+)\s+\1\b/gi;while((m=dbl.exec(text))){issues.push({index:m.index,length:m[0].length,message:`Repeated word “${m[1]}”`,fix:m[1]});}
-    // multiple spaces
-    const sp=/  +/g;while((m=sp.exec(text))){issues.push({index:m.index,length:m[0].length,message:"Extra space",fix:" "});}
-    // space before punctuation
-    const spp=/\s+([,.!?;:])/g;while((m=spp.exec(text))){issues.push({index:m.index,length:m[0].length,message:"Space before punctuation",fix:m[1]});}
-    // lowercase sentence start
-    const cap=/(^|[.!?]\s+)([a-z])/g;while((m=cap.exec(text))){const at=m.index+m[1].length;issues.push({index:at,length:1,message:"Capitalize sentence",fix:m[2].toUpperCase()});}
-    // standalone lowercase i
-    const lowi=/\b(i)\b/g;while((m=lowi.exec(text))){issues.push({index:m.index,length:1,message:"“i” → “I”",fix:"I"});}
-    // confusables (your/you're, its/it's, then/than, should of…)
-    CONFUSABLES.forEach(rule=>{const re=new RegExp(rule.re.source,rule.re.flags);while((m=re.exec(text))){issues.push({index:m.index,length:m[0].length,message:rule.message,fix:rule.fix(m[0])});if(m[0]==="")re.lastIndex++;}});
-    // remaining dictionary misspellings not yet auto-fixed (e.g. mid-word, no trailing space)
-    const wordRe=/\b([A-Za-z']+)\b/g;while((m=wordRe.exec(text))){const w=m[1],lw=w.toLowerCase();if(AUTOCORRECT[lw]&&AUTOCORRECT[lw].toLowerCase()!==lw){issues.push({index:m.index,length:w.length,message:`“${w}” → “${matchCase(w,AUTOCORRECT[lw])}”`,fix:matchCase(w,AUTOCORRECT[lw])});}}
-    // sort by position, drop overlaps (keep earliest)
-    issues.sort((a,b)=>a.index-b.index);
-    const out=[];let lastEnd=-1;for(const i of issues){if(i.index>=lastEnd){out.push(i);lastEnd=i.index+i.length;}}
+    const issues=[];let m;
+    // 1. Dictionary misspellings anywhere in the text
+    const wordRe=/\b([A-Za-z']+)\b/g;
+    while((m=wordRe.exec(text))){const w=m[1],lw=w.toLowerCase();
+      if(AUTOCORRECT[lw]&&AUTOCORRECT[lw].toLowerCase()!==lw){issues.push({index:m.index,length:w.length,message:`“${w}” → “${matchCase(w,AUTOCORRECT[lw])}”`,fix:matchCase(w,AUTOCORRECT[lw]),type:"spell"});}}
+    // 2. Grammar / punctuation / style / capitalization / confusables from GRAMMAR_RULES
+    GRAMMAR_RULES.forEach(rule=>{
+      if(rule.msg===null&&rule.fix===null)return;
+      const re=new RegExp(rule.re.source,rule.re.flags);
+      while((m=re.exec(text))){
+        if(m[0]===""){re.lastIndex++;continue;}
+        let idx=m.index,len=m[0].length,matchStr=m[0];
+        if(rule.capOffset){const lead=m[1]||"";idx=m.index+lead.length;len=m[0].length-lead.length;matchStr=m[0].slice(lead.length);}
+        const message=typeof rule.msg==="function"?rule.msg(m[0]):rule.msg;
+        const fixVal=rule.fix?(rule.capOffset?rule.fix(matchStr):rule.fix(m[0])):undefined;
+        if(message)issues.push({index:idx,length:len,message,fix:fixVal,type:rule.type});
+      }
+    });
+    // 3. Sentence-structure heuristics — run-ons / very long sentences (suggest-only)
+    const sentences=[];const sre=/[^.!?]+[.!?]*/g;
+    while((m=sre.exec(text))){const raw=m[0];const trimmed=raw.trim();if(trimmed.length){sentences.push({text:trimmed,index:m.index+(raw.length-raw.trimStart().length)});}}
+    sentences.forEach(s=>{
+      const words=(s.text.match(/\S+/g)||[]).length;
+      const conj=(s.text.match(/\b(and|but|or|so|because|which|while|although)\b/gi)||[]).length;
+      if(words>40||(words>28&&conj>=2)){issues.push({index:s.index,length:Math.min(s.text.length,24),message:"Long sentence — consider splitting",fix:undefined,type:"style"});}
+      if(words>=4&&/[.!?]$/.test(s.text)&&!/\b(is|are|was|were|am|be|been|being|has|have|had|do|does|did|will|would|can|could|should|may|might|must|went|got|made|said|saw|felt|think|thought|know|knew|want|feel|see|go|come|came|take|took|get|run|ran|walk|talk|look|find|found|give|gave|tell|told|become|became|seem|kept|keep|let|put|set|\w+ed|\w+ing|\w+s)\b/i.test(s.text)){
+        issues.push({index:s.index,length:Math.min(s.text.length,20),message:"Possible sentence fragment",fix:undefined,type:"grammar"});}
+    });
+    // 4. Missing sentence-ending punctuation at the very end
+    const tail=text.replace(/\s+$/,"");
+    if(tail.length>15&&/[a-zA-Z]$/.test(tail)&&/\s/.test(tail)){issues.push({index:tail.length,length:0,message:"Missing end punctuation",fix:".",type:"punct"});}
+    issues.sort((a,b)=>a.index-b.index||a.length-b.length);
+    const out=[];let lastEnd=-1;for(const i of issues){if(i.index>=lastEnd){out.push(i);lastEnd=i.index+Math.max(1,i.length);}}
     return out;
   };
   const openNewJournal=()=>setJrnlEditor({title:"",body:"",ts:Date.now()});
   // Journal body edits run through autocorrect: if the user just completed a known typo, fix it
   // and keep the caret where it belongs. Everything is local — no text leaves the device.
   const jBodyRef=useRef(null);
+  const[activeSugg,setActiveSugg]=useState(null); // {issue, top, left} — inline popover anchor
   const onJournalBody=(e)=>{
     const el=e.target, val=el.value, caret=el.selectionStart;
     const assistOn=settings.writingAssist!==false;
@@ -3626,31 +3731,61 @@ ${body}
               <span style={{fontSize:11,color:C.textDim,fontFamily:FN.m}}>{wordCount(jrnlEditor.body)} words</span>
               <button onClick={saveJournalEntry} style={{background:C.accent,border:"none",borderRadius:9,padding:"8px 18px",color:C.btnText,fontSize:13,fontWeight:700,fontFamily:FN.b,cursor:"pointer"}}>Done</button>
             </div>
-            <div style={{flex:1,overflowY:"auto",padding:"28px 24px 60px",maxWidth:680,width:"100%",margin:"0 auto"}}>
+            <div style={{flex:1,overflowY:"auto",padding:"32px 30px 60px",maxWidth:600,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
               <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.14em",fontFamily:FN.m,marginBottom:20}}>{jrnlDateLabel(jrnlEditor.ts)}</div>
               <input value={jrnlEditor.title} onChange={e=>setJrnlEditor(p=>({...p,title:e.target.value}))} spellCheck={settings.writingAssist!==false} autoCapitalize="sentences" placeholder="Title" style={{width:"100%",border:"none",outline:"none",background:"transparent",fontSize:28,fontWeight:600,fontFamily:FN.h,color:C.text,marginBottom:18,lineHeight:1.2}}/>
-              <textarea ref={jBodyRef} value={jrnlEditor.body} onChange={onJournalBody} onBlur={()=>{if(settings.writingAssist!==false)setJrnlEditor(p=>p?{...p,body:capitalizeSentences(p.body)}:p);}} spellCheck={settings.writingAssist!==false} autoCorrect="on" autoCapitalize="sentences" placeholder="Write freely…" style={{width:"100%",minHeight:"52vh",border:"none",outline:"none",background:"transparent",resize:"none",fontSize:17,lineHeight:1.75,fontFamily:"Georgia,serif",color:C.text}}/>
-              {/* Live writing suggestions — rule-based grammar/style, tap to apply. Fully on-device. */}
-              {settings.writingAssist!==false&&(()=>{
-                const issues=scanWriting(jrnlEditor.body).filter(i=>i.fix!==undefined).slice(0,4);
-                if(!issues.length)return null;
-                const applyFix=(iss)=>{setJrnlEditor(p=>{const b=p.body;return{...p,body:b.slice(0,iss.index)+iss.fix+b.slice(iss.index+iss.length)};});};
-                const fixAll=()=>{setJrnlEditor(p=>{let b=p.body;const all=scanWriting(b).filter(i=>i.fix!==undefined);for(let k=all.length-1;k>=0;k--){const iss=all[k];b=b.slice(0,iss.index)+iss.fix+b.slice(iss.index+iss.length);}return{...p,body:b};});};
+              {/* Inline writing assist — textarea layered over a highlight mirror that underlines
+                  flagged spans; tapping a flag opens a small popover with the fix. All on-device. */}
+              {(()=>{
+                const assistOn=settings.writingAssist!==false;
+                const body=jrnlEditor.body||"";
+                const issues=assistOn?scanWriting(body):[];
+                const uClr={spell:"#E5484D",grammar:"#E5484D",punct:"#F5A623",cap:"#F5A623",word:"#E5484D",style:"#8B7FE8"};
+                // Build highlighted HTML: escape text, wrap each issue span with a colored wavy underline.
+                const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+                let html="";let cur=0;
+                issues.filter(i=>i.length>0).forEach(i=>{
+                  if(i.index<cur)return;
+                  html+=esc(body.slice(cur,i.index));
+                  const seg=esc(body.slice(i.index,i.index+i.length));
+                  const c=uClr[i.type]||"#E5484D";
+                  html+=`<span style="text-decoration:underline wavy ${c};text-decoration-skip-ink:none;-webkit-text-decoration:underline wavy ${c}">${seg}</span>`;
+                  cur=i.index+i.length;
+                });
+                html+=esc(body.slice(cur))+"\u200b";
+                const shared={margin:0,border:"none",padding:0,fontSize:17,lineHeight:1.75,fontFamily:"Georgia,serif",letterSpacing:"normal",whiteSpace:"pre-wrap",wordWrap:"break-word",width:"100%",minHeight:"52vh"};
+                // Tap handler: find which issue sits under the caret/click and open its popover.
+                const onTap=()=>{const el=jBodyRef.current;if(!el||!assistOn)return;const pos=el.selectionStart;
+                  const hit=issues.find(i=>pos>=i.index&&pos<=i.index+Math.max(1,i.length));
+                  if(hit&&(hit.fix!==undefined||hit.message)){setActiveSugg({issue:hit});}else{setActiveSugg(null);}};
                 return(
-                <div style={{marginTop:14,borderTop:`1px solid ${C.hairline}`,paddingTop:12}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                    <span style={{fontSize:9,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:FN.m}}>Suggestions</span>
-                    {issues.length>1&&<button onClick={fixAll} className="press" style={{background:C.accent,color:C.btnText,border:"none",borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:800,cursor:"pointer"}}>Fix all</button>}
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                    {issues.map((iss,i)=>(
-                      <button key={i} onClick={()=>applyFix(iss)} className="press" style={{display:"flex",alignItems:"center",gap:8,textAlign:"left",background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"9px 11px",cursor:"pointer",width:"100%"}}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" style={{flexShrink:0}}><path d="M20 6 9 17l-5-5"/></svg>
-                        <span style={{fontSize:11.5,color:C.text,flex:1}}>{iss.message}</span>
-                        <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>tap to fix</span>
-                      </button>
-                    ))}
-                  </div>
+                <div style={{position:"relative"}}>
+                  <div aria-hidden="true" style={{...shared,position:"absolute",top:0,left:0,right:0,color:"transparent",pointerEvents:"none",overflow:"hidden"}} dangerouslySetInnerHTML={{__html:html}}/>
+                  <textarea ref={jBodyRef} value={jrnlEditor.body} onChange={onJournalBody} onClick={onTap} onKeyUp={onTap}
+                    onBlur={()=>{if(assistOn)setJrnlEditor(p=>p?{...p,body:capitalizeSentences(p.body)}:p);}}
+                    spellCheck={assistOn} autoCorrect="on" autoCapitalize="sentences" placeholder="Write freely…"
+                    style={{...shared,position:"relative",background:"transparent",outline:"none",resize:"none",color:C.text,caretColor:C.accent,WebkitTextFillColor:C.text}}/>
+                  {/* Inline popover for the tapped issue */}
+                  {assistOn&&activeSugg&&(()=>{const iss=activeSugg.issue;
+                    const applyFix=()=>{if(iss.fix===undefined)return;setJrnlEditor(p=>{const b=p.body;return{...p,body:b.slice(0,iss.index)+iss.fix+b.slice(iss.index+iss.length)};});setActiveSugg(null);};
+                    return(
+                    <div style={{position:"sticky",bottom:12,marginTop:12,zIndex:5,background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:12,padding:"12px 14px",boxShadow:"0 8px 28px rgba(0,0,0,0.35)"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:iss.fix!==undefined?10:0}}>
+                        <span style={{width:7,height:7,borderRadius:"50%",background:uClr[iss.type]||"#E5484D",flexShrink:0}}/>
+                        <span style={{fontSize:12.5,color:C.text,flex:1,fontFamily:FN.b}}>{iss.message}</span>
+                        <button onClick={()=>setActiveSugg(null)} style={{background:"transparent",border:"none",color:C.textDim,fontSize:16,cursor:"pointer",lineHeight:1,padding:0}}>×</button>
+                      </div>
+                      {iss.fix!==undefined&&<div style={{display:"flex",gap:8}}>
+                        <button onClick={applyFix} className="press" style={{flex:1,background:C.accent,color:C.btnText,border:"none",borderRadius:9,padding:"9px 0",fontSize:12,fontWeight:800,cursor:"pointer"}}>Change to “{iss.fix||"·"}”</button>
+                        <button onClick={()=>setActiveSugg(null)} className="press" style={{background:C.surfaceDim,color:C.textDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"9px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Ignore</button>
+                      </div>}
+                    </div>);
+                  })()}
+                  {/* Issue count + Fix all */}
+                  {assistOn&&issues.filter(i=>i.fix!==undefined).length>0&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:14,paddingTop:12,borderTop:`1px solid ${C.hairline}`}}>
+                    <span style={{fontSize:11,color:C.textDim,fontFamily:FN.m}}>{issues.filter(i=>i.fix!==undefined).length} suggestion{issues.filter(i=>i.fix!==undefined).length!==1?"s":""} · tap underlined text</span>
+                    <button onClick={()=>{setActiveSugg(null);setJrnlEditor(p=>{let b=p.body;const all=scanWriting(b).filter(i=>i.fix!==undefined);for(let k=all.length-1;k>=0;k--){const it=all[k];b=b.slice(0,it.index)+it.fix+b.slice(it.index+it.length);}return{...p,body:b};});}} className="press" style={{background:C.accent,color:C.btnText,border:"none",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:800,cursor:"pointer"}}>Fix all</button>
+                  </div>}
                 </div>);
               })()}
             </div>
@@ -3665,7 +3800,7 @@ ${body}
                 <button onClick={()=>deleteJournalEntry(jrnlOpen.id)} style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:8,padding:"7px 12px",color:C.red,fontSize:12,fontWeight:600,fontFamily:FN.b,cursor:"pointer"}}>Delete</button>
               </div>
             </div>
-            <div style={{flex:1,overflowY:"auto",padding:"28px 24px 60px",maxWidth:680,width:"100%",margin:"0 auto"}}>
+            <div style={{flex:1,overflowY:"auto",padding:"32px 30px 60px",maxWidth:600,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
               <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.14em",fontFamily:FN.m,marginBottom:16}}>{jrnlDateLabel(jrnlOpen.ts)}</div>
               <div style={{fontSize:28,fontWeight:600,fontFamily:FN.h,color:C.text,lineHeight:1.2,marginBottom:20}}>{jrnlOpen.title}</div>
               <div style={{fontSize:17,lineHeight:1.8,fontFamily:"Georgia,serif",color:C.text,whiteSpace:"pre-wrap"}}>{jrnlOpen.body}</div>
