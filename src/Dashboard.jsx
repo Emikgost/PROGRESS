@@ -314,6 +314,42 @@ function Ring({value,goal,size=120,stroke=12,color,children}){
 const seedWH=[{id:"h6",date:"2026-03-15",split:"upper",exercises:[{name:"Bench Press",sets:[{w:50,r:10},{w:60,r:6}]},{name:"Lat Pull Down",sets:[{w:54,r:8},{w:59,r:7}]}]}];
 const seedBW=[{date:"2025-10-01",weight:72.5},{date:"2026-01-01",weight:74.5},{date:"2026-03-01",weight:75.2},{date:"2026-03-29",weight:75.8}];
 const seedTx={"2026-03-01":[{id:"t14",type:"out",amount:26.5,desc:"Sunday"}],"2026-03-06":[{id:"t16",type:"in",amount:30,desc:"Income"}]};
+// ═══ WRITING ASSIST — on-device spell/grammar/autocorrect for the journal (no external calls) ═══
+// Common misspellings & typos → correction. Applied automatically when confident (word-boundary, case-preserving).
+const AUTOCORRECT={
+  teh:"the",thge:"the",hte:"the",adn:"and",nad:"and",anmd:"and",recieve:"receive",recieved:"received",
+  seperate:"separate",definately:"definitely",definatly:"definitely",occured:"occurred",occuring:"occurring",
+  untill:"until",wich:"which",thier:"their",freind:"friend",freinds:"friends",beleive:"believe",beleived:"believed",
+  becuase:"because",becasue:"because",tommorow:"tomorrow",tommorrow:"tomorrow",alot:"a lot",alright:"all right",
+  gonna:"going to",wanna:"want to",wont:"won't",cant:"can't",dont:"don't",doesnt:"doesn't",didnt:"didn't",
+  isnt:"isn't",wasnt:"wasn't",werent:"weren't",havent:"haven't",hasnt:"hasn't",hadnt:"hadn't",wouldnt:"wouldn't",
+  couldnt:"couldn't",shouldnt:"shouldn't",im:"I'm",ive:"I've",ill:"I'll",id:"I'd",youre:"you're",theyre:"they're",
+  thats:"that's",whats:"what's",lets:"let's",hes:"he's",shes:"she's",its:"it's",wouldnt:"wouldn't",
+  goign:"going",comming:"coming",runing:"running",geting:"getting",puting:"putting",writen:"written",
+  writting:"writing",wrthat:"that",taht:"that",wtih:"with",wiht:"with",jsut:"just",juest:"just",
+  theer:"there",thre:"there",hwo:"how",hwat:"what",wehn:"when",wehre:"where",oyu:"you",yuo:"you",
+  probaly:"probably",probally:"probably",remeber:"remember",remembr:"remember",though:"though",thru:"through",
+  truely:"truly",wierd:"weird",agian:"again",agin:"again",basicaly:"basically",similiar:"similar",
+  enviroment:"environment",goverment:"government",neccessary:"necessary",necesary:"necessary",
+  accross:"across",aparent:"apparent",arguement:"argument",calender:"calendar",collegue:"colleague",
+  embarass:"embarrass",existance:"existence",foriegn:"foreign",garantee:"guarantee",happend:"happened",
+  independant:"independent",knowlege:"knowledge",lenght:"length",maintainance:"maintenance",occassion:"occasion",
+  persistant:"persistent",priviledge:"privilege",recomend:"recommend",refered:"referred",relevent:"relevant",
+  succesful:"successful",suprise:"surprise",suprised:"surprised",wellcome:"welcome",yesteday:"yesterday",
+  everytime:"every time",everyday:"every day",atleast:"at least",infront:"in front",incase:"in case"
+};
+// Words we should NOT auto-"correct" even though they look like fixable lowercase forms — context-dependent.
+// its/it's, your/you're, then/than, their/there/they're handled as SUGGESTIONS, never auto-applied.
+const CONFUSABLES=[
+  {re:/\byour\s+(welcome|going|coming|right|the|a|an|so|too|very)\b/gi,msg:"“your” → “you're”?",fix:m=>m.replace(/\byour\b/i,"you're")},
+  {re:/\byou're\s+(car|house|dog|phone|book|name|turn|fault|mom|dad|friend)\b/gi,msg:"“you're” → “your”?",fix:m=>m.replace(/\byou're\b/i,"your")},
+  {re:/\bits\s+(a|the|going|been|not|so|too|very|really|just)\b/gi,msg:"“its” → “it's”?",fix:m=>m.replace(/\bits\b/i,"it's")},
+  {re:/\bthen\s+(me|him|her|them|us|you|before|ever|the other)\b/gi,msg:"“then” → “than”?",fix:m=>m.replace(/\bthen\b/i,"than")},
+  {re:/\bshould of\b/gi,msg:"“should of” → “should have”",fix:()=>"should have"},
+  {re:/\bcould of\b/gi,msg:"“could of” → “could have”",fix:()=>"could have"},
+  {re:/\bwould of\b/gi,msg:"“would of” → “would have”",fix:()=>"would have"}
+];
+
 const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000,focusTransferHour:22,
   nwMin:0,nwTarget:1000,debtMax:1000,debtTarget:0,planDay:0};
 
@@ -2785,7 +2821,74 @@ ${body}
   /* ─── Written Journal ─── */
   const jrnlDateLabel=ts=>new Date(ts).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
   const wordCount=t=>((t||"").trim().match(/\S+/g)||[]).length;
+  /* ─── Writing assist (journal) ─── all on-device, no text ever leaves the app. ───
+     autocorrectText: run when the user just completed a word (typed a space/punctuation/newline).
+     Fixes the word BEFORE the caret if it's a known typo, preserving capitalization. Also
+     capitalizes a standalone "i" and the first letter after sentence-ending punctuation. */
+  const matchCase=(orig,repl)=>{
+    if(orig===orig.toUpperCase()&&orig.length>1)return repl.toUpperCase();
+    if(orig[0]===orig[0].toUpperCase())return repl[0].toUpperCase()+repl.slice(1);
+    return repl;
+  };
+  const autocorrectAt=(text,caret)=>{
+    if(!settings.writingAssist&&settings.writingAssist!==undefined)return null; // respect toggle (default on)
+    // only act right after a boundary char was typed
+    const before=text.slice(0,caret);
+    const m=before.match(/([A-Za-z']+)([\s.,!?;:)\]"']+)$/);
+    if(!m)return null;
+    const word=m[1], tail=m[2], lower=word.toLowerCase();
+    let repl=null;
+    if(AUTOCORRECT[lower])repl=matchCase(word,AUTOCORRECT[lower]);
+    else if(word==="i")repl="I"; // standalone i → I
+    if(!repl||repl===word)return null;
+    const start=caret-tail.length-word.length;
+    const newText=text.slice(0,start)+repl+text.slice(start+word.length);
+    return{text:newText,delta:repl.length-word.length,from:word,to:repl};
+  };
+  // Capitalize first letter of the whole entry + after . ! ? — applied on blur/save, not mid-type (less jarring).
+  const capitalizeSentences=(t)=>{
+    if(!t)return t;
+    return t.replace(/(^\s*|[.!?]\s+)([a-z])/g,(_,pre,ch)=>pre+ch.toUpperCase());
+  };
+  // Grammar / style scan → array of {index,length,message,fix?} for underlines & suggestions.
+  const scanWriting=(text)=>{
+    if(!text)return [];
+    const issues=[];
+    // double words: "the the"
+    let m;const dbl=/\b(\w+)\s+\1\b/gi;while((m=dbl.exec(text))){issues.push({index:m.index,length:m[0].length,message:`Repeated word “${m[1]}”`,fix:m[1]});}
+    // multiple spaces
+    const sp=/  +/g;while((m=sp.exec(text))){issues.push({index:m.index,length:m[0].length,message:"Extra space",fix:" "});}
+    // space before punctuation
+    const spp=/\s+([,.!?;:])/g;while((m=spp.exec(text))){issues.push({index:m.index,length:m[0].length,message:"Space before punctuation",fix:m[1]});}
+    // lowercase sentence start
+    const cap=/(^|[.!?]\s+)([a-z])/g;while((m=cap.exec(text))){const at=m.index+m[1].length;issues.push({index:at,length:1,message:"Capitalize sentence",fix:m[2].toUpperCase()});}
+    // standalone lowercase i
+    const lowi=/\b(i)\b/g;while((m=lowi.exec(text))){issues.push({index:m.index,length:1,message:"“i” → “I”",fix:"I"});}
+    // confusables (your/you're, its/it's, then/than, should of…)
+    CONFUSABLES.forEach(rule=>{const re=new RegExp(rule.re.source,rule.re.flags);while((m=re.exec(text))){issues.push({index:m.index,length:m[0].length,message:rule.message,fix:rule.fix(m[0])});if(m[0]==="")re.lastIndex++;}});
+    // remaining dictionary misspellings not yet auto-fixed (e.g. mid-word, no trailing space)
+    const wordRe=/\b([A-Za-z']+)\b/g;while((m=wordRe.exec(text))){const w=m[1],lw=w.toLowerCase();if(AUTOCORRECT[lw]&&AUTOCORRECT[lw].toLowerCase()!==lw){issues.push({index:m.index,length:w.length,message:`“${w}” → “${matchCase(w,AUTOCORRECT[lw])}”`,fix:matchCase(w,AUTOCORRECT[lw])});}}
+    // sort by position, drop overlaps (keep earliest)
+    issues.sort((a,b)=>a.index-b.index);
+    const out=[];let lastEnd=-1;for(const i of issues){if(i.index>=lastEnd){out.push(i);lastEnd=i.index+i.length;}}
+    return out;
+  };
   const openNewJournal=()=>setJrnlEditor({title:"",body:"",ts:Date.now()});
+  // Journal body edits run through autocorrect: if the user just completed a known typo, fix it
+  // and keep the caret where it belongs. Everything is local — no text leaves the device.
+  const jBodyRef=useRef(null);
+  const onJournalBody=(e)=>{
+    const el=e.target, val=el.value, caret=el.selectionStart;
+    const assistOn=settings.writingAssist!==false;
+    const corr=assistOn?autocorrectAt(val,caret):null;
+    if(corr){
+      const newCaret=caret+corr.delta;
+      setJrnlEditor(p=>({...p,body:corr.text}));
+      requestAnimationFrame(()=>{if(jBodyRef.current){jBodyRef.current.selectionStart=jBodyRef.current.selectionEnd=newCaret;}});
+    }else{
+      setJrnlEditor(p=>({...p,body:val}));
+    }
+  };
   const saveJournalEntry=()=>{const e=jrnlEditor;if(!e)return;const title=(e.title||"").trim(),body=(e.body||"").trim();if(!title&&!body){setJrnlEditor(null);return;}setWrittenJournal(p=>{if(e.id)return p.map(x=>x.id===e.id?{...x,title:title||"Untitled",body,ts:e.ts}:x);return[{id:uid(),ts:e.ts||Date.now(),title:title||"Untitled",body},...p];});setJrnlEditor(null);};
   const deleteJournalEntry=id=>{setWrittenJournal(p=>p.filter(x=>x.id!==id));setJrnlOpen(null);setJrnlEditor(null);};
   const sortedWritten=useMemo(()=>[...writtenJournal].sort((a,b)=>b.ts-a.ts),[writtenJournal]);
@@ -3525,8 +3628,31 @@ ${body}
             </div>
             <div style={{flex:1,overflowY:"auto",padding:"28px 24px 60px",maxWidth:680,width:"100%",margin:"0 auto"}}>
               <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.14em",fontFamily:FN.m,marginBottom:20}}>{jrnlDateLabel(jrnlEditor.ts)}</div>
-              <input value={jrnlEditor.title} onChange={e=>setJrnlEditor(p=>({...p,title:e.target.value}))} placeholder="Title" style={{width:"100%",border:"none",outline:"none",background:"transparent",fontSize:28,fontWeight:600,fontFamily:FN.h,color:C.text,marginBottom:18,lineHeight:1.2}}/>
-              <textarea value={jrnlEditor.body} onChange={e=>setJrnlEditor(p=>({...p,body:e.target.value}))} placeholder="Write freely…" style={{width:"100%",minHeight:"52vh",border:"none",outline:"none",background:"transparent",resize:"none",fontSize:17,lineHeight:1.75,fontFamily:"Georgia,serif",color:C.text}}/>
+              <input value={jrnlEditor.title} onChange={e=>setJrnlEditor(p=>({...p,title:e.target.value}))} spellCheck={settings.writingAssist!==false} autoCapitalize="sentences" placeholder="Title" style={{width:"100%",border:"none",outline:"none",background:"transparent",fontSize:28,fontWeight:600,fontFamily:FN.h,color:C.text,marginBottom:18,lineHeight:1.2}}/>
+              <textarea ref={jBodyRef} value={jrnlEditor.body} onChange={onJournalBody} onBlur={()=>{if(settings.writingAssist!==false)setJrnlEditor(p=>p?{...p,body:capitalizeSentences(p.body)}:p);}} spellCheck={settings.writingAssist!==false} autoCorrect="on" autoCapitalize="sentences" placeholder="Write freely…" style={{width:"100%",minHeight:"52vh",border:"none",outline:"none",background:"transparent",resize:"none",fontSize:17,lineHeight:1.75,fontFamily:"Georgia,serif",color:C.text}}/>
+              {/* Live writing suggestions — rule-based grammar/style, tap to apply. Fully on-device. */}
+              {settings.writingAssist!==false&&(()=>{
+                const issues=scanWriting(jrnlEditor.body).filter(i=>i.fix!==undefined).slice(0,4);
+                if(!issues.length)return null;
+                const applyFix=(iss)=>{setJrnlEditor(p=>{const b=p.body;return{...p,body:b.slice(0,iss.index)+iss.fix+b.slice(iss.index+iss.length)};});};
+                const fixAll=()=>{setJrnlEditor(p=>{let b=p.body;const all=scanWriting(b).filter(i=>i.fix!==undefined);for(let k=all.length-1;k>=0;k--){const iss=all[k];b=b.slice(0,iss.index)+iss.fix+b.slice(iss.index+iss.length);}return{...p,body:b};});};
+                return(
+                <div style={{marginTop:14,borderTop:`1px solid ${C.hairline}`,paddingTop:12}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                    <span style={{fontSize:9,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:FN.m}}>Suggestions</span>
+                    {issues.length>1&&<button onClick={fixAll} className="press" style={{background:C.accent,color:C.btnText,border:"none",borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:800,cursor:"pointer"}}>Fix all</button>}
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {issues.map((iss,i)=>(
+                      <button key={i} onClick={()=>applyFix(iss)} className="press" style={{display:"flex",alignItems:"center",gap:8,textAlign:"left",background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"9px 11px",cursor:"pointer",width:"100%"}}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" style={{flexShrink:0}}><path d="M20 6 9 17l-5-5"/></svg>
+                        <span style={{fontSize:11.5,color:C.text,flex:1}}>{iss.message}</span>
+                        <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>tap to fix</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>);
+              })()}
             </div>
           </div>}
 
@@ -5500,6 +5626,17 @@ ${body}
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Morning Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.morningStart} onChange={e=>setSettings(p=>({...p,morningStart:parseInt(e.target.value)||5}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.morningEnd} onChange={e=>setSettings(p=>({...p,morningEnd:parseInt(e.target.value)||12}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Night Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.nightStart} onChange={e=>setSettings(p=>({...p,nightStart:parseInt(e.target.value)||18}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.nightEnd} onChange={e=>setSettings(p=>({...p,nightEnd:parseInt(e.target.value)||23}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Planning Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,planDay:i}))} style={{...pill((settings.planDay??0)===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
+
+        {/* Journal writing assist — spellcheck, autocorrect, grammar suggestions. On by default. */}
+        <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.textDim}}>Journal writing assist</div>
+            <div style={{fontSize:10,color:C.textDim,opacity:0.7,marginTop:2,lineHeight:1.4}}>Spellcheck, autocorrect, and grammar suggestions while you write. All on-device.</div>
+          </div>
+          <button onClick={()=>setSettings(p=>({...p,writingAssist:p.writingAssist===false?true:false}))} style={{flexShrink:0,width:46,height:26,borderRadius:13,border:"none",background:settings.writingAssist!==false?C.accent:C.hairline,position:"relative",cursor:"pointer",transition:"background 0.2s ease"}}>
+            <span style={{position:"absolute",top:3,left:settings.writingAssist!==false?23:3,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 0.2s ease",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+          </button>
+        </div>
 
         {/* Sync status badge — off by default; flip on to watch the little sync indicator */}
         <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
