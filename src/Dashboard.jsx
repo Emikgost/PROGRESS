@@ -2835,75 +2835,102 @@ ${body}
   const minToLabel=(m)=>{const h=Math.floor(m/60)%24,mm=m%60;const ap=h<12?"AM":"PM";const h12=h%12===0?12:h%12;return `${h12}:${String(mm).padStart(2,"0")} ${ap}`;};
   const addTimedFocus=(startMin,text,durMin=30)=>{if(!text||!text.trim())return;addFocus({id:uid(),text:text.trim(),startMin,durMin});};
   const clampMin=(m)=>Math.max(0,Math.min(1440-SLOT_MIN,m));
-  // Full day calendar for timed focus tasks. Google-Calendar-style: 24h, 30-min slots,
-  // now-line, tap empty slot to create, drag to move, drag bottom edge to resize.
-  const FocusCalendar=({tasks,onCreate,onUpdate,onRemove,checks:dayChecks,onToggle})=>{
+  // Full-day calendar for timed focus tasks. Rebuilt for fluidity: drags track a LOCAL
+  // offset (no state writes mid-drag) and commit once on release; a movement threshold keeps
+  // taps as taps so checkboxes and slot-taps work. Google-Calendar-style now-line + 30-min grid.
+  const FocusCalendar=({tasks,onCreate,onUpdate,onRemove,checks:dayChecks,onToggle,isToday})=>{
     const scrollRef=useRef(null);
-    const gridRef=useRef(null);
-    const[drag,setDrag]=useState(null); // {id,mode:"move"|"resize",startY,origStart,origDur}
-    const[nowMin,setNowMin]=useState(()=>{const d=new Date();return d.getHours()*60+d.getMinutes();});
+    const [nowMin,setNowMin]=useState(()=>{const d=new Date();return d.getHours()*60+d.getMinutes();});
+    // drag holds only transient visual state; committed to real task on release.
+    const [dragId,setDragId]=useState(null);
+    const drag=useRef(null); // {id,mode,startY,origStart,origDur,curStart,curDur,moved}
+    const [tick,setTick]=useState(0); // forces re-render of the dragged block during a drag
+
     useEffect(()=>{const t=setInterval(()=>{const d=new Date();setNowMin(d.getHours()*60+d.getMinutes());},60000);return()=>clearInterval(t);},[]);
-    // auto-scroll to ~1h before now on mount
-    useEffect(()=>{if(scrollRef.current){const y=Math.max(0,(nowMin-60)/SLOT_MIN*CAL_ROW_H);scrollRef.current.scrollTop=y;}},[]);
-    const timed=tasks.filter(t=>typeof t.startMin==="number");
-    const yToMin=(y)=>clampMin(Math.round(y/CAL_ROW_H*SLOT_MIN/15)*15); // snap to 15-min
-    const pointerMove=(e)=>{
-      if(!drag||!gridRef.current)return;
-      const cy=(e.touches?e.touches[0].clientY:e.clientY);
-      const dy=cy-drag.startY;
-      const deltaMin=Math.round(dy/CAL_ROW_H*SLOT_MIN/15)*15;
-      if(drag.mode==="move"){const ns=clampMin(drag.origStart+deltaMin);onUpdate(drag.id,{startMin:ns});}
-      else{const nd=Math.max(15,Math.min(1440-drag.origStart,drag.origDur+deltaMin));onUpdate(drag.id,{durMin:nd});}
+    useEffect(()=>{if(scrollRef.current){scrollRef.current.scrollTop=Math.max(0,((isToday?nowMin:480)-60)/SLOT_MIN*CAL_ROW_H);}},[]);
+
+    const timed=tasks.filter(t=>typeof t.startMin==="number").sort((a,b)=>a.startMin-b.startMin);
+    const THRESH=4; // px before a press becomes a drag
+
+    const beginDrag=(e,t,mode)=>{
+      const y=e.touches?e.touches[0].clientY:e.clientY;
+      drag.current={id:t.id,mode,startY:y,origStart:t.startMin,origDur:t.durMin||30,curStart:t.startMin,curDur:t.durMin||30,moved:false};
+      setDragId(t.id);
     };
-    const pointerUp=()=>setDrag(null);
     useEffect(()=>{
-      if(!drag)return;
-      const mv=(e)=>{e.preventDefault();pointerMove(e);};
-      const up=()=>pointerUp();
-      window.addEventListener("mousemove",mv);window.addEventListener("mouseup",up);
-      window.addEventListener("touchmove",mv,{passive:false});window.addEventListener("touchend",up);
-      return()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchmove",mv);window.removeEventListener("touchend",up);};
-    },[drag]);
-    const slots=[];for(let m=0;m<1440;m+=SLOT_MIN)slots.push(m);
+      if(!dragId)return;
+      const move=(e)=>{
+        const d=drag.current;if(!d)return;
+        const y=e.touches?e.touches[0].clientY:e.clientY;
+        const dy=y-d.startY;
+        if(!d.moved&&Math.abs(dy)<THRESH)return; // still a tap
+        d.moved=true;
+        if(e.cancelable)e.preventDefault();
+        const deltaMin=Math.round(dy/CAL_ROW_H*SLOT_MIN/15)*15; // snap 15
+        if(d.mode==="move"){d.curStart=clampMin(d.origStart+deltaMin);}
+        else{d.curDur=Math.max(15,Math.min(1440-d.origStart,d.origDur+deltaMin));}
+        setTick(x=>x+1);
+      };
+      const up=()=>{
+        const d=drag.current;
+        if(d&&d.moved){
+          if(d.mode==="move"&&d.curStart!==d.origStart)onUpdate(d.id,{startMin:d.curStart});
+          else if(d.mode==="resize"&&d.curDur!==d.origDur)onUpdate(d.id,{durMin:d.curDur});
+        }
+        drag.current=null;setDragId(null);
+      };
+      window.addEventListener("mousemove",move);window.addEventListener("mouseup",up);
+      window.addEventListener("touchmove",move,{passive:false});window.addEventListener("touchend",up);
+      return()=>{window.removeEventListener("mousemove",move);window.removeEventListener("mouseup",up);window.removeEventListener("touchmove",move);window.removeEventListener("touchend",up);};
+    },[dragId]);
+
+    const hours=[];for(let h=0;h<24;h++)hours.push(h);
     return(
-      <div ref={scrollRef} style={{position:"relative",maxHeight:"64vh",overflowY:"auto",border:`1px solid ${C.hairline}`,borderRadius:12,background:C.surface}}>
-        <div ref={gridRef} style={{position:"relative",height:`${1440/SLOT_MIN*CAL_ROW_H}px`}}>
-          {/* hour grid + labels */}
-          {slots.map(m=>{const isHour=m%60===0;return(
-            <div key={m} onClick={()=>{if(!drag)onCreate(m);}} style={{position:"absolute",top:`${m/SLOT_MIN*CAL_ROW_H}px`,left:0,right:0,height:`${CAL_ROW_H}px`,borderTop:`1px solid ${isHour?C.hairline:C.hairline+"66"}`,cursor:"pointer",boxSizing:"border-box"}}>
-              {isHour&&<span style={{position:"absolute",left:6,top:2,fontSize:9,color:C.textDim,fontFamily:FN.m}}>{minToLabel(m).replace(":00","")}</span>}
-            </div>
-          );})}
+      <div ref={scrollRef} style={{position:"relative",maxHeight:"64vh",overflowY:"auto",WebkitOverflowScrolling:"touch",border:`1px solid ${C.hairline}`,borderRadius:14,background:C.surface}}>
+        <div style={{position:"relative",height:`${24*2*CAL_ROW_H}px`}}>
+          {/* hour rows — each hour is one label + two 30-min slots you can tap */}
+          {hours.map(h=>{
+            const topH=h*2*CAL_ROW_H;
+            const lbl=(h===0?"12 AM":h<12?`${h} AM`:h===12?"12 PM":`${h-12} PM`);
+            return(
+              <div key={h} style={{position:"absolute",top:`${topH}px`,left:0,right:0,height:`${2*CAL_ROW_H}px`}}>
+                <span style={{position:"absolute",left:8,top:-6,fontSize:10,color:C.textDim,fontFamily:FN.m,background:C.surface,padding:"0 3px"}}>{lbl}</span>
+                <div onClick={()=>{if(!drag.current)onCreate(h*60);}} style={{position:"absolute",top:0,left:48,right:0,height:`${CAL_ROW_H}px`,borderTop:`1px solid ${C.hairline}`,cursor:"pointer"}}/>
+                <div onClick={()=>{if(!drag.current)onCreate(h*60+30);}} style={{position:"absolute",top:`${CAL_ROW_H}px`,left:48,right:0,height:`${CAL_ROW_H}px`,borderTop:`1px dashed ${C.hairline}88`,cursor:"pointer"}}/>
+              </div>
+            );
+          })}
           {/* now line */}
-          {(()=>{const d=dk(now);const isToday=vk===d;if(!isToday)return null;return(
-            <div style={{position:"absolute",top:`${nowMin/SLOT_MIN*CAL_ROW_H}px`,left:0,right:0,height:0,borderTop:"2px solid #3B82F6",zIndex:6,pointerEvents:"none"}}>
-              <div style={{position:"absolute",left:-1,top:-4,width:8,height:8,borderRadius:"50%",background:"#3B82F6"}}/>
-            </div>);
-          })()}
+          {isToday&&<div style={{position:"absolute",top:`${nowMin/SLOT_MIN*CAL_ROW_H}px`,left:44,right:0,height:0,borderTop:"2px solid #3B82F6",zIndex:20,pointerEvents:"none"}}>
+            <div style={{position:"absolute",left:-5,top:-5,width:9,height:9,borderRadius:"50%",background:"#3B82F6"}}/>
+          </div>}
           {/* task blocks */}
           {timed.map(t=>{
-            const top=t.startMin/SLOT_MIN*CAL_ROW_H;
-            const height=Math.max(CAL_ROW_H*0.5,(t.durMin||30)/SLOT_MIN*CAL_ROW_H);
+            const d=drag.current;
+            const isDragging=dragId===t.id&&d&&d.moved;
+            const start=isDragging?d.curStart:t.startMin;
+            const dur=isDragging&&d.mode==="resize"?d.curDur:(t.durMin||30);
+            const top=start/SLOT_MIN*CAL_ROW_H;
+            const height=Math.max(26,dur/SLOT_MIN*CAL_ROW_H);
             const done=dayChecks[t.id];
-            const dragging=drag&&drag.id===t.id;
+            const tall=height>=CAL_ROW_H;
             return(
-              <div key={t.id} style={{position:"absolute",top:`${top}px`,left:52,right:8,height:`${height}px`,zIndex:dragging?8:5}}>
-                <div style={{position:"relative",height:"100%",background:done?C.surfaceDim:`${C.accent}22`,border:`1px solid ${done?C.hairline:C.accent}`,borderRadius:8,padding:"5px 8px",boxSizing:"border-box",overflow:"hidden",boxShadow:dragging?"0 6px 20px rgba(0,0,0,0.35)":"none",opacity:done?0.6:1,touchAction:"none",cursor:"grab"}}
-                  onMouseDown={e=>{if(e.target.dataset.handle)return;setDrag({id:t.id,mode:"move",startY:e.clientY,origStart:t.startMin,origDur:t.durMin||30});}}
-                  onTouchStart={e=>{if(e.target.dataset.handle)return;setDrag({id:t.id,mode:"move",startY:e.touches[0].clientY,origStart:t.startMin,origDur:t.durMin||30});}}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:6,height:"100%"}}>
-                    <button onClick={e=>{e.stopPropagation();onToggle(t.id);}} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} style={{flexShrink:0,width:15,height:15,borderRadius:4,border:`1.5px solid ${done?C.accent:C.accentMed||C.accent}`,background:done?C.accent:"transparent",cursor:"pointer",marginTop:1,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>
-                      {done&&<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="3.5" strokeLinecap="round"><path d="M20 6 9 17l-5-5"/></svg>}
-                    </button>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:11.5,fontWeight:600,color:C.text,textDecoration:done?"line-through":"none",lineHeight:1.25,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:height>CAL_ROW_H?3:1,WebkitBoxOrient:"vertical"}}>{t.text}</div>
-                      {height>=CAL_ROW_H&&<div style={{fontSize:8.5,color:C.textDim,fontFamily:FN.m,marginTop:1}}>{minToLabel(t.startMin)} · {t.durMin||30}m</div>}
-                    </div>
-                    <button data-handle="del" onClick={e=>{e.stopPropagation();onRemove(t.id);}} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} style={{flexShrink:0,background:"transparent",border:"none",color:C.textDim,fontSize:13,cursor:"pointer",lineHeight:1,padding:0}}>×</button>
+              <div key={t.id} style={{position:"absolute",top:`${top}px`,left:52,right:8,height:`${height}px`,zIndex:isDragging?30:10,transition:isDragging?"none":"top 0.12s ease,height 0.12s ease"}}>
+                <div
+                  onMouseDown={e=>{if(e.button!==0)return;if(e.target.closest("[data-nodrag]"))return;beginDrag(e,t,"move");}}
+                  onTouchStart={e=>{if(e.target.closest("[data-nodrag]"))return;beginDrag(e,t,"move");}}
+                  style={{position:"relative",height:"100%",boxSizing:"border-box",background:done?C.surfaceDim:C.accent,border:`1px solid ${done?C.hairline:C.accent}`,borderRadius:9,padding:tall?"7px 9px":"0 9px",overflow:"hidden",boxShadow:isDragging?"0 10px 26px rgba(0,0,0,0.4)":"0 1px 3px rgba(0,0,0,0.15)",opacity:done?0.55:1,cursor:"grab",touchAction:"none",display:"flex",alignItems:tall?"flex-start":"center",gap:8}}>
+                  <button data-nodrag onClick={e=>{e.stopPropagation();onToggle(t.id);}} style={{flexShrink:0,width:17,height:17,borderRadius:5,border:`2px solid ${done?C.accent:"#ffffffcc"}`,background:done?C.accent:"rgba(255,255,255,0.15)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,marginTop:tall?1:0}}>
+                    {done&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={C.accent==="#0AA063"?"#fff":C.btnText} strokeWidth="4" strokeLinecap="round"><path d="M20 6 9 17l-5-5"/></svg>}
+                  </button>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:600,color:done?C.textDim:(C.accent==="#0AA063"?"#fff":C.btnText),textDecoration:done?"line-through":"none",lineHeight:1.2,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:tall?2:1,WebkitBoxOrient:"vertical",wordBreak:"break-word"}}>{t.text}</div>
+                    {tall&&<div style={{fontSize:9,color:done?C.textDim:(C.accent==="#0AA063"?"#ffffffcc":"#ffffffcc"),fontFamily:FN.m,marginTop:2}}>{minToLabel(start)} · {dur>=60?`${Math.floor(dur/60)}h${dur%60?` ${dur%60}m`:""}`:`${dur}m`}</div>}
                   </div>
+                  <button data-nodrag onClick={e=>{e.stopPropagation();onRemove(t.id);}} style={{flexShrink:0,background:"transparent",border:"none",color:done?C.textDim:(C.accent==="#0AA063"?"#ffffffcc":"#ffffffaa"),fontSize:15,cursor:"pointer",lineHeight:1,padding:"0 2px"}}>×</button>
                   {/* resize handle */}
-                  <div data-handle="resize" onMouseDown={e=>{e.stopPropagation();setDrag({id:t.id,mode:"resize",startY:e.clientY,origStart:t.startMin,origDur:t.durMin||30});}} onTouchStart={e=>{e.stopPropagation();setDrag({id:t.id,mode:"resize",startY:e.touches[0].clientY,origStart:t.startMin,origDur:t.durMin||30});}} style={{position:"absolute",left:0,right:0,bottom:0,height:12,cursor:"ns-resize",display:"flex",alignItems:"flex-end",justifyContent:"center",touchAction:"none"}}>
-                    <div data-handle="resize" style={{width:24,height:3,borderRadius:2,background:done?C.hairline:C.accent,marginBottom:2,opacity:0.6}}/>
+                  <div data-nodrag onMouseDown={e=>{e.stopPropagation();beginDrag(e,t,"resize");}} onTouchStart={e=>{e.stopPropagation();beginDrag(e,t,"resize");}} style={{position:"absolute",left:0,right:0,bottom:0,height:14,cursor:"ns-resize",display:"flex",alignItems:"flex-end",justifyContent:"center",touchAction:"none"}}>
+                    <div style={{width:26,height:3,borderRadius:2,background:done?C.hairline:"#ffffffaa",marginBottom:3}}/>
                   </div>
                 </div>
               </div>
@@ -3502,6 +3529,7 @@ ${body}
                   onUpdate={updateFocus}
                   onRemove={removeFocus}
                   onToggle={(id)=>{const t=focusTasks.find(x=>x.id===id);if(t)toggle(t);}}
+                  isToday={vk===dk(now)}
                 />
                 <div style={{fontSize:10,color:C.textDim,marginTop:8,textAlign:"center",fontFamily:FN.m}}>Tap a time to add · drag to move · drag the bottom edge to resize</div>
               </div>}
