@@ -791,6 +791,9 @@ export default function Dashboard(){
   const[reorderMode,setReorderMode]=useState(false); // Today: drag-to-reorder habits
   const[focusReorder,setFocusReorder]=useState(false); // Today: drag-to-reorder focus tasks
   const[focusQuick,setFocusQuick]=useState(""); // inline "add focus/daily task" composer text
+  const[focusView,setFocusView]=useState("list"); // list | calendar — Today→Focus view mode
+  const[calNewSlot,setCalNewSlot]=useState(null); // {startMin} — tapped empty slot, composing a timed task
+  const[calNewText,setCalNewText]=useState("");
   const[completingFocus,setCompletingFocus]=useState({}); // focus task ids mid completion-animation
   const[habitOrder,setHabitOrder]=useState({}); // {taskId: index} — manual habit order, overrides smart-learned order
   const[editTask,setEditTask]=useState(null); // {task, source:"focus"|"todos"}
@@ -2825,6 +2828,91 @@ ${body}
   const addFocus=(t)=>setFocusByDate(p=>({...p,[vk]:[...(p[vk]||[]),{createdOn:dk(now),...t}]}));
   const removeFocus=(id)=>setFocusByDate(p=>({...p,[vk]:(p[vk]||[]).filter(t=>t.id!==id)}));
   const updateFocus=(id,updates)=>setFocusByDate(p=>({...p,[vk]:(p[vk]||[]).map(t=>t.id===id?{...t,...updates}:t)}));
+  // ── Timed focus tasks (calendar) ── a task with `startMin` (minutes from midnight) + `durMin`
+  // shows on the day calendar. Tasks without startMin stay in the normal list, untouched.
+  const SLOT_MIN=30, PX_PER_MIN=1.0; // 30-min slots, 60px per slot (1px/min → tune below)
+  const CAL_ROW_H=48; // px per 30-min slot
+  const minToLabel=(m)=>{const h=Math.floor(m/60)%24,mm=m%60;const ap=h<12?"AM":"PM";const h12=h%12===0?12:h%12;return `${h12}:${String(mm).padStart(2,"0")} ${ap}`;};
+  const addTimedFocus=(startMin,text,durMin=30)=>{if(!text||!text.trim())return;addFocus({id:uid(),text:text.trim(),startMin,durMin});};
+  const clampMin=(m)=>Math.max(0,Math.min(1440-SLOT_MIN,m));
+  // Full day calendar for timed focus tasks. Google-Calendar-style: 24h, 30-min slots,
+  // now-line, tap empty slot to create, drag to move, drag bottom edge to resize.
+  const FocusCalendar=({tasks,onCreate,onUpdate,onRemove,checks:dayChecks,onToggle})=>{
+    const scrollRef=useRef(null);
+    const gridRef=useRef(null);
+    const[drag,setDrag]=useState(null); // {id,mode:"move"|"resize",startY,origStart,origDur}
+    const[nowMin,setNowMin]=useState(()=>{const d=new Date();return d.getHours()*60+d.getMinutes();});
+    useEffect(()=>{const t=setInterval(()=>{const d=new Date();setNowMin(d.getHours()*60+d.getMinutes());},60000);return()=>clearInterval(t);},[]);
+    // auto-scroll to ~1h before now on mount
+    useEffect(()=>{if(scrollRef.current){const y=Math.max(0,(nowMin-60)/SLOT_MIN*CAL_ROW_H);scrollRef.current.scrollTop=y;}},[]);
+    const timed=tasks.filter(t=>typeof t.startMin==="number");
+    const yToMin=(y)=>clampMin(Math.round(y/CAL_ROW_H*SLOT_MIN/15)*15); // snap to 15-min
+    const pointerMove=(e)=>{
+      if(!drag||!gridRef.current)return;
+      const cy=(e.touches?e.touches[0].clientY:e.clientY);
+      const dy=cy-drag.startY;
+      const deltaMin=Math.round(dy/CAL_ROW_H*SLOT_MIN/15)*15;
+      if(drag.mode==="move"){const ns=clampMin(drag.origStart+deltaMin);onUpdate(drag.id,{startMin:ns});}
+      else{const nd=Math.max(15,Math.min(1440-drag.origStart,drag.origDur+deltaMin));onUpdate(drag.id,{durMin:nd});}
+    };
+    const pointerUp=()=>setDrag(null);
+    useEffect(()=>{
+      if(!drag)return;
+      const mv=(e)=>{e.preventDefault();pointerMove(e);};
+      const up=()=>pointerUp();
+      window.addEventListener("mousemove",mv);window.addEventListener("mouseup",up);
+      window.addEventListener("touchmove",mv,{passive:false});window.addEventListener("touchend",up);
+      return()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchmove",mv);window.removeEventListener("touchend",up);};
+    },[drag]);
+    const slots=[];for(let m=0;m<1440;m+=SLOT_MIN)slots.push(m);
+    return(
+      <div ref={scrollRef} style={{position:"relative",maxHeight:"64vh",overflowY:"auto",border:`1px solid ${C.hairline}`,borderRadius:12,background:C.surface}}>
+        <div ref={gridRef} style={{position:"relative",height:`${1440/SLOT_MIN*CAL_ROW_H}px`}}>
+          {/* hour grid + labels */}
+          {slots.map(m=>{const isHour=m%60===0;return(
+            <div key={m} onClick={()=>{if(!drag)onCreate(m);}} style={{position:"absolute",top:`${m/SLOT_MIN*CAL_ROW_H}px`,left:0,right:0,height:`${CAL_ROW_H}px`,borderTop:`1px solid ${isHour?C.hairline:C.hairline+"66"}`,cursor:"pointer",boxSizing:"border-box"}}>
+              {isHour&&<span style={{position:"absolute",left:6,top:2,fontSize:9,color:C.textDim,fontFamily:FN.m}}>{minToLabel(m).replace(":00","")}</span>}
+            </div>
+          );})}
+          {/* now line */}
+          {(()=>{const d=dk(now);const isToday=vk===d;if(!isToday)return null;return(
+            <div style={{position:"absolute",top:`${nowMin/SLOT_MIN*CAL_ROW_H}px`,left:0,right:0,height:0,borderTop:"2px solid #3B82F6",zIndex:6,pointerEvents:"none"}}>
+              <div style={{position:"absolute",left:-1,top:-4,width:8,height:8,borderRadius:"50%",background:"#3B82F6"}}/>
+            </div>);
+          })()}
+          {/* task blocks */}
+          {timed.map(t=>{
+            const top=t.startMin/SLOT_MIN*CAL_ROW_H;
+            const height=Math.max(CAL_ROW_H*0.5,(t.durMin||30)/SLOT_MIN*CAL_ROW_H);
+            const done=dayChecks[t.id];
+            const dragging=drag&&drag.id===t.id;
+            return(
+              <div key={t.id} style={{position:"absolute",top:`${top}px`,left:52,right:8,height:`${height}px`,zIndex:dragging?8:5}}>
+                <div style={{position:"relative",height:"100%",background:done?C.surfaceDim:`${C.accent}22`,border:`1px solid ${done?C.hairline:C.accent}`,borderRadius:8,padding:"5px 8px",boxSizing:"border-box",overflow:"hidden",boxShadow:dragging?"0 6px 20px rgba(0,0,0,0.35)":"none",opacity:done?0.6:1,touchAction:"none",cursor:"grab"}}
+                  onMouseDown={e=>{if(e.target.dataset.handle)return;setDrag({id:t.id,mode:"move",startY:e.clientY,origStart:t.startMin,origDur:t.durMin||30});}}
+                  onTouchStart={e=>{if(e.target.dataset.handle)return;setDrag({id:t.id,mode:"move",startY:e.touches[0].clientY,origStart:t.startMin,origDur:t.durMin||30});}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:6,height:"100%"}}>
+                    <button onClick={e=>{e.stopPropagation();onToggle(t.id);}} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} style={{flexShrink:0,width:15,height:15,borderRadius:4,border:`1.5px solid ${done?C.accent:C.accentMed||C.accent}`,background:done?C.accent:"transparent",cursor:"pointer",marginTop:1,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>
+                      {done&&<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="3.5" strokeLinecap="round"><path d="M20 6 9 17l-5-5"/></svg>}
+                    </button>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11.5,fontWeight:600,color:C.text,textDecoration:done?"line-through":"none",lineHeight:1.25,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:height>CAL_ROW_H?3:1,WebkitBoxOrient:"vertical"}}>{t.text}</div>
+                      {height>=CAL_ROW_H&&<div style={{fontSize:8.5,color:C.textDim,fontFamily:FN.m,marginTop:1}}>{minToLabel(t.startMin)} · {t.durMin||30}m</div>}
+                    </div>
+                    <button data-handle="del" onClick={e=>{e.stopPropagation();onRemove(t.id);}} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} style={{flexShrink:0,background:"transparent",border:"none",color:C.textDim,fontSize:13,cursor:"pointer",lineHeight:1,padding:0}}>×</button>
+                  </div>
+                  {/* resize handle */}
+                  <div data-handle="resize" onMouseDown={e=>{e.stopPropagation();setDrag({id:t.id,mode:"resize",startY:e.clientY,origStart:t.startMin,origDur:t.durMin||30});}} onTouchStart={e=>{e.stopPropagation();setDrag({id:t.id,mode:"resize",startY:e.touches[0].clientY,origStart:t.startMin,origDur:t.durMin||30});}} style={{position:"absolute",left:0,right:0,bottom:0,height:12,cursor:"ns-resize",display:"flex",alignItems:"flex-end",justifyContent:"center",touchAction:"none"}}>
+                    <div data-handle="resize" style={{width:24,height:3,borderRadius:2,background:done?C.hairline:C.accent,marginBottom:2,opacity:0.6}}/>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const openEdit=(t,source)=>{setEditTask({task:t,source});setEditText(t.text);setEditDiff(t.diff);setEditGrp(t.grp||"morning");setEditProof(t.proof||false);};
   const saveEdit=()=>{
@@ -3126,6 +3214,22 @@ ${body}
           </div>
         </div>
       )}
+      {/* New timed focus task — opened by tapping a calendar slot */}
+      {calNewSlot&&(
+        <div onClick={()=>setCalNewSlot(null)} style={{position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:440,background:C.surface,borderRadius:"20px 20px 0 0",padding:"22px 20px 28px"}}>
+            <div style={{fontSize:10,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:FN.m,marginBottom:4}}>New task · {minToLabel(calNewSlot.startMin)}</div>
+            <input autoFocus value={calNewText} onChange={e=>setCalNewText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&calNewText.trim()){addTimedFocus(calNewSlot.startMin,calNewText);setCalNewSlot(null);setCalNewText("");}}} placeholder="What are you focusing on?" style={{...inp,width:"100%",boxSizing:"border-box",fontSize:16,marginBottom:12}}/>
+            <div style={{display:"flex",gap:6,marginBottom:16}}>
+              {[30,60,90,120].map(d=>(
+                <button key={d} onClick={()=>{if(calNewText.trim()){addTimedFocus(calNewSlot.startMin,calNewText,d);setCalNewSlot(null);setCalNewText("");}}} disabled={!calNewText.trim()} style={{flex:1,padding:"9px 0",borderRadius:8,border:`1px solid ${C.hairline}`,background:C.surfaceDim,color:calNewText.trim()?C.text:C.textDim,fontSize:11,fontWeight:700,fontFamily:FN.m,cursor:calNewText.trim()?"pointer":"default",opacity:calNewText.trim()?1:0.5}}>{d<60?`${d}m`:`${d/60}h`}</button>
+              ))}
+            </div>
+            <button onClick={()=>{if(calNewText.trim()){addTimedFocus(calNewSlot.startMin,calNewText);setCalNewSlot(null);setCalNewText("");}}} disabled={!calNewText.trim()} style={{...btnB,width:"100%",opacity:calNewText.trim()?1:0.5}}>Add at {minToLabel(calNewSlot.startMin)}</button>
+            <button onClick={()=>setCalNewSlot(null)} style={{...btnG,width:"100%",marginTop:8}}>Cancel</button>
+          </div>
+        </div>
+      )}
       <style>{CSS}</style>
 
       {confetti&&<div style={{position:"fixed",inset:0,zIndex:300,pointerEvents:"none",overflow:"hidden"}}>{Array.from({length:30}).map((_,i)=>{const l=Math.random()*100,d=Math.random()*2+1;const c=[C.green,C.goldBright,C.blue,C.orange,"#fff"][Math.floor(Math.random()*5)];return(<div key={i} style={{position:"absolute",left:`${l}%`,top:-10,width:7,height:7,borderRadius:"50%",background:c,animation:`xpFloat ${d}s ease-out forwards`}} />);})}</div>}
@@ -3383,6 +3487,26 @@ ${body}
 
               <div className="focus-grid">
               <div className="fg-main">
+              {/* List / Calendar toggle — Calendar organizes TIMED focus tasks; List is the existing view */}
+              <div style={{display:"flex",gap:6,marginBottom:14}}>
+                {[{k:"list",l:"List"},{k:"calendar",l:"Calendar"}].map(v=>{const on=focusView===v.k;return(
+                  <button key={v.k} onClick={()=>setFocusView(v.k)} style={{flex:1,padding:"8px 0",borderRadius:9,border:`1px solid ${on?FOCUS_BLUE:C.hairline}`,background:on?FOCUS_BLUE:"transparent",color:on?"#fff":C.textDim,fontSize:11.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.05em"}}>{v.l}</button>
+                );})}
+              </div>
+
+              {focusView==="calendar"&&<div style={{marginBottom:18}}>
+                <FocusCalendar
+                  tasks={focusTasks}
+                  checks={dc}
+                  onCreate={(m)=>{setCalNewSlot({startMin:m});setCalNewText("");}}
+                  onUpdate={updateFocus}
+                  onRemove={removeFocus}
+                  onToggle={(id)=>{const t=focusTasks.find(x=>x.id===id);if(t)toggle(t);}}
+                />
+                <div style={{fontSize:10,color:C.textDim,marginTop:8,textAlign:"center",fontFamily:FN.m}}>Tap a time to add · drag to move · drag the bottom edge to resize</div>
+              </div>}
+
+              {focusView==="list"&&<>
               {/* Section 1 — Daily Tasks (highest priority) — add directly here */}
               <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length+goalFocusTasks.length}/>
               {focusTasks.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setFocusReorder(m=>!m)} style={{background:focusReorder?C.accent:"transparent",border:`1px solid ${focusReorder?C.accent:C.hairline}`,color:focusReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{focusReorder?"Done":"⇅ Reorder"}</button></div>}
@@ -3409,6 +3533,7 @@ ${body}
                 );})}
               </>}
               {renderFocusDone()}
+              </>}
               </div>
 
               <div className="fg-side">
