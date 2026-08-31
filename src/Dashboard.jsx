@@ -3029,14 +3029,17 @@ ${body}
 
   // Swipe-to-delete helper for goal rows
   const SwipeRow=({children,onDelete,bg,border,padY=12})=>{
-    const[sx,setSx]=useState(0);const[ss,setSs]=useState(null);
-    const ts=e=>{if(!onDelete)return;setSs(e.touches[0].clientX);};
-    const tm=e=>{if(ss===null)return;const dx=e.touches[0].clientX-ss;if(dx<0)setSx(Math.max(dx,-80));};
-    const te=()=>{if(ss===null)return;setSs(null);if(sx<-50)setSx(-72);else setSx(0);};
+    const[sx,setSx]=useState(0);const[ss,setSs]=useState(null);const[moved,setMoved]=useState(false);
+    const ts=e=>{if(!onDelete)return;setSs(e.touches[0].clientX);setMoved(false);};
+    const tm=e=>{if(ss===null)return;const dx=e.touches[0].clientX-ss;if(Math.abs(dx)>4)setMoved(true);if(dx<0)setSx(Math.max(dx,-72));else if(sx<0)setSx(Math.min(0,-72+dx));};
+    const te=()=>{if(ss===null)return;setSs(null);if(sx<-36)setSx(-72);else setSx(0);};
+    const open=sx<-10;
     return(<div data-swiperow style={{position:"relative",marginBottom:8}}>
-      {onDelete&&sx<0&&<div onClick={()=>{onDelete();setSx(0);}} style={{position:"absolute",right:0,top:0,bottom:0,width:72,background:C.red,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div>}
-      <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te} style={{position:"relative",padding:`${padY}px 14px`,borderRadius:10,background:bg||C.surface,border:border||`1px solid ${C.hairline}`,overflow:"hidden",transform:`translateX(${sx}px)`,transition:ss===null?"transform 0.3s ease":"none"}}>
+      {onDelete&&<div onClick={()=>{onDelete();setSx(0);}} style={{position:"absolute",right:0,top:0,bottom:0,width:72,background:C.red,borderTopRightRadius:10,borderBottomRightRadius:10,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",opacity:open?1:0,pointerEvents:open?"auto":"none",transition:"opacity 0.2s ease"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div>}
+      <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te} style={{position:"relative",padding:`${padY}px 14px`,paddingRight:onDelete?40:14,borderRadius:10,background:bg||C.surface,border:border||`1px solid ${C.hairline}`,overflow:"hidden",transform:`translateX(${sx}px)`,transition:ss===null?"transform 0.3s ease":"none"}}>
         {children}
+        {/* Always-visible delete affordance (tap to reveal/confirm) — so deletion never depends on a perfect swipe */}
+        {onDelete&&!open&&<button onClick={e=>{e.stopPropagation();setSx(-72);}} aria-label="Delete" style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:C.textDim,cursor:"pointer",padding:6,display:"flex",alignItems:"center",zIndex:2}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></button>}
       </div>
     </div>);
   };
