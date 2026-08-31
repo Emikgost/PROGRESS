@@ -1903,10 +1903,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -3029,18 +3029,19 @@ ${body}
 
   // Swipe-to-delete helper for goal rows
   const SwipeRow=({children,onDelete,bg,border,padY=12})=>{
-    const[sx,setSx]=useState(0);const[ss,setSs]=useState(null);const[moved,setMoved]=useState(false);
-    const ts=e=>{if(!onDelete)return;setSs(e.touches[0].clientX);setMoved(false);};
-    const tm=e=>{if(ss===null)return;const dx=e.touches[0].clientX-ss;if(Math.abs(dx)>4)setMoved(true);if(dx<0)setSx(Math.max(dx,-72));else if(sx<0)setSx(Math.min(0,-72+dx));};
+    const[sx,setSx]=useState(0);const[ss,setSs]=useState(null);const[hover,setHover]=useState(false);
+    const ts=e=>{if(!onDelete)return;setSs(e.touches[0].clientX);};
+    const tm=e=>{if(ss===null)return;const dx=e.touches[0].clientX-ss;if(dx<0)setSx(Math.max(dx,-72));else if(sx<0)setSx(Math.min(0,-72+dx));};
     const te=()=>{if(ss===null)return;setSs(null);if(sx<-36)setSx(-72);else setSx(0);};
     const open=sx<-10;
-    return(<div data-swiperow style={{position:"relative",marginBottom:8}}>
-      {onDelete&&<div onClick={()=>{onDelete();setSx(0);}} style={{position:"absolute",right:0,top:0,bottom:0,width:72,background:C.red,borderTopRightRadius:10,borderBottomRightRadius:10,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",opacity:open?1:0,pointerEvents:open?"auto":"none",transition:"opacity 0.2s ease"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div>}
-      <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te} style={{position:"relative",padding:`${padY}px 14px`,paddingRight:onDelete?40:14,borderRadius:10,background:bg||C.surface,border:border||`1px solid ${C.hairline}`,overflow:"hidden",transform:`translateX(${sx}px)`,transition:ss===null?"transform 0.3s ease":"none"}}>
+    return(<div data-swiperow style={{position:"relative",marginBottom:8,display:"flex",alignItems:"stretch"}}>
+      {/* Swipe-revealed strip (mobile) */}
+      {onDelete&&<div onClick={()=>{onDelete();setSx(0);}} style={{position:"absolute",right:0,top:0,bottom:0,width:72,background:C.red,borderTopRightRadius:10,borderBottomRightRadius:10,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",opacity:open?1:0,pointerEvents:open?"auto":"none",transition:"opacity 0.2s ease",zIndex:1}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div>}
+      <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te} style={{flex:1,minWidth:0,position:"relative",padding:`${padY}px 14px`,paddingRight:onDelete?12:14,borderRadius:onDelete?"10px 0 0 10px":10,background:bg||C.surface,border:border||`1px solid ${C.hairline}`,borderRight:onDelete?"none":undefined,overflow:"hidden",transform:`translateX(${sx}px)`,transition:ss===null?"transform 0.3s ease":"none"}}>
         {children}
-        {/* Always-visible delete affordance (tap to reveal/confirm) — so deletion never depends on a perfect swipe */}
-        {onDelete&&!open&&<button onClick={e=>{e.stopPropagation();setSx(-72);}} aria-label="Delete" style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:C.textDim,cursor:"pointer",padding:6,display:"flex",alignItems:"center",zIndex:2}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></button>}
       </div>
+      {/* Real, visible delete button — a normal flex sibling (not overlaid, not clipped). One click deletes. */}
+      {onDelete&&<button type="button" onClick={()=>onDelete()} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)} aria-label="Delete" title="Delete" style={{flexShrink:0,width:44,border:border||`1px solid ${C.hairline}`,borderLeft:"none",borderRadius:"0 10px 10px 0",background:hover?C.red:(bg||C.surface),color:hover?"#fff":C.red,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"background 0.15s ease,color 0.15s ease",WebkitTapHighlightColor:"transparent"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></button>}
     </div>);
   };
 
@@ -4279,7 +4280,7 @@ ${body}
             {/* Daily Rituals — morning/evening/general recurring tasks */}
             <div style={{marginTop:28}}>
               <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Daily Rituals</div>
-              {["morning","night","general"].map(grp=>{const items=todos.filter(t=>t.grp===grp);return(
+              {["morning","night","general"].map(grp=>{const items=todos.filter(t=>t.grp===grp&&!t.removedOn);return(
                 <div key={grp} style={{marginBottom:16}}>
                   <div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6,paddingLeft:2}}>{grp==="night"?"Evening":grp.charAt(0).toUpperCase()+grp.slice(1)}</div>
                   {items.map(t=>(<SwipeRow key={t.id} onDelete={()=>removeHabit(t.id)} bg={C.surface} padY={11}>
