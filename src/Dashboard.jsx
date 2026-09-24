@@ -220,6 +220,7 @@ const CSS=`
 @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
 @keyframes overlayIn{from{opacity:0}to{opacity:1}}
+@keyframes fabIn{from{opacity:0;transform:translateY(8px) scale(0.95)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes modalIn{from{opacity:0;transform:translateY(20px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes fadeTab{from{opacity:0}to{opacity:1}}
 @keyframes sunPulse{0%,100%{opacity:0.3}50%{opacity:0.5}}
@@ -293,7 +294,10 @@ const defFocusSeed=[
 ];
 const defWeekly=[{id:"w1",text:"Workout 4 times",target:4,current:0},{id:"w2",text:"Go to Class 3x",target:3,current:0},{id:"w3",text:"Get Groceries",target:1,current:0}];
 const defMonthly=[{id:"mg1",text:"Sign Morgan Stanley",type:"check",done:false},{id:"mg2",text:"Read a Full Book",type:"check",done:false}];
-const defSplits={upper:["Bench Press","Lat Pull Down","Pec Dec","Mid Row","Tricep PD","Lat Raises","Ab Circuit"],lower:["Squat","RDL","Back Ext.","Leg Ext.","Calf Raises","Ab Circuit"],pull:["Rows (Up)","Rows (Mid)","Pulldown","Face Pulls","Shrugs"],push:["Cable Chest","Tricep Ext","Curls","Shoulder Press","Hammer Curls"],legs:["Paused Squat","Cable Lat Raise","Calf Raises"]};
+const defSplits={upper:["Bench Press","Lat Pull Down","Pec Dec","Mid Row","Tricep PD","Lat Raises","Ab Circuit"],lower:["Squat","RDL","Back Ext.","Leg Ext.","Calf Raises","Ab Circuit"],pull:["Rows (Up)","Rows (Mid)","Pulldown","Face Pulls","Shrugs"],push:["Cable Chest","Tricep Ext","Curls","Shoulder Press","Hammer Curls"],legs:["Paused Squat","Cable Lat Raise","Calf Raises"],running:[]};
+// Splits that log distance + time instead of sets/weight/reps. A split is cardio if its key is here.
+const CARDIO_SPLIT_KEYS=["running","cardio","run"];
+const isCardioSplit=(key)=>CARDIO_SPLIT_KEYS.includes((key||"").toLowerCase());
 const spClr={upper:"#4A82D4",lower:"#2A9D5C",pull:"#E07A3A",push:"#D04545",legs:"#7B65B0"};
 /* ═══ HEALTH ═══ */
 const MACRO={calories:{label:"Calories",unit:"kcal",color:"#F59E0B"},protein:{label:"Protein",unit:"g",color:"#EF4444"},carbs:{label:"Carbs",unit:"g",color:"#3B82F6"},fat:{label:"Fat",unit:"g",color:"#A855F7"},water:{label:"Water",unit:"oz",color:"#06B6D4"}};
@@ -803,9 +807,13 @@ export default function Dashboard(){
   const[editProof,setEditProof]=useState(false);
 
   const[gSplit,setGSplit]=useState(null);const[gView,setGView]=useState("workouts");const[doneEx,setDoneEx]=useState({});const[nBW,setNBW]=useState("");const[addSplit,setAddSplit]=useState(false);const[nSpName,setNSpName]=useState("");const[nSpEx,setNSpEx]=useState("");
+  // Diet feature toggle — off by default (user tracks nutrition in a dedicated app). All diet DATA
+  // stays in storage; this only hides the tab. Re-enable in Settings to bring the feature back.
+  const[dietEnabled,setDietEnabled]=useState(false);
   const[renameSplitVal,setRenameSplitVal]=useState(null); // in-progress split rename text (null = not editing)
   const[manualDuration,setManualDuration]=useState(""); // minutes for manual workout logging
   const[manualDate,setManualDate]=useState(dk(new Date())); // date for manual workout logging
+  const[cardioLog,setCardioLog]=useState({distance:"",distUnit:"mi",timeMin:"",timeSec:""}); // running/cardio entry buffer
   // ─── HEALTH: Diet ───
   const[diet,setDiet]=useState({}); // {dateKey:{calories,protein,carbs,fat,water,entries}}
   const[foodDB,setFoodDB]=useState([]); // personal food database: {id,name,grams,calories,protein,carbs,fat}
@@ -838,6 +846,7 @@ export default function Dashboard(){
   const[strExpanded,setStrExpanded]=useState(null); // exercise name expanded inline
   const[strCollapsed,setStrCollapsed]=useState({}); // {split:true} collapsed groups
   const[strRange,setStrRange]=useState("all"); // 30 | 90 | all
+  const[progMetric,setProgMetric]=useState("weight"); // weight | strength — Progress page chart switcher
   const[nutriRange,setNutriRange]=useState("30");
   const[nutriShow,setNutriShow]=useState({calories:true,protein:true,carbs:true,fat:true,water:true});
   const[bMonth,setBMonth]=useState(()=>new Date());const[selDay,setSelDay]=useState(null);const[txF,setTxF]=useState({type:"out",amount:"",desc:"",account:"",toAccount:"",category:""});
@@ -1475,8 +1484,8 @@ export default function Dashboard(){
     // ── HEALTH: WORKOUTS + STRENGTH + BODYWEIGHT ──
     if(exportSections.workouts){
       const ws=wHist.filter(w=>inRange(dk(new Date(w.date))));
-      const sets=ws.reduce((a,w)=>a+w.exercises.reduce((x,e)=>x+e.sets.length,0),0);
-      const vol=ws.reduce((a,w)=>a+w.exercises.reduce((x,e)=>x+e.sets.reduce((y,s)=>y+(s.w||0)*(s.r||0),0),0),0);
+      const sets=ws.reduce((a,w)=>a+(w.exercises||[]).reduce((x,e)=>x+e.sets.length,0),0);
+      const vol=ws.reduce((a,w)=>a+(w.exercises||[]).reduce((x,e)=>x+e.sets.reduce((y,s)=>y+(s.w||0)*(s.r||0),0),0),0);
       body+=sectionTitle("Workouts",rangeLabel);
       body+=cards([card("Sessions",ws.length),card("Total Sets",sets),card("Volume",Math.round(vol).toLocaleString()+" lb"),card("Bodyweight",(bwLog.length?bwLog[bwLog.length-1].weight:0)+" lb")]);
       // split frequency
@@ -1490,7 +1499,7 @@ export default function Dashboard(){
         body+=table(["Exercise","Latest","PR","Change","Sessions"],exStats.slice(0,16).map(e=>[esc(e.name),`${e.latest} lb`,`<b>${e.pr} lb</b>`,`<span style="color:${e.change>0?acc:e.change<0?red:dim}">${e.change>0?"+":""}${e.change} lb</span>`,e.sessions]),["left","right","right","right","right"]);}
       // recent sessions
       if(ws.length){body+=`<div style="font-size:11px;font-weight:700;color:${dim};text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 0">Recent Sessions</div>`;
-        body+=table(["Date","Split","Exercises","Sets"],ws.slice().reverse().slice(0,12).map(w=>[esc(fd(w.date)),`<span style="text-transform:uppercase">${esc(w.split)}</span>`,w.exercises.length,w.exercises.reduce((a,e)=>a+e.sets.length,0)]),["left","left","right","right"]);}
+        body+=table(["Date","Split","Exercises","Sets"],ws.slice().reverse().slice(0,12).map(w=>[esc(fd(w.date)),`<span style="text-transform:uppercase">${esc(w.split)}</span>`,(w.exercises||[]).length,(w.exercises||[]).reduce((a,e)=>a+e.sets.length,0)]),["left","left","right","right"]);}
       // bodyweight
       if(bwLog.length>=2){const cur=bwLog[bwLog.length-1].weight,st=bwLog[0].weight,ch=(cur-st).toFixed(1);
         body+=`<div style="font-size:11px;font-weight:700;color:${dim};text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 8px">Bodyweight</div>`;
@@ -1828,7 +1837,7 @@ ${body}
       if(d.aspirations)setAspirations(d.aspirations);
       if(d.videoJournal)setVideoJournal(d.videoJournal);if(d.writtenJournal)setWrittenJournal(d.writtenJournal);
       if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",credit:"",...d.accounts});
-      if(d.subscriptions)setSubscriptions(d.subscriptions);if(d.txRules)setTxRules(d.txRules);if(d.weekPlan)setWeekPlan(d.weekPlan);if(d.finGoals)setFinGoals(d.finGoals);if(d.catBudgets)setCatBudgets(d.catBudgets);
+      if(d.subscriptions)setSubscriptions(d.subscriptions);if(d.txRules)setTxRules(d.txRules);if(d.weekPlan)setWeekPlan(d.weekPlan);if(d.finGoals)setFinGoals(d.finGoals);if(typeof d.dietEnabled==="boolean")setDietEnabled(d.dietEnabled);if(d.catBudgets)setCatBudgets(d.catBudgets);
       if(d.focusCompletionLog)setFocusCompletionLog(d.focusCompletionLog);
       if(d.habitOrder)setHabitOrder(d.habitOrder);
       // Migrate photoLog from main blob to separate key (one-time)
@@ -1903,10 +1912,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -1978,6 +1987,27 @@ ${body}
   const cancelSession=()=>setShowCancelConfirm(true);
   const confirmCancel=()=>{setActiveSession(null);syncSession(null);setDoneEx({});setShowCancelConfirm(false);setSessionMinimized(false);};
   const saveWk=()=>{if(!curWkState)return;const durMin=parseFloat(manualDuration);const dur=durMin>0?Math.round(durMin*60000):undefined;setWHist(p=>[...p,{id:uid(),date:manualDate||dk(now),split:curWkState.split,exercises:curWkState.exercises,...(dur?{duration:dur}:{})}]);setConfetti(true);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});setManualDuration("");setManualDate(dk(new Date()));},2000);};
+  // Save a running/cardio workout: distance + time (min:sec) → wHist entry with type:"cardio".
+  const saveCardio=()=>{
+    const dist=parseFloat(cardioLog.distance)||0;
+    const tMin=parseInt(cardioLog.timeMin)||0, tSec=parseInt(cardioLog.timeSec)||0;
+    const totalMin=tMin+tSec/60;
+    if(dist<=0&&totalMin<=0)return;
+    setWHist(p=>[...p,{id:uid(),date:manualDate||dk(now),split:gSplit,type:"cardio",distance:dist,distUnit:cardioLog.distUnit,timeMin:Math.round(totalMin*100)/100,...(totalMin>0?{duration:Math.round(totalMin*60000)}:{})}]);
+    setConfetti(true);
+    setTimeout(()=>{setConfetti(false);setCardioLog({distance:"",distUnit:cardioLog.distUnit,timeMin:"",timeSec:""});setManualDate(dk(new Date()));},2000);
+  };
+  // Pace string from distance + minutes, e.g. "8:30 /mi"
+  const paceStr=(dist,totalMin,unit)=>{if(!dist||!totalMin)return"—";const p=totalMin/dist;const m=Math.floor(p);const s=Math.round((p-m)*60);return `${m}:${String(s).padStart(2,"0")} /${unit}`;};
+  // Pre-fill the current draft with the most recent logged workout of this split — weights/reps and all,
+  // so a repeat session is one tap to load, then edit. (User then hits Save to log it as a new entry.)
+  const duplicateLastWorkout=()=>{
+    if(!gSplit)return;
+    const last=[...wHist].filter(h=>h.split===gSplit&&h.type!=="cardio"&&h.exercises).sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
+    if(!last){setSaveError&&setSaveError("No previous "+gSplit+" workout to duplicate");return;}
+    setCurWkState({split:gSplit,exercises:last.exercises.map(ex=>({name:ex.name,sets:ex.sets.map(s=>({...s}))}))});
+    setManualDate(dk(new Date()));setDoneEx({});
+  };
   // Rename a workout template. Migrates past workout history to the new name so nothing is lost.
   const renameSplit=(oldKey,rawName)=>{
     const newKey=(rawName||"").trim().toLowerCase();
@@ -2789,6 +2819,7 @@ ${body}
   const jrnlDateLabel=ts=>new Date(ts).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
   const wordCount=t=>((t||"").trim().match(/\S+/g)||[]).length;
   const openNewJournal=()=>setJrnlEditor({title:"",body:"",ts:Date.now()});
+  const[showQuickAdd,setShowQuickAdd]=useState(false); // floating + quick-add menu
   const saveJournalEntry=()=>{const e=jrnlEditor;if(!e)return;const title=(e.title||"").trim(),body=(e.body||"").trim();if(!title&&!body){setJrnlEditor(null);return;}setWrittenJournal(p=>{if(e.id)return p.map(x=>x.id===e.id?{...x,title:title||"Untitled",body,ts:e.ts}:x);return[{id:uid(),ts:e.ts||Date.now(),title:title||"Untitled",body},...p];});setJrnlEditor(null);};
   const deleteJournalEntry=id=>{setWrittenJournal(p=>p.filter(x=>x.id!==id));setJrnlOpen(null);setJrnlEditor(null);};
   const sortedWritten=useMemo(()=>[...writtenJournal].sort((a,b)=>b.ts-a.ts),[writtenJournal]);
@@ -3120,7 +3151,8 @@ ${body}
 
   /* ═══ RENDER ═══ */
   return(
-    <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column",transition:"background 0.4s ease, color 0.4s ease"}}>
+    <div style={{background:C.bg,minHeight:"100vh",transition:"background 0.4s ease"}}>
+    <div style={{background:C.bg,minHeight:"100vh",maxWidth:640,margin:"0 auto",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column",transition:"background 0.4s ease, color 0.4s ease",boxShadow:"0 0 60px rgba(0,0,0,0.05)"}}>
       <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
       {/* #8/#9 — Carryover modal: choose how the remaining work is redistributed */}
       {carryPrompt&&(()=>{const c=carryPrompt;const nm=new Date(now.getFullYear(),now.getMonth()+1,1);
@@ -3314,8 +3346,8 @@ ${body}
         {/* Today at a Glance — compact, lives in the sticky header so it stays visible while scrolling */}
         {(()=>{const tk=vk;const dd=diet[tk]||{};const calEaten=Math.round(dd.calories||0),calGoal=dietGoals.calories||0;const water=Math.round(dd.water||0),waterGoal=dietGoals.water||0;const wkT=wHist.filter(w=>w.date===tk);const splits=[...new Set(wkT.map(w=>w.split))];const workedOut=splits.length>0;const wVal=workedOut?(splits.length>1?`${splits.length}×`:(splits[0].charAt(0).toUpperCase()+splits[0].slice(1))):"—";const daySleep=(typeof sleepLog[tk]==="number"?sleepLog[tk]:null);const goDiet=()=>{setMenuTab("workout");setGView("diet");setTab(null);};const tiles=[
           {k:"tasks",l:"Tasks",v:`${dayPct}%`,c:pC(dayPct),pct:dayPct,go:null},
-          {k:"food",l:"Eaten",v:`${calEaten}`,c:MACRO.calories.color,pct:calGoal?Math.min(100,calEaten/calGoal*100):0,go:goDiet},
-          {k:"water",l:"Water",v:`${water}`,c:MACRO.water.color,pct:waterGoal?Math.min(100,water/waterGoal*100):0,go:goDiet},
+          ...(dietEnabled?[{k:"food",l:"Eaten",v:`${calEaten}`,c:MACRO.calories.color,pct:calGoal?Math.min(100,calEaten/calGoal*100):0,go:goDiet},
+          {k:"water",l:"Water",v:`${water}`,c:MACRO.water.color,pct:waterGoal?Math.min(100,water/waterGoal*100):0,go:goDiet}]:[]),
           {k:"workout",l:"Workout",v:wVal,c:workedOut?C.green:C.textDim,pct:workedOut?100:0,go:()=>{setMenuTab("workout");setGView("workouts");setTab(null);}},
           {k:"sleep",l:"Sleep",v:(daySleep==null?"—":String(daySleep)),c:sleepColor(daySleep),pct:daySleep==null?0:Math.min(100,daySleep),go:()=>{setMenuTab("workout");setGView("sleep");setTab(null);}},
         ];return(
@@ -4456,10 +4488,50 @@ ${body}
         </Overlay>
         {menuTab==="workout"&&<div className="tab-content">
           {/* ═══ HEALTH SUB-NAV ═══ */}
-          <div style={{display:"flex",gap:6,marginBottom:18,overflowX:"auto"}} className="hide-scroll">{[{k:"workouts",l:"My Workouts"},{k:"diet",l:"Diet"},{k:"sleep",l:"Sleep"},{k:"progress",l:"Progress"}].map(v=>{const on=gView===v.k;return(<button key={v.k} onClick={()=>{setGView(v.k);if(v.k!=="workouts")setGSplit(null);}} style={{flexShrink:0,padding:"8px 18px",borderRadius:22,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:700,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",transition:"all 0.2s ease"}}>{v.l}</button>);})}</div>
+          <div style={{display:"flex",gap:6,marginBottom:18,overflowX:"auto"}} className="hide-scroll">{[{k:"workouts",l:"My Workouts"},...(dietEnabled?[{k:"diet",l:"Diet"}]:[]),{k:"sleep",l:"Sleep"},{k:"progress",l:"Progress"}].map(v=>{const on=gView===v.k;return(<button key={v.k} onClick={()=>{setGView(v.k);if(v.k!=="workouts")setGSplit(null);}} style={{flexShrink:0,padding:"8px 18px",borderRadius:22,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:700,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",transition:"all 0.2s ease"}}>{v.l}</button>);})}</div>
 
           {/* ═══════════ MY WORKOUTS ═══════════ */}
           {gView==="workouts"&&!gSplit&&<div>
+            {/* ═══ TODAY summary — what you did today (history-first emphasis) ═══ */}
+            {(()=>{
+              const todayW=wHist.filter(w=>w.date===dk(now));
+              if(todayW.length===0)return(
+                <div style={{...card,marginBottom:14,padding:"18px 16px",textAlign:"center"}}>
+                  <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Today</div>
+                  <div style={{fontSize:13,color:C.textDim,fontFamily:FN.h,fontStyle:"italic"}}>No workout logged yet — pick a split below to log one.</div>
+                </div>
+              );
+              const strengthW=todayW.filter(w=>w.type!=="cardio");
+              const cardioW=todayW.filter(w=>w.type==="cardio");
+              const exCount=strengthW.reduce((a,w)=>a+(w.exercises||[]).length,0);
+              const setCount=strengthW.reduce((a,w)=>a+(w.exercises||[]).reduce((x,e)=>x+e.sets.length,0),0);
+              const vol=strengthW.reduce((a,w)=>a+(w.exercises||[]).reduce((x,e)=>x+e.sets.reduce((y,s)=>y+(s.w||0)*(s.r||0),0),0),0);
+              const durMs=todayW.reduce((a,w)=>a+(w.duration||0),0);
+              const splitNames=todayW.map(w=>w.split);
+              const clr=spClr[todayW[0].split]||C.accent;
+              const stats=[];
+              if(strengthW.length){stats.push({l:"Exercises",v:exCount});stats.push({l:"Sets",v:setCount});stats.push({l:"Volume",v:vol>=1000?`${(vol/1000).toFixed(1)}k`:vol});}
+              if(cardioW.length){const totDist=cardioW.reduce((a,w)=>a+(w.distance||0),0);stats.push({l:"Distance",v:`${Math.round(totDist*10)/10} ${cardioW[0].distUnit||"mi"}`});}
+              if(durMs>0)stats.push({l:"Time",v:fmtTime(Math.floor(durMs/1000))});
+              return(
+                <div style={{...card,marginBottom:14,borderLeft:`3px solid ${clr}`}}>
+                  <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>Today</div>
+                      <div style={{fontSize:17,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.03em"}}>{[...new Set(splitNames)].join(" + ")}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    {stats.map(s=>(
+                      <div key={s.l} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:9,background:C.surfaceDim}}>
+                        <div style={{fontSize:16,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1.1}}>{s.v}</div>
+                        <div style={{fontSize:8,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>{s.l}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             {/* Workout calendar — which split you hit each day (mirrors the diet day-strip) */}
             {(()=>{const wByDate={};wHist.forEach(w=>{(wByDate[w.date]=wByDate[w.date]||[]).push(w.split);});const days=[];for(let i=-27;i<=1;i++){const dt=new Date();dt.setDate(dt.getDate()+i);const k=dk(dt);days.push({key:k,splits:wByDate[k]||[],isToday:k===dk(now),isFuture:new Date(k)>new Date(dk(now)),dayNum:dt.getDate(),dayName:dt.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2)});}return(
               <div ref={wkCalRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",padding:"4px 0",marginBottom:14}}>
@@ -4474,31 +4546,95 @@ ${body}
             );})()}
             {orderedSplitKeys.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}><button onClick={()=>setSplitReorder(m=>!m)} style={{background:splitReorder?C.accent:"transparent",border:`1px solid ${splitReorder?C.accent:C.hairline}`,color:splitReorder?C.btnText:C.textDim,borderRadius:8,padding:"6px 13px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{splitReorder?"Done":"⇅ Reorder"}</button></div>}
             {splitReorder
-              ?<DragReorderList items={orderedSplitKeys.map(k=>({id:k}))} onReorder={ids=>setSplitOrder(ids)} renderContent={it=>{const clr=spClr[it.id]||C.accent;const mset=musclesForSplit(splits[it.id]||[]);return(<><div style={{flexShrink:0}}><MuscleBody muscles={mset} accent={clr} base={C.surfaceHi} skin={C.textDim} size={34} gap={3}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.04em"}}>{it.id}</div><div style={{fontSize:10,color:C.textDim}}>{(splits[it.id]||[]).length} exercises</div></div></>);}} />
+              ?<DragReorderList items={orderedSplitKeys.map(k=>({id:k}))} onReorder={ids=>setSplitOrder(ids)} renderContent={it=>{const clr=spClr[it.id]||C.accent;const mset=musclesForSplit(splits[it.id]||[]);return(<><div style={{flexShrink:0}}><MuscleBody muscles={mset} accent={clr} base={C.surfaceHi} skin={C.textDim} size={34} gap={3}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.04em"}}>{it.id}</div><div style={{fontSize:10,color:C.textDim}}>{isCardioSplit(it.id)?"Distance & time":`${(splits[it.id]||[]).length} exercises`}</div></div></>);}} />
               :<div style={{display:"flex",flexDirection:"column",gap:8}}>{orderedSplitKeys.map(key=>{const exL=splits[key]||[];const clr=spClr[key]||C.accent;const mset=musclesForSplit(exL);return(
               <div key={key} style={{...card,padding:"14px 16px"}}>
                 <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:11}}>
                   <button className="press" onClick={()=>setGSplit(key)} style={{background:"transparent",border:"none",cursor:"pointer",padding:0,flexShrink:0}}><MuscleBody muscles={mset} accent={clr} base={C.surfaceHi} skin={C.textDim} size={62} gap={5}/></button>
                   <button className="press" onClick={()=>setGSplit(key)} style={{flex:1,minWidth:0,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",padding:0}}>
                     <div style={{fontSize:15,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.04em"}}>{key}</div>
-                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{exL.length} exercises</div>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{isCardioSplit(key)?"Distance & time":`${exL.length} exercises`}</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:7}}>{[...mset].slice(0,6).map(m=><span key={m} style={{fontSize:8,fontWeight:700,color:clr,background:`${clr}1A`,borderRadius:4,padding:"2px 6px",textTransform:"uppercase",letterSpacing:"0.03em"}}>{MUSCLE_LABELS[m]}</span>)}{mset.size===0&&<span style={{fontSize:9,color:C.textDim,fontStyle:"italic"}}>Add exercises to map muscles</span>}</div>
                   </button>
                   <button className="press" onClick={()=>setSplits(p=>{const n={...p};delete n[key];return n;})} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:15,opacity:0.3,flexShrink:0}}>×</button>
                 </div>
                 <div style={{display:"flex",gap:8}}>
-                  <button className="press" onClick={()=>startSession(key)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:C.accent,border:"none",borderRadius:10,padding:"10px 0",color:C.btnText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em"}}><svg width="11" height="11" viewBox="0 0 24 24" fill={C.btnText}><polygon points="6 4 20 12 6 20"/></svg>Start</button>
-                  <button className="press" onClick={()=>setGSplit(key)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:10,padding:"10px 0",color:C.textDim,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em"}}>Manual / Edit</button>
+                  <button className="press" onClick={()=>setGSplit(key)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:C.accent,border:"none",borderRadius:10,padding:"10px 0",color:C.btnText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em"}}>Log Workout</button>
                 </div>
               </div>);})}</div>}
             {!addSplit?<button onClick={()=>setAddSplit(true)} style={{...btnB,width:"100%",marginTop:12,fontSize:12}}>+ Add Split</button>:<div style={{...card,marginTop:12}}><input value={nSpName} onChange={e=>setNSpName(e.target.value)} placeholder="Split name (e.g. push)" style={{...inp,marginBottom:8}} /><input value={nSpEx} onChange={e=>setNSpEx(e.target.value)} placeholder="Exercises (comma separated)" style={{...inp,marginBottom:10}} /><div style={{display:"flex",gap:8}}><button onClick={()=>{if(!nSpName.trim())return;const nk=nSpName.trim().toLowerCase();setSplits(p=>({...p,[nk]:nSpEx.split(",").map(e=>e.trim()).filter(Boolean)}));setSplitOrder(o=>o.includes(nk)?o:[...o,nk]);setNSpName("");setNSpEx("");setAddSplit(false);}} style={{...btnB,flex:1}}>Add</button><button onClick={()=>setAddSplit(false)} style={btnG}>Cancel</button></div></div>}
             {/* Recent workouts */}
             {wHist.length>0&&<div style={{marginTop:22}}>
               <div style={{...lbl,marginBottom:10}}>Recent Workouts</div>
-              {wHist.slice().reverse().slice(0,8).map(w=>(<div key={w.id} className="press" onClick={()=>setViewWorkout(w)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:12,background:C.surface,cursor:"pointer",border:`1px solid ${C.hairline}`}}><div style={{width:36,height:36,borderRadius:10,background:`${spClr[w.split]||C.accent}1A`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:spClr[w.split]||C.accent}}><DumbbellIcon size={18} color={spClr[w.split]||C.accent}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:spClr[w.split]||C.accent,textTransform:"uppercase",letterSpacing:"0.04em"}}>{w.split}</div><div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>{fd(w.date)} · {w.exercises.length} ex · {w.exercises.reduce((a,e)=>a+e.sets.length,0)} sets{w.duration?` · ${fmtTime(Math.floor(w.duration/1000))}`:""}</div></div><span style={{fontSize:16,color:C.textDim}}>›</span><button onClick={e=>{e.stopPropagation();setWHist(p=>p.filter(x=>x.id!==w.id));}} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,opacity:0.35,padding:"0 2px"}}>×</button></div>))}
+              {wHist.slice().reverse().slice(0,8).map(w=>(<div key={w.id} className="press" onClick={()=>setViewWorkout(w)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:12,background:C.surface,cursor:"pointer",border:`1px solid ${C.hairline}`}}><div style={{width:36,height:36,borderRadius:10,background:`${spClr[w.split]||C.accent}1A`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:spClr[w.split]||C.accent}}><DumbbellIcon size={18} color={spClr[w.split]||C.accent}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:spClr[w.split]||C.accent,textTransform:"uppercase",letterSpacing:"0.04em"}}>{w.split}</div><div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>{w.type==="cardio"?`${fd(w.date)} · ${w.distance} ${w.distUnit||"mi"}${w.timeMin?` · ${w.timeMin>=60?`${Math.floor(w.timeMin/60)}h ${Math.round(w.timeMin%60)}m`:`${Math.round(w.timeMin)}m`}`:""}`:`${fd(w.date)} · ${(w.exercises||[]).length} ex · ${(w.exercises||[]).reduce((a,e)=>a+e.sets.length,0)} sets${w.duration?` · ${fmtTime(Math.floor(w.duration/1000))}`:""}`}</div></div><span style={{fontSize:16,color:C.textDim}}>›</span><button onClick={e=>{e.stopPropagation();setWHist(p=>p.filter(x=>x.id!==w.id));}} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,opacity:0.35,padding:"0 2px"}}>×</button></div>))}
             </div>}
           </div>}
-          {gView==="workouts"&&gSplit&&curWkState&&(()=>{const clr=spClr[gSplit]||C.blue;const splitMuscles=musclesForSplit(curWkState.exercises.map(e=>e.name));return(<div>
+          {gView==="workouts"&&gSplit&&isCardioSplit(gSplit)&&(()=>{const clr=spClr[gSplit]||"#3B82F6";
+            const dist=parseFloat(cardioLog.distance)||0;const totalMin=(parseInt(cardioLog.timeMin)||0)+(parseInt(cardioLog.timeSec)||0)/60;
+            const recent=wHist.filter(w=>w.type==="cardio").slice().reverse().slice(0,6);
+            const canSave=dist>0||totalMin>0;
+            return(<div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+              <button onClick={()=>setGSplit(null)} style={btnG}>←</button>
+              <div style={{flex:1,fontSize:15,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.04em"}}>{gSplit}</div>
+            </div>
+            <div style={{...card,marginBottom:14}}>
+              <div style={{...lbl,marginBottom:14}}>Log Run</div>
+              {/* Distance */}
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:10,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Distance</div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input type="number" inputMode="decimal" value={cardioLog.distance} onChange={e=>setCardioLog(p=>({...p,distance:e.target.value}))} placeholder="0.0" style={{...inp,flex:1,fontFamily:FN.m,fontSize:20,textAlign:"center"}}/>
+                  <div style={{display:"flex",gap:4}}>
+                    {["mi","km"].map(u=>(<button key={u} onClick={()=>setCardioLog(p=>({...p,distUnit:u}))} style={{padding:"10px 14px",borderRadius:9,border:`1px solid ${cardioLog.distUnit===u?clr:C.hairline}`,background:cardioLog.distUnit===u?clr:"transparent",color:cardioLog.distUnit===u?"#fff":C.textDim,fontSize:12,fontWeight:800,fontFamily:FN.m,cursor:"pointer"}}>{u}</button>))}
+                  </div>
+                </div>
+              </div>
+              {/* Time */}
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:10,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Time</div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center"}}>
+                    <input type="number" inputMode="numeric" value={cardioLog.timeMin} onChange={e=>setCardioLog(p=>({...p,timeMin:e.target.value}))} placeholder="0" style={{...inp,width:"100%",boxSizing:"border-box",fontFamily:FN.m,fontSize:20,textAlign:"center"}}/>
+                    <span style={{fontSize:9,color:C.textDim,marginTop:3,textTransform:"uppercase",letterSpacing:"0.05em"}}>min</span>
+                  </div>
+                  <span style={{fontSize:22,color:C.textDim,fontWeight:700,marginTop:-14}}>:</span>
+                  <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center"}}>
+                    <input type="number" inputMode="numeric" value={cardioLog.timeSec} onChange={e=>setCardioLog(p=>({...p,timeSec:e.target.value}))} placeholder="00" style={{...inp,width:"100%",boxSizing:"border-box",fontFamily:FN.m,fontSize:20,textAlign:"center"}}/>
+                    <span style={{fontSize:9,color:C.textDim,marginTop:3,textTransform:"uppercase",letterSpacing:"0.05em"}}>sec</span>
+                  </div>
+                </div>
+              </div>
+              {/* Pace readout */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderRadius:10,background:C.surfaceDim,marginBottom:16}}>
+                <span style={{fontSize:11,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Pace</span>
+                <span style={{fontSize:16,fontWeight:800,color:canSave?clr:C.textDim,fontFamily:FN.m}}>{paceStr(dist,totalMin,cardioLog.distUnit)}</span>
+              </div>
+              {/* Date */}
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                <span style={{fontSize:11,color:C.textDim,fontWeight:600}}>Date</span>
+                <input type="date" value={manualDate} onChange={e=>setManualDate(e.target.value)} style={{...inp,flex:1,fontFamily:FN.m,fontSize:12}}/>
+              </div>
+              <button onClick={saveCardio} disabled={!canSave} style={{...btnB,width:"100%",opacity:canSave?1:0.4}}>Save Run</button>
+            </div>
+            {/* Recent runs */}
+            {recent.length>0&&<div>
+              <div style={{...lbl,marginBottom:10}}>Recent Runs</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {recent.map(w=>(
+                  <div key={w.id} style={{...card,padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:700,color:C.text,fontFamily:FN.m}}>{w.distance} {w.distUnit||"mi"} · {w.timeMin>=60?`${Math.floor(w.timeMin/60)}h ${Math.round(w.timeMin%60)}m`:`${Math.round(w.timeMin)}m`}</div>
+                      <div style={{fontSize:10,color:C.textDim,marginTop:2}}>{fd(w.date)} · {paceStr(w.distance,w.timeMin,w.distUnit||"mi")}</div>
+                    </div>
+                    <button onClick={()=>setWHist(p=>p.filter(x=>x.id!==w.id))} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:16,padding:6}}>×</button>
+                  </div>
+                ))}
+              </div>
+            </div>}
+          </div>);})()}
+
+          {gView==="workouts"&&gSplit&&!isCardioSplit(gSplit)&&curWkState&&(()=>{const clr=spClr[gSplit]||C.blue;const splitMuscles=musclesForSplit(curWkState.exercises.map(e=>e.name));return(<div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
               <button onClick={()=>{setGSplit(null);setRenameSplitVal(null);}} style={btnG}>←</button>
               {renameSplitVal!==null
@@ -4513,7 +4649,10 @@ ${body}
               {splitMuscles.size>0?<div style={{display:"flex",flexWrap:"wrap",gap:5,justifyContent:"center"}}>{[...splitMuscles].map(m=><span key={m} style={{fontSize:9,fontWeight:700,color:clr,background:`${clr}1A`,borderRadius:5,padding:"3px 8px",textTransform:"uppercase",letterSpacing:"0.03em"}}>{MUSCLE_LABELS[m]}</span>)}</div>:<div style={{fontSize:11,color:C.textDim,fontStyle:"italic"}}>Add exercises to map trained muscles</div>}
             </div>
 
-            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button className="press" onClick={()=>{const n=prompt("Exercise name:");if(n&&n.trim()){setSplits(p=>({...p,[gSplit]:[...(p[gSplit]||[]),n.trim()]}));setCurWkState(p=>({...p,exercises:[...p.exercises,{name:n.trim(),sets:[{w:0,r:0},{w:0,r:0},{w:0,r:0}]}]}));}}} style={{...btnG,fontSize:10}}>+ Exercise</button></div>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              {wHist.some(h=>h.split===gSplit&&h.type!=="cardio"&&h.exercises)&&<button className="press" onClick={duplicateLastWorkout} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"9px 0",color:C.text,fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.04em"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Duplicate last</button>}
+              <button className="press" onClick={()=>{const n=prompt("Exercise name:");if(n&&n.trim()){setSplits(p=>({...p,[gSplit]:[...(p[gSplit]||[]),n.trim()]}));setCurWkState(p=>({...p,exercises:[...p.exercises,{name:n.trim(),sets:[{w:0,r:0},{w:0,r:0},{w:0,r:0}]}]}));}}} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"9px 0",color:C.text,fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.04em"}}>+ Exercise</button>
+            </div>
 
             {curWkState.exercises.map((ex,ei)=>{const lE=lastSess&&lastSess.exercises?lastSess.exercises.find(e=>e.name===ex.name):null;const dn=doneEx[ei];const exM=musclesForExercise(ex.name);const meta=getMeta(ex.name);return(<div key={ei} style={{...card,marginBottom:10,background:dn?C.greenSoft:C.surface}}>
               <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
@@ -4539,6 +4678,7 @@ ${body}
                 if(meta.mode==="time"){return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:clr,fontWeight:700}}>S{si+1}</span><div style={{display:"flex",alignItems:"center",gap:5}}><input type="number" value={s.sec||""} onChange={e=>uSet(ei,si,"sec",e.target.value)} placeholder="seconds" style={{...numI,flex:1}} /><span style={{fontSize:10,color:C.textDim,fontFamily:FN.m,minWidth:34}}>{s.sec?fmtDur(s.sec,meta.timeFmt):""}</span></div><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:C.textDim}}>{ls?fmtSet(ls,meta):"—"}</span></div>);}
                 const isBw=meta.wtype==="bw";const wPlaceholder=meta.wtype==="bwplus"?"+lbs":meta.wtype==="bwminus"?"−lbs":"lbs";const wd=ls&&!isBw?(s.w||0)-(ls.w||0):null;
                 return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:clr,fontWeight:700}}>S{si+1}</span>{isBw?<div style={{...numI,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:C.accent}}>BW</div>:<input type="number" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder={wPlaceholder} style={numI} />}<input type="number" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={numI} /><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:ls?(wd>0?C.greenBright:wd<0?C.red:C.textDim):C.textDim}}>{ls?fmtSet(ls,meta):"—"}</span></div>);})}
+              <button className="press" onClick={()=>aSet(ei)} style={{width:"100%",marginTop:5,background:"transparent",border:`1px dashed ${C.hairline}`,borderRadius:8,padding:"7px 0",color:C.textDim,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.05em"}}>+ Add Set</button>
             </div>);})}
 
             {/* Manual logging — optional date + duration, then save directly (no live timer) */}
@@ -4555,7 +4695,7 @@ ${body}
           </div>);})()}
 
           {/* ═══════════ DIET ═══════════ */}
-          {gView==="diet"&&(()=>{
+          {gView==="diet"&&dietEnabled&&(()=>{
             const g=dietGoals,d=dietDay;
             const isToday=dietDate===dk(now);
             const isFuture=new Date(dietDate)>new Date(dk(now));
@@ -4994,6 +5134,37 @@ ${body}
             const toggleEx=(name)=>{const cur=strExSel||exs;const next=cur.includes(name)?cur.filter(x=>x!==name):[...cur,name];setStrExSel(next.length===exs.length?null:next);};
             const colorFor=(name)=>EX_PALETTE[exs.indexOf(name)%EX_PALETTE.length];
             return(<div>
+              {/* ═══ SUMMARY STRIP — compact top-of-page metrics (personal performance dashboard) ═══ */}
+              {(()=>{
+                const bw=bwLog.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
+                const curW=bw.length?bw[bw.length-1].weight:0;
+                const cut30=Date.now()-30*864e5;
+                const past=bw.filter(e=>new Date(e.date).getTime()<=cut30).slice(-1)[0]||bw[0];
+                const wChange=curW&&past?Math.round((curW-past.weight)*10)/10:0;
+                const monthStart=new Date();monthStart.setDate(1);monthStart.setHours(0,0,0,0);
+                const woThisMonth=wHist.filter(w=>new Date(w.date)>=monthStart).length;
+                // week streak — consecutive weeks (back from this week) with ≥1 workout
+                const weekKey=(d)=>{const dt=new Date(d);const day=(dt.getDay()+6)%7;dt.setDate(dt.getDate()-day);return dk(dt);};
+                const weeksWithWo=new Set(wHist.map(w=>weekKey(w.date)));
+                let streak=0;let probe=new Date();
+                for(let i=0;i<104;i++){if(weeksWithWo.has(weekKey(probe)))streak++;else if(i>0)break;probe.setDate(probe.getDate()-7);}
+                const cards=[
+                  {l:"Weight",v:curW?`${curW} kg`:"—",sub:wChange!==0?`${wChange>0?"↑":"↓"} ${Math.abs(wChange)} · 30d`:"no change",subClr:wChange<0?"#22C55E":wChange>0?"#E8A33D":C.textDim},
+                  {l:"Workouts",v:woThisMonth,sub:"this month",subClr:C.textDim},
+                  {l:"Streak",v:streak,sub:streak===1?"week":"weeks",subClr:streak>0?"#22C55E":C.textDim},
+                ];
+                return(
+                  <div style={{display:"flex",gap:8,marginBottom:14}}>
+                    {cards.map(c=>(
+                      <div key={c.l} style={{...card,flex:1,padding:"12px 8px",textAlign:"center"}}>
+                        <div style={{fontSize:8,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:5}}>{c.l}</div>
+                        <div style={{fontSize:17,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1.1}}>{c.v}</div>
+                        <div style={{fontSize:8.5,color:c.subClr,fontWeight:600,marginTop:4,fontFamily:FN.m}}>{c.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               {/* ─── Am I getting stronger? — overall strength score ─── */}
               {(()=>{const sp=strengthProgress;
                 const scoreClr=sp.score>=70?"#22C55E":sp.score>=45?"#E8A33D":"#E85B5B";
@@ -5062,8 +5233,15 @@ ${body}
                 </div>
               </div>}
 
+              {/* ═══ METRIC SWITCHER — one chart at a time (contained, not stacked) ═══ */}
+              <div style={{display:"flex",gap:6,marginBottom:14}}>
+                {[{k:"weight",l:"Weight"},{k:"strength",l:"Strength"}].map(m=>{const on=progMetric===m.k;return(
+                  <button key={m.k} onClick={()=>setProgMetric(m.k)} style={{flex:1,padding:"9px 0",borderRadius:9,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:11.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.05em"}}>{m.l}</button>
+                );})}
+              </div>
+
               {/* ─── Section 1: Strength progression ─── */}
-              <div style={{...card,marginBottom:14}}>
+              {progMetric==="strength"&&<div style={{...card,marginBottom:14}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
                   <div style={{...lbl,margin:0}}>Strength Progression</div>
                   <div style={{display:"flex",gap:3,background:C.surfaceDim,borderRadius:9,padding:3}}>
@@ -5144,11 +5322,11 @@ ${body}
                   </ResponsiveContainer>:<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>{exs.length===0?"Log workouts to compare progression.":"Select exercises below to compare."}</div>}
                   {exs.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:12}}>{exs.map(name=>{const on=(strExSel||exs).includes(name);return(<button key={name} onClick={()=>toggleEx(name)} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:14,border:`1px solid ${on?colorFor(name):C.hairline}`,background:on?`${colorFor(name)}1A`:"transparent",cursor:"pointer"}}><span style={{width:8,height:8,borderRadius:"50%",background:on?colorFor(name):C.textDim}}/><span style={{fontSize:10,fontWeight:600,color:on?C.text:C.textDim}}>{name}</span></button>);})}</div>}
                 </div>}
-              </div>
+              </div>}
 
 
               {/* ─── Section 2: Nutrition progress ─── */}
-              <div style={{...card,marginBottom:14}}>
+              {dietEnabled&&<div style={{...card,marginBottom:14}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}><div style={{...lbl,margin:0}}>Nutrition</div><div style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>grams · oz · kcal</div></div>
                 <div style={{display:"flex",gap:6,marginBottom:12,marginTop:10}}>{[{k:"30",l:"30D"},{k:"90",l:"90D"},{k:"all",l:"All"}].map(r=>{const on=nutriRange===r.k;return(<button key={r.k} onClick={()=>setNutriRange(r.k)} style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accentSoft:"transparent",color:on?C.accent:C.textDim,fontSize:10,fontWeight:700,cursor:"pointer"}}>{r.l}</button>);})}</div>
                 {nutritionRows.length>0?(()=>{
@@ -5192,16 +5370,16 @@ ${body}
                 })():<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>Log meals in the Diet tab to see nutrition trends.</div>}
                 <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:14}}>{["protein","carbs","fat","water","calories"].map(k=>{const on=nutriShow[k];return(<button key={k} onClick={()=>setNutriShow(p=>({...p,[k]:!p[k]}))} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:14,border:`1px solid ${on?MACRO[k].color:C.hairline}`,background:on?`${MACRO[k].color}1A`:"transparent",cursor:"pointer"}}><span style={{width:8,height:8,borderRadius:2,background:on?MACRO[k].color:C.textDim}}/><span style={{fontSize:10,fontWeight:600,color:on?C.text:C.textDim}}>{MACRO[k].label}</span></button>);})}</div>
                 <div style={{fontSize:9,color:C.textDim,fontFamily:FN.m,marginTop:8,lineHeight:1.5}}>Stacked blocks = grams of protein/carbs/fat (left axis). The water (oz) and calorie blocks above each day are standalone totals, not on the grams scale.</div>
-              </div>
+              </div>}
 
 
               {/* ─── Bodyweight ─── */}
-              <div style={{...card,marginBottom:12}}>
+              {progMetric==="weight"&&<div style={{...card,marginBottom:12}}>
                 <div style={{...lbl,marginBottom:12}}>Bodyweight</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>{[{l:"Current",v:`${bwLog.length>0?bwLog[bwLog.length-1].weight:0}lb`,c:C.text},{l:"Start",v:`${bwLog.length>0?bwLog[0].weight:0}lb`,c:C.textDim},{l:"Change",v:`${bwLog.length>=2?(bwLog[bwLog.length-1].weight-bwLog[0].weight).toFixed(1):"0"}lb`,c:parseFloat(bwLog.length>=2?(bwLog[bwLog.length-1].weight-bwLog[0].weight).toFixed(1):"0")>0?C.greenBright:C.red}].map((s,i)=>(<div key={i} style={{background:C.surfaceDim,borderRadius:12,padding:12,textAlign:"center"}}><div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:2}}>{s.l}</div><div style={{fontSize:18,fontWeight:700,color:s.c,fontFamily:FN.m}}>{s.v}</div></div>))}</div>
                 {bwLog.length>0&&<ResponsiveContainer width="100%" height={140}><LineChart data={bwLog.map(e=>({date:fd(e.date),weight:e.weight}))}><CartesianGrid strokeDasharray="3 3" stroke={C.surfaceDim} vertical={false} /><XAxis dataKey="date" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} /><YAxis domain={["dataMin-1","dataMax+1"]} tick={{fill:C.textDim,fontSize:10}} axisLine={false} tickLine={false} width={32} /><Tooltip content={<Tip />} /><Line type="monotone" dataKey="weight" stroke={C.blue} strokeWidth={2} dot={{fill:C.blue,r:3,stroke:"#fff",strokeWidth:2}} name="lb" /></LineChart></ResponsiveContainer>}
                 <div style={{display:"flex",gap:8,marginTop:12}}><input type="number" step="0.1" value={nBW} onChange={e=>setNBW(e.target.value)} placeholder="Log weight (lbs)" style={{...inp,flex:1}} onKeyDown={e=>{if(e.key==="Enter"){const w=parseFloat(nBW);if(w){setBwLog(p=>[...p,{date:dk(now),weight:w}]);setNBW("");}}}} /><button onClick={()=>{const w=parseFloat(nBW);if(w){setBwLog(p=>[...p,{date:dk(now),weight:w}]);setNBW("");}}} style={btnB}>Log</button></div>
-              </div>
+              </div>}
             </div>);
           })()}
         </div>}
@@ -5626,6 +5804,28 @@ ${body}
       </div>
 
 
+      {/* ═══ QUICK ADD — floating + button for the fastest common actions ═══ */}
+      {showQuickAdd&&<div onClick={()=>setShowQuickAdd(false)} style={{position:"fixed",inset:0,zIndex:150,background:"rgba(0,0,0,0.4)"}}/>}
+      <div style={{position:"fixed",right:"max(18px, calc(50vw - 320px + 18px))",bottom:74,zIndex:160,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10}}>
+        {showQuickAdd&&(()=>{
+          const items=[
+            {l:"Log Workout",ic:<DumbbellIcon size={16} color="#fff"/>,go:()=>{setMenuTab("workout");setGView("workouts");setGSplit(null);setTab(null);}},
+            {l:"Add Weight",ic:<span style={{fontSize:15}}>⚖️</span>,go:()=>{setMenuTab("workout");setGView("progress");setTab(null);}},
+            {l:"Focus Task",ic:<span style={{fontSize:15}}>◎</span>,go:()=>{setTab("today");setMenuTab(null);setTodaySub("focus");}},
+            {l:"Journal",ic:<span style={{fontSize:15}}>✎</span>,go:()=>{setTab("groups");setMenuTab(null);openNewJournal();}},
+          ];
+          return items.map((it,i)=>(
+            <button key={it.l} onClick={()=>{it.go();setShowQuickAdd(false);}} className="press" style={{display:"flex",alignItems:"center",gap:10,background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:24,padding:"9px 16px 9px 12px",cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.25)",animation:`fabIn 0.18s ease ${i*0.03}s both`}}>
+              <span style={{width:28,height:28,borderRadius:"50%",background:C.accent,display:"flex",alignItems:"center",justifyContent:"center"}}>{it.ic}</span>
+              <span style={{fontSize:12.5,fontWeight:700,color:C.text,fontFamily:FN.b,whiteSpace:"nowrap"}}>{it.l}</span>
+            </button>
+          ));
+        })()}
+        <button onClick={()=>setShowQuickAdd(v=>!v)} className="press" aria-label="Quick add" style={{width:56,height:56,borderRadius:"50%",background:C.accent,border:"none",cursor:"pointer",boxShadow:`0 6px 20px ${C.accent}55, 0 2px 8px rgba(0,0,0,0.3)`,display:"flex",alignItems:"center",justifyContent:"center",transition:"transform 0.2s ease",transform:showQuickAdd?"rotate(45deg)":"rotate(0)"}}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+
       <div style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 6px",gap:2}}>
         {mainTabs.map(t=>{const on=curPage===t.k;return(
           <button key={t.k} onClick={()=>goPage(t.k)} className="press" style={{flex:1,minWidth:0,border:"none",borderRadius:10,padding:"8px 0",cursor:"pointer",textAlign:"center",background:"transparent",color:on?C.accent:C.textDim,fontSize:9,fontFamily:FN.b,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.02em",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
@@ -5658,6 +5858,17 @@ ${body}
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Night Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.nightStart} onChange={e=>setSettings(p=>({...p,nightStart:parseInt(e.target.value)||18}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.nightEnd} onChange={e=>setSettings(p=>({...p,nightEnd:parseInt(e.target.value)||23}))} style={{...numI,width:60}} /></div></div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Planning Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,planDay:i}))} style={{...pill((settings.planDay??0)===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
 
+
+        {/* Diet feature — off by default. Data is preserved; this only shows/hides the tab. */}
+        <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.textDim}}>Diet & nutrition tracking</div>
+            <div style={{fontSize:10,color:C.textDim,opacity:0.7,marginTop:2,lineHeight:1.4}}>Adds the Diet tab back. Your logged food is kept whether this is on or off.</div>
+          </div>
+          <button onClick={()=>setDietEnabled(v=>!v)} style={{flexShrink:0,width:46,height:26,borderRadius:13,border:"none",background:dietEnabled?C.accent:C.hairline,position:"relative",cursor:"pointer",transition:"background 0.2s ease"}}>
+            <span style={{position:"absolute",top:3,left:dietEnabled?23:3,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 0.2s ease",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+          </button>
+        </div>
 
         {/* Sync status badge — off by default; flip on to watch the little sync indicator */}
         <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
@@ -5832,253 +6043,22 @@ ${body}
       </Overlay>
 
       {/* ═══ ACTIVE WORKOUT SESSION — fullscreen focus mode (hidden when minimized) ═══ */}
-      {activeSession&&!sessionMinimized&&<div style={{position:"fixed",inset:0,zIndex:300,background:C.bg,display:"flex",flexDirection:"column",fontFamily:FN.b}}>
-        {/* Finish overlay */}
-        {finishingSession&&<div style={{position:"absolute",inset:0,zIndex:10,background:`radial-gradient(circle at center,${C.accentSoft},${C.bg} 70%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",animation:"finishGlow 1.8s ease forwards"}}>
-          <div style={{width:120,height:120,borderRadius:"50%",border:`2px solid ${C.accent}`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:24,boxShadow:`0 0 60px ${C.accent}80`}}>
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
-          <div className="display" style={{fontSize:32,fontStyle:"italic",color:C.text,marginBottom:8,textTransform:"none"}}>Done.</div>
-          <div style={{fontFamily:FN.m,fontSize:12,color:C.textDim,animation:"finishFade 1.2s ease forwards",letterSpacing:"0.18em",textTransform:"uppercase"}}>{fmtTime(sessionElapsed)} · {activeSession.split}</div>
-          <div style={{position:"absolute",left:0,right:0,top:"50%",height:2,background:`linear-gradient(90deg,transparent,${C.accent},transparent)`,backgroundSize:"200% 100%",animation:"finishSweep 1.6s ease forwards",pointerEvents:"none"}}/>
-        </div>}
-        {/* Header: stopwatch + cancel */}
-        <div style={{padding:"16px 22px",borderBottom:`1px solid ${C.hairline}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:C.surface}}>
-          <div>
-            <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:2}}>{activeSession.split}</div>
-            <div className="hero-num" style={{fontSize:34,color:C.accent,lineHeight:1}}>{fmtTime(sessionElapsed)}</div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>setSessionMinimized(true)} style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:8,padding:"8px 12px",color:C.textDim,fontSize:10,fontFamily:FN.b,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.06em",display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>Minimize</button>
-            <button onClick={cancelSession} style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:8,padding:"8px 14px",color:C.textDim,fontSize:10,fontFamily:FN.b,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cancel</button>
-          </div>
-        </div>
-        {/* Exercises */}
-        <div style={{flex:1,overflowY:"auto",padding:"16px 22px 24px"}}>
-          {activeSession.exercises.map((ex,ei)=>{const lE=lastSess?.exercises?.find(e=>e.name===ex.name);const dn=doneEx[ei];const meta=getMeta(ex.name);return(
-            <div key={ei} style={{...card,marginBottom:12,background:dn?C.greenSoft:C.surface,border:`1px solid ${dn?C.greenMed:C.hairline}`}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                <span style={{fontSize:14,fontWeight:700,color:dn?C.green:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{dn&&"✓ "}{ex.name}</span>
-                <div style={{display:"flex",gap:4}}>
-                  <button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"4px 10px",fontSize:9}}>Done</button>
-                  <button onClick={()=>rSet(ei)} style={{...btnG,padding:"4px 8px",fontSize:13}}>−</button>
-                  <button onClick={()=>aSet(ei)} style={{...btnG,padding:"4px 8px",fontSize:13}}>+</button>
-                </div>
-              </div>
-              <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-                <select value={meta.mode} onChange={e=>setMetaFor(ex.name,{mode:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}><option value="weight">Weight × Reps</option><option value="time">Time</option></select>
-                {meta.mode==="weight"?<select value={meta.wtype} onChange={e=>setMetaFor(ex.name,{wtype:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}><option value="ext">External</option><option value="bw">Bodyweight</option><option value="bwplus">BW + Added</option><option value="bwminus">BW − Assist</option></select>:<select value={meta.timeFmt} onChange={e=>setMetaFor(ex.name,{timeFmt:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}><option value="ms">Min : Sec</option><option value="s">Seconds</option></select>}
-              </div>
-              {ex.sets.map((s,si)=>{const ls=lE?.sets?.[si];
-                if(meta.mode==="time"){return(
-                  <div key={si} style={{display:"grid",gridTemplateColumns:"32px 1fr 56px",gap:6,marginBottom:6,alignItems:"center"}}>
-                    <span style={{fontSize:10,color:C.accent,fontWeight:700,fontFamily:FN.m}}>S{si+1}</span>
-                    <div style={{display:"flex",alignItems:"center",gap:6}}><input type="number" inputMode="numeric" value={s.sec||""} onChange={e=>uSet(ei,si,"sec",e.target.value)} placeholder="seconds" style={{...numI,padding:"12px 8px",fontSize:15,flex:1}}/><span style={{fontSize:12,color:C.textDim,fontFamily:FN.m,minWidth:38}}>{s.sec?fmtDur(s.sec,meta.timeFmt):""}</span></div>
-                    <span style={{fontSize:9,textAlign:"center",fontWeight:600,fontFamily:FN.m,color:C.textDim}}>{ls?fmtSet(ls,meta):"—"}</span>
-                  </div>
-                );}
-                const isBw=meta.wtype==="bw";const wPlaceholder=meta.wtype==="bwplus"?"+lbs":meta.wtype==="bwminus"?"−lbs":"lbs";const wd=ls&&!isBw?(s.w||0)-(ls.w||0):null;return(
-                <div key={si} style={{display:"grid",gridTemplateColumns:"32px 1fr 1fr 56px",gap:6,marginBottom:6,alignItems:"center"}}>
-                  <span style={{fontSize:10,color:C.accent,fontWeight:700,fontFamily:FN.m}}>S{si+1}</span>
-                  {isBw?<div style={{...numI,padding:"12px 8px",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,color:C.accent}}>BW</div>:<input type="number" inputMode="decimal" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder={wPlaceholder} style={{...numI,padding:"12px 8px",fontSize:15}}/>}
-                  <input type="number" inputMode="numeric" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={{...numI,padding:"12px 8px",fontSize:15}}/>
-                  <span style={{fontSize:9,textAlign:"center",fontWeight:600,fontFamily:FN.m,color:ls?(wd>0?C.green:wd<0?C.red:C.textDim):C.textDim}}>{ls?fmtSet(ls,meta):"—"}</span>
-                </div>
-              );})}
-            </div>
-          );})}
-        </div>
-        {/* Finish button */}
-        <div style={{padding:"14px 22px 18px",background:C.surface,borderTop:`1px solid ${C.hairline}`}}>
-          <button onClick={finishSession} className="press" style={{width:"100%",background:C.accent,border:"none",borderRadius:12,padding:"18px 0",color:C.btnText,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.16em",boxShadow:`0 4px 20px ${C.accent}40`}}>Finish Workout</button>
-          <div style={{fontFamily:FN.m,fontSize:9,color:C.textDim,textAlign:"center",marginTop:8,letterSpacing:"0.04em"}}>● auto-saving every keystroke</div>
-        </div>
-      </div>}
-
-      {/* ═══ GRADUATION CEREMONY — full-screen celebration when a goal becomes a habit ═══ */}
-      {graduatingGoal&&(()=>{
-        // Compute the stats we'll show
-        const ap=aspirationProgress.find(x=>x.id===graduatingGoal.id);
-        const created=graduatingGoal.created?new Date(graduatingGoal.created):new Date(now.getFullYear(),now.getMonth()-3,1);
-        const daysSince=Math.max(1,Math.round((now-created)/(24*60*60*1000)));
-        const monthsSince=Math.max(1,Math.round(daysSince/30));
-        // Count total hits across all time (not just this month)
-        let totalHits=0;Object.values(checks).forEach(ch=>{if(ch[graduatingGoal.id])totalHits++;});
-        return(<div style={{position:"fixed",inset:0,zIndex:400,background:`radial-gradient(circle at center,${C.surface} 0%,${C.bg} 75%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 24px",animation:"graduateBloom 1.2s cubic-bezier(0.34,1.2,0.64,1) forwards",fontFamily:FN.b}}>
-          {/* Ambient amber glow */}
-          <div style={{position:"absolute",left:"50%",top:"50%",width:400,height:400,marginLeft:-200,marginTop:-200,background:`radial-gradient(circle,${C.accentSoft} 0%,transparent 60%)`,animation:"graduateShimmer 3s ease-in-out infinite",pointerEvents:"none"}}/>
-          {/* Drawing ring behind the name */}
-          <div style={{position:"relative",width:220,height:220,marginBottom:28}}>
-            <svg width="220" height="220" viewBox="0 0 220 220" style={{position:"absolute",inset:0}}>
-              <circle cx="110" cy="110" r="100" fill="none" stroke={C.hairline} strokeWidth="1"/>
-              <circle cx="110" cy="110" r="100" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeDasharray="628" strokeDashoffset="628" style={{animation:"graduateRing 2.2s cubic-bezier(0.25,0.46,0.45,0.94) 0.3s forwards",transform:"rotate(-90deg)",transformOrigin:"110px 110px",filter:`drop-shadow(0 0 12px ${C.accent}60)`}}/>
-            </svg>
-            <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:24}}>
-              <div style={{fontSize:9,color:C.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.18em",marginBottom:10}}>Graduated</div>
-              <div className="display" style={{fontSize:22,fontStyle:"italic",color:C.text,lineHeight:1.15}}>{graduatingGoal.dailyAction||graduatingGoal.text}</div>
-            </div>
-          </div>
-          {/* The three-sentence emotional payoff */}
-          <div style={{textAlign:"center",maxWidth:340,marginBottom:36,position:"relative"}}>
-            <div style={{fontSize:13,color:C.textSec,lineHeight:1.6,fontFamily:FN.b,marginBottom:14}}>
-              You set this as a goal <span style={{color:C.accent,fontWeight:700}}>{monthsSince} {monthsSince===1?"month":"months"}</span> ago.
-            </div>
-            <div style={{fontSize:13,color:C.textSec,lineHeight:1.6,fontFamily:FN.b,marginBottom:14}}>
-              You hit it <span style={{color:C.accent,fontWeight:700}}>{totalHits} {totalHits===1?"time":"times"}</span> — <span style={{color:C.accent,fontWeight:700}}>{ap?ap.pct:80}%</span> this month alone.
-            </div>
-            <div className="display" style={{fontSize:17,fontStyle:"italic",color:C.text,lineHeight:1.4,marginTop:20}}>
-              This isn't effort anymore — it's who you are.
-            </div>
-          </div>
-          {/* Single CTA */}
-          <button onClick={finalizeGraduation} className="press" style={{background:C.accent,border:"none",borderRadius:12,padding:"16px 36px",color:C.btnText,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.18em",boxShadow:`0 6px 28px ${C.accent}50, 0 0 0 1px ${C.accent}30`}}>Welcome Home</button>
-          {/* Secondary escape (quiet) */}
-          <button onClick={()=>setGraduatingGoal(null)} style={{background:"transparent",border:"none",color:C.textDim,fontSize:10,fontFamily:FN.b,cursor:"pointer",marginTop:18,letterSpacing:"0.06em",opacity:0.5}}>Not yet</button>
-        </div>);
-      })()}
-
-      {/* ═══ FULL MONTHLY VIEW — spreadsheet-style overview ═══ */}
-      {showFullView&&<div style={{position:"fixed",inset:0,zIndex:250,background:C.bg,display:"flex",flexDirection:"column",fontFamily:FN.b}}>
-        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.hairline}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:C.surface}}>
-          <div>
-            <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em"}}>Monthly Progress</div>
-            <div className="display" style={{fontSize:20,fontStyle:"italic",color:C.text}}>{["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][now.getMonth()]} {now.getFullYear()}</div>
-          </div>
-          <button onClick={()=>setShowFullView(false)} className="press" style={{background:C.surfaceHi,border:`1px solid ${C.hairline}`,color:C.textDim,fontSize:14,cursor:"pointer",width:34,height:34,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-        </div>
-        <div style={{flex:1,overflowY:"auto",padding:"12px 0"}}>
-          {(()=>{
-            const y=now.getFullYear(),mo=now.getMonth();
-            const daysInMonth=new Date(y,mo+1,0).getDate();
-            const days=Array.from({length:daysInMonth},(_,i)=>i+1);
-            const dayLabels=days.map(d=>{const dt=new Date(y,mo,d);return["SU","MO","TU","WE","TH","FR","SA"][dt.getDay()];});
-            const morningItems=activeTodos(dk(now)).filter(t=>t.grp==="morning");
-            const nightItems=activeTodos(dk(now)).filter(t=>t.grp==="night");
-            const generalItems=activeTodos(dk(now)).filter(t=>t.grp==="general");
-            const cellW=28,labelW=100,hdrH=36;
-            const renderSection=(title,items,color)=>{
-              // Compute per-habit monthly %
-              const habitStats=items.map(t=>{
-                let hit=0;
-                days.forEach(d=>{
-                  const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-                  if((checks[k]||{})[t.id])hit++;
-                });
-                const pct=days.length>0?Math.round(hit/daysInMonth*100):0;
-                return{...t,hit,pct};
-              });
-              const sectionAvg=habitStats.length>0?Math.round(habitStats.reduce((a,h)=>a+h.pct,0)/habitStats.length):0;
-              return(<div style={{marginBottom:24}}>
-                <div style={{padding:"0 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                  <span style={{fontSize:11,fontWeight:700,color,textTransform:"uppercase",letterSpacing:"0.1em"}}>{title}</span>
-                  <span style={{fontSize:20,fontWeight:800,fontFamily:FN.m,color}}>{sectionAvg}%</span>
-                </div>
-                <div style={{overflowX:"auto",paddingLeft:14,paddingRight:14}} className="hide-scroll">
-                  <div style={{display:"inline-block",minWidth:labelW+days.length*cellW+60}}>
-                    {/* Day headers */}
-                    <div style={{display:"flex",marginBottom:2}}>
-                      <div style={{width:labelW,flexShrink:0}}/>
-                      {days.map(d=>(<div key={d} style={{width:cellW,textAlign:"center",fontSize:7,color:C.textDim,fontFamily:FN.m}}>{dayLabels[d-1]}</div>))}
-                      <div style={{width:50,textAlign:"center",fontSize:7,color:C.textDim,fontFamily:FN.m}}>%</div>
-                    </div>
-                    <div style={{display:"flex",marginBottom:4}}>
-                      <div style={{width:labelW,flexShrink:0}}/>
-                      {days.map(d=>(<div key={d} style={{width:cellW,textAlign:"center",fontSize:8,color:C.textDim,fontFamily:FN.m,fontWeight:600}}>{d}</div>))}
-                      <div style={{width:50}}/>
-                    </div>
-                    {/* Habit rows */}
-                    {habitStats.map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",marginBottom:1}}>
-                      <div style={{width:labelW,flexShrink:0,fontSize:12,fontWeight:600,color:C.text,textTransform:"uppercase",letterSpacing:"0.04em",paddingRight:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.text}</div>
-                      {days.map(d=>{
-                        const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-                        const done=(checks[k]||{})[t.id];
-                        const isToday=d===now.getDate();
-                        return(<div key={d} style={{width:cellW,height:cellW-4,display:"flex",alignItems:"center",justifyContent:"center",background:done?`${color}30`:isToday?C.surfaceHi:"transparent",borderRadius:3,margin:"0 0.5px"}}>
-                          {done&&<div style={{width:8,height:8,borderRadius:2,background:color}}/>}
-                        </div>);
-                      })}
-                      <div style={{width:50,textAlign:"center",fontSize:9,fontWeight:700,fontFamily:FN.m,color:t.pct>=80?C.green:t.pct>=50?C.accent:C.red}}>{t.pct}%</div>
-                    </div>))}
-                  </div>
-                </div>
-              </div>);
-            };
-            // Daily completion row
-            const dailyPcts=days.map(d=>{
-              const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-              const ch=checks[k]||{};
-              const all=[...activeTodos(k)];
-              if(all.length===0)return 0;
-              return Math.round(all.filter(t=>ch[t.id]).length/all.length*100);
-            });
-            return(<div>
-              {morningItems.length>0&&renderSection("Morning",morningItems,C.accent)}
-              {nightItems.length>0&&renderSection("Evening",nightItems,C.blue||"#60A5FA")}
-              {generalItems.length>0&&renderSection("All Day",generalItems,C.green)}
-              {/* Daily completion strip */}
-              <div style={{padding:"0 14px",marginTop:8}}>
-                <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Daily Completion</div>
-                <div style={{overflowX:"auto"}} className="hide-scroll">
-                  <div style={{display:"inline-flex",gap:2,minWidth:daysInMonth*cellW}}>
-                    {days.map(d=>{const p=dailyPcts[d-1];const isToday=d===now.getDate();return(
-                      <div key={d} style={{width:cellW-2,textAlign:"center"}}>
-                        <div style={{height:40,borderRadius:4,background:p>0?`linear-gradient(180deg,${p>=80?C.green:p>=50?C.accent:C.red}${Math.round(p*0.7+30).toString(16)},${C.surfaceDim})`:C.surfaceDim,display:"flex",alignItems:"flex-end",justifyContent:"center",paddingBottom:2,border:isToday?`1px solid ${C.accent}`:"1px solid transparent"}}>
-                          <span style={{fontSize:7,fontFamily:FN.m,fontWeight:700,color:p>=50?"#fff":C.textDim}}>{p>0?p:""}</span>
-                        </div>
-                        <div style={{fontSize:7,color:C.textDim,fontFamily:FN.m,marginTop:2}}>{d}</div>
-                      </div>
-                    );})}
-                  </div>
-                </div>
-              </div>
-              {/* Monthly goals */}
-              {aspirations.filter(a=>!a.graduated).length>0&&<div style={{padding:"0 14px",marginTop:24}}>
-                <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Monthly Goals</div>
-                {aspirations.filter(a=>!a.graduated).map(a=>{const p=aspirationProgress.find(x=>x.id===a.id);return(
-                  <div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:`1px solid ${C.hairline}`}}>
-                    <div style={{width:16,height:16,borderRadius:3,border:`1.5px solid ${p?.pct>=80?C.green:C.textDim}`,background:p?.pct>=100?C.green:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:8,fontWeight:800,flexShrink:0}}>{p?.pct>=100&&"✓"}</div>
-                    <span style={{fontSize:12,fontWeight:500,flex:1,color:C.text}}>{a.text}</span>
-                    <span style={{fontSize:10,fontFamily:FN.m,fontWeight:700,color:p?.onPace?C.green:C.red}}>{p?.pct||0}%</span>
-                  </div>
-                );})}
-              </div>}
-            </div>);
-          })()}
-        </div>
-      </div>}
-
-      {/* ═══ SAVE ERROR TOAST — visible when localStorage writes fail ═══ */}
-      {saveError&&<div onClick={()=>setSaveError(null)} style={{position:"fixed",left:12,right:12,top:16,zIndex:500,background:C.red,borderRadius:10,padding:"12px 16px",color:"#fff",fontSize:11,fontFamily:FN.b,fontWeight:600,display:"flex",alignItems:"center",gap:10,boxShadow:"0 8px 32px rgba(239,68,68,0.4)",cursor:"pointer"}}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span>{saveError}</span>
-        <span style={{marginLeft:"auto",opacity:0.7,fontSize:9}}>TAP TO DISMISS</span>
-      </div>}
-
-      {/* ═══ MINIMIZED SESSION PILL — sits at top so user can resume anytime ═══ */}
-      {activeSession&&sessionMinimized&&<button onClick={()=>setSessionMinimized(false)} className="press" style={{position:"fixed",left:"50%",top:14,transform:"translateX(-50%)",zIndex:120,background:C.accent,border:"none",borderRadius:24,padding:"10px 20px",color:C.btnText,fontSize:11,fontFamily:FN.b,fontWeight:700,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.08em",boxShadow:`0 6px 24px ${C.accent}60, 0 2px 8px rgba(0,0,0,0.4)`,display:"flex",alignItems:"center",gap:10}}>
-        <span style={{width:8,height:8,borderRadius:"50%",background:"#0B1120",animation:"sunPulse 1.6s ease-in-out infinite"}}/>
-        <span>{activeSession.split} · {fmtTime(sessionElapsed)}</span>
-        <span style={{fontSize:9,opacity:0.7}}>RESUME →</span>
-      </button>}
-
-      {/* ═══ CANCEL CONFIRM DIALOG ═══ */}
-      {showCancelConfirm&&<div onClick={()=>setShowCancelConfirm(false)} style={{position:"fixed",inset:0,zIndex:400,display:"flex",alignItems:"center",justifyContent:"center"}}>
-        <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.85)",backdropFilter:"blur(10px)"}}/>
-        <div onClick={e=>e.stopPropagation()} className="modal-box" style={{position:"relative",background:C.surface,color:C.text,borderRadius:16,padding:28,width:"86%",maxWidth:380,border:`1px solid ${C.hairline}`,textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
-          <div className="display" style={{fontSize:22,fontStyle:"italic",color:C.text,marginBottom:8}}>Cancel workout?</div>
-          <div style={{fontSize:12,color:C.textDim,marginBottom:24,fontFamily:FN.m,lineHeight:1.5}}>All sets logged in this session will be lost. This can't be undone.</div>
-          <div style={{display:"flex",gap:10}}>
-            <button onClick={()=>setShowCancelConfirm(false)} style={{...btnG,flex:1,padding:"12px 0"}}>Keep Going</button>
-            <button onClick={confirmCancel} style={{...btnB,flex:1,background:C.red,color:"#fff",padding:"12px 0"}}>Discard</button>
-          </div>
-        </div>
-      </div>}
 
       {/* ═══ WORKOUT DETAIL MODAL — view a saved workout's full set/weight/rep summary ═══ */}
       <Overlay open={!!viewWorkout} onClose={()=>setViewWorkout(null)} title={viewWorkout?`${viewWorkout.split.toUpperCase()} · ${fd(viewWorkout.date)}`:""} wide>
-        {viewWorkout&&<div>
-          {viewWorkout.duration&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.m,marginBottom:18,letterSpacing:"0.04em"}}>Duration: {fmtTime(Math.floor(viewWorkout.duration/1000))} · {viewWorkout.exercises.length} exercises · {viewWorkout.exercises.reduce((a,e)=>a+e.sets.length,0)} sets total</div>}
-          {viewWorkout.exercises.map((ex,ei)=>{const meta=getMeta(ex.name);const totalVol=meta.mode==="time"?0:ex.sets.reduce((a,s)=>a+effLoad(s,meta)*(s.r||0),0);const totalSec=meta.mode==="time"?ex.sets.reduce((a,s)=>a+(s.sec||0),0):0;return(
+        {viewWorkout&&viewWorkout.type==="cardio"&&<div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:8}}>
+            {[{l:"Distance",v:`${viewWorkout.distance} ${viewWorkout.distUnit||"mi"}`},{l:"Time",v:viewWorkout.timeMin>=60?`${Math.floor(viewWorkout.timeMin/60)}h ${Math.round(viewWorkout.timeMin%60)}m`:`${Math.round(viewWorkout.timeMin)}m`},{l:"Pace",v:paceStr(viewWorkout.distance,viewWorkout.timeMin,viewWorkout.distUnit||"mi")}].map(t=>(
+              <div key={t.l} style={{...card,padding:"16px 10px",textAlign:"center",background:C.surfaceDim}}>
+                <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>{t.l}</div>
+                <div style={{fontSize:16,fontWeight:800,color:C.text,fontFamily:FN.m}}>{t.v}</div>
+              </div>
+            ))}
+          </div>
+        </div>}
+        {viewWorkout&&viewWorkout.type!=="cardio"&&<div>
+          {viewWorkout.duration&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.m,marginBottom:18,letterSpacing:"0.04em"}}>Duration: {fmtTime(Math.floor(viewWorkout.duration/1000))} · {(viewWorkout.exercises||[]).length} exercises · {(viewWorkout.exercises||[]).reduce((a,e)=>a+e.sets.length,0)} sets total</div>}
+          {(viewWorkout.exercises||[]).map((ex,ei)=>{const meta=getMeta(ex.name);const totalVol=meta.mode==="time"?0:ex.sets.reduce((a,s)=>a+effLoad(s,meta)*(s.r||0),0);const totalSec=meta.mode==="time"?ex.sets.reduce((a,s)=>a+(s.sec||0),0):0;return(
             <div key={ei} style={{...card,padding:16,marginBottom:10,background:C.surfaceDim,border:`1px solid ${C.hairline}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
                 <span style={{fontSize:14,fontWeight:600,color:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{ex.name}</span>
@@ -6184,6 +6164,7 @@ ${body}
           {reviewStep<4?<button onClick={()=>setReviewStep(s=>s+1)} style={btnB}>Next →</button>:<button onClick={saveReview} style={{...btnB,background:C.green,color:C.btnText}}>Save Review</button>}
         </div>
       </Overlay>
+    </div>
     </div>
   );
 }
