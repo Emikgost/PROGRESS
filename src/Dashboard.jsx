@@ -215,6 +215,11 @@ const CSS=`
 .monthly-done>*{position:relative;z-index:3}
 .focus-grid{display:grid;grid-template-columns:1fr;gap:14px}
 @media(min-width:760px){.focus-grid{grid-template-columns:1.7fr 1fr;align-items:start}.focus-grid>.fg-main{grid-row:1/span 2}}
+/* Desktop: use the full width but cap the content column so cards don't stretch uncomfortably thin */
+@media(min-width:900px){
+  .main-content>*{max-width:1040px;margin-left:auto;margin-right:auto;}
+  .main-content{padding-left:32px;padding-right:32px;}
+}
 @keyframes rowDim{0%{background:rgba(245,158,11,0.12)}100%{background:transparent}}
 @keyframes xpFloat{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-28px)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
@@ -3151,8 +3156,7 @@ ${body}
 
   /* ═══ RENDER ═══ */
   return(
-    <div style={{background:C.bg,minHeight:"100vh",transition:"background 0.4s ease"}}>
-    <div style={{background:C.bg,minHeight:"100vh",maxWidth:640,margin:"0 auto",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column",transition:"background 0.4s ease, color 0.4s ease",boxShadow:"0 0 60px rgba(0,0,0,0.05)"}}>
+    <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column",transition:"background 0.4s ease, color 0.4s ease"}}>
       <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
       {/* #8/#9 — Carryover modal: choose how the remaining work is redistributed */}
       {carryPrompt&&(()=>{const c=carryPrompt;const nm=new Date(now.getFullYear(),now.getMonth()+1,1);
@@ -3301,7 +3305,7 @@ ${body}
       <VideoRecorderModal open={showVjRecorder} onClose={()=>setShowVjRecorder(false)} onSave={vjAdd} dateLabel={vjSel!=null?new Date(vjY,vjM,vjSel).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"}):""} />
 
       {/* ═══ STICKY HEADER ═══ */}
-      <div style={{position:"sticky",top:0,zIndex:100,background:C.surface,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",paddingBottom:8}}>
+      <div className="app-header" style={{position:"sticky",top:0,zIndex:100,background:C.surface,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",paddingBottom:8}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,padding:"13px 14px 9px"}}>
           {/* left spacer balances the right button cluster so the wordmark stays centered & never overlaps */}
           <div style={{width:58,flexShrink:0,height:1}} aria-hidden="true" />
@@ -3363,7 +3367,7 @@ ${body}
       </div>
 
       {/* ═══ SCROLLABLE MIDDLE ═══ */}
-      <div onTouchStart={onPageTouchStart} onTouchEnd={onPageTouchEnd} style={{flex:1,overflowY:"auto",padding:"12px 20px 24px"}}>
+      <div className="main-content" onTouchStart={onPageTouchStart} onTouchEnd={onPageTouchEnd} style={{flex:1,overflowY:"auto",padding:"12px 20px 24px"}}>
       <div key={curPage} className={navDir<0?"page-l":navDir>0?"page-r":"tab-content"}>
 
         {/* ═══ TODAY TAB ═══ */}
@@ -5806,7 +5810,7 @@ ${body}
 
       {/* ═══ QUICK ADD — floating + button for the fastest common actions ═══ */}
       {showQuickAdd&&<div onClick={()=>setShowQuickAdd(false)} style={{position:"fixed",inset:0,zIndex:150,background:"rgba(0,0,0,0.4)"}}/>}
-      <div style={{position:"fixed",right:"max(18px, calc(50vw - 320px + 18px))",bottom:74,zIndex:160,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10}}>
+      <div style={{position:"fixed",right:18,bottom:74,zIndex:160,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10}}>
         {showQuickAdd&&(()=>{
           const items=[
             {l:"Log Workout",ic:<DumbbellIcon size={16} color="#fff"/>,go:()=>{setMenuTab("workout");setGView("workouts");setGSplit(null);setTab(null);}},
@@ -5826,7 +5830,7 @@ ${body}
         </button>
       </div>
 
-      <div style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 6px",gap:2}}>
+      <div className="footer-nav" style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 6px",gap:2}}>
         {mainTabs.map(t=>{const on=curPage===t.k;return(
           <button key={t.k} onClick={()=>goPage(t.k)} className="press" style={{flex:1,minWidth:0,border:"none",borderRadius:10,padding:"8px 0",cursor:"pointer",textAlign:"center",background:"transparent",color:on?C.accent:C.textDim,fontSize:9,fontFamily:FN.b,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.02em",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>{t.i}</span>
@@ -6164,7 +6168,6 @@ ${body}
           {reviewStep<4?<button onClick={()=>setReviewStep(s=>s+1)} style={btnB}>Next →</button>:<button onClick={saveReview} style={{...btnB,background:C.green,color:C.btnText}}>Save Review</button>}
         </div>
       </Overlay>
-    </div>
     </div>
   );
 }
