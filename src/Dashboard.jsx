@@ -800,6 +800,9 @@ export default function Dashboard(){
   const[reorderMode,setReorderMode]=useState(false); // Today: drag-to-reorder habits
   const[focusReorder,setFocusReorder]=useState(false); // Today: drag-to-reorder focus tasks
   const[focusQuick,setFocusQuick]=useState(""); // inline "add focus/daily task" composer text
+  // Multi-part focus task composer: build a stepped or counted task instead of a plain checkmark.
+  const[focusBuilder,setFocusBuilder]=useState(null); // null | {mode:"steps"|"count", text, parts:[], target}
+  const[fbStep,setFbStep]=useState(""); // step-text input in the builder
   const[focusView,setFocusView]=useState("list"); // list | calendar — Today→Focus view mode
   const[calNewSlot,setCalNewSlot]=useState(null); // {startMin} — tapped empty slot, composing a timed task
   const[calNewText,setCalNewText]=useState("");
@@ -2862,6 +2865,32 @@ ${body}
 
   /* ─── Focus task CRUD (per-date) ─── */
   const addFocus=(t)=>setFocusByDate(p=>({...p,[vk]:[...(p[vk]||[]),{createdOn:dk(now),...t}]}));
+  // ── Multi-part focus tasks ── a task can carry `parts` (steps) or `target` (a count).
+  // It auto-checks in the normal `checks` map once all parts are done / the count hits target.
+  const focusPartDone=(taskId,partId)=>{
+    setFocusByDate(p=>{
+      const arr=(p[vk]||[]).map(t=>{if(t.id!==taskId)return t;const parts=(t.parts||[]).map(pt=>pt.id===partId?{...pt,done:!pt.done}:pt);return{...t,parts};});
+      const task=arr.find(t=>t.id===taskId);
+      const allDone=task&&task.parts&&task.parts.length>0&&task.parts.every(pt=>pt.done);
+      setChecks(c=>({...c,[vk]:{...(c[vk]||{}),[taskId]:allDone}}));
+      return{...p,[vk]:arr};
+    });
+  };
+  const focusCountStep=(taskId,delta)=>{
+    setFocusByDate(p=>{
+      const arr=(p[vk]||[]).map(t=>{if(t.id!==taskId)return t;const target=t.target||0;const count=Math.max(0,Math.min(target,(t.count||0)+delta));return{...t,count};});
+      const task=arr.find(t=>t.id===taskId);
+      const hit=task&&task.target>0&&(task.count||0)>=task.target;
+      setChecks(c=>({...c,[vk]:{...(c[vk]||{}),[taskId]:hit}}));
+      return{...p,[vk]:arr};
+    });
+  };
+  const addBuiltFocus=()=>{
+    const b=focusBuilder;if(!b||!b.text.trim())return;
+    if(b.mode==="steps"){const parts=(b.parts||[]).filter(x=>x.text.trim());if(!parts.length)return;addFocus({id:uid(),text:b.text.trim(),diff:"medium",parts:parts.map(x=>({id:uid(),text:x.text.trim(),done:false}))});}
+    else{const target=parseInt(b.target)||0;if(target<=0)return;addFocus({id:uid(),text:b.text.trim(),diff:"medium",target,count:0,unit:(b.unit||"").trim()});}
+    setFocusBuilder(null);setFbStep("");
+  };
   const removeFocus=(id)=>setFocusByDate(p=>({...p,[vk]:(p[vk]||[]).filter(t=>t.id!==id)}));
   const updateFocus=(id,updates)=>setFocusByDate(p=>({...p,[vk]:(p[vk]||[]).map(t=>t.id===id?{...t,...updates}:t)}));
   // ── Timed focus tasks (calendar) ── a task with `startMin` (minutes from midnight) + `durMin`
@@ -3124,6 +3153,39 @@ ${body}
   const FocusDailyRow=({t})=>{
     const completing=!!completingFocus[t.id];
     const d=t.diff&&DIFF[t.diff];
+    // Multi-part: steps checklist
+    if(t.parts&&t.parts.length>0){
+      const doneN=t.parts.filter(p=>p.done).length;
+      return(<div style={{padding:"11px 13px",borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,marginBottom:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+          <span style={{flex:1,fontSize:14.5,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:C.text}}>{t.text}</span>
+          <span style={{fontSize:10,fontFamily:FN.m,fontWeight:700,color:doneN===t.parts.length?C.greenBright:C.textDim}}>{doneN}/{t.parts.length}</span>
+        </div>
+        <div style={{height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden",marginBottom:9}}><div style={{height:"100%",width:`${doneN/t.parts.length*100}%`,background:doneN===t.parts.length?C.greenBright:C.accent,borderRadius:3,transition:"width 0.3s ease"}}/></div>
+        {t.parts.map(pt=>(
+          <div key={pt.id} onClick={()=>focusPartDone(t.id,pt.id)} style={{display:"flex",alignItems:"center",gap:9,padding:"6px 0",cursor:"pointer"}}>
+            <div style={{width:18,height:18,borderRadius:5,flexShrink:0,border:`1.5px solid ${pt.done?C.greenBright:C.hairline}`,background:pt.done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>{pt.done&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round"><path d="M20 6 9 17l-5-5"/></svg>}</div>
+            <span style={{fontSize:13,color:pt.done?C.textDim:C.text,textDecoration:pt.done?"line-through":"none"}}>{pt.text}</span>
+          </div>
+        ))}
+      </div>);
+    }
+    // Multi-part: numeric counter
+    if(t.target>0){
+      const count=t.count||0;const pct=Math.min(100,count/t.target*100);const hit=count>=t.target;
+      return(<div style={{padding:"11px 13px",borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,marginBottom:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+          <span style={{flex:1,fontSize:14.5,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:C.text}}>{t.text}</span>
+          <span style={{fontSize:12,fontFamily:FN.m,fontWeight:800,color:hit?C.greenBright:C.text}}>{count}<span style={{color:C.textDim,fontWeight:600}}>/{t.target}{t.unit?` ${t.unit}`:""}</span></span>
+        </div>
+        <div style={{height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden",marginBottom:10}}><div style={{height:"100%",width:`${pct}%`,background:hit?C.greenBright:C.accent,borderRadius:3,transition:"width 0.3s ease"}}/></div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={()=>focusCountStep(t.id,-1)} style={{width:34,height:34,borderRadius:8,border:`1px solid ${C.hairline}`,background:C.surfaceDim,color:C.text,fontSize:18,cursor:"pointer",lineHeight:1}}>−</button>
+          <button onClick={()=>focusCountStep(t.id,1)} style={{flex:1,height:34,borderRadius:8,border:"none",background:C.accent,color:C.btnText,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:FN.b}}>+1</button>
+          <button onClick={()=>focusCountStep(t.id,5)} style={{width:44,height:34,borderRadius:8,border:`1px solid ${C.hairline}`,background:C.surfaceDim,color:C.text,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:FN.m}}>+5</button>
+        </div>
+      </div>);
+    }
     return(<div className={completing?"focus-complete":""} style={{display:"flex",alignItems:"center",gap:11,padding:"13px 4px",marginBottom:7,borderBottom:`1px solid ${C.hairline}`}}>
       <div onClick={()=>!completing&&completeFocusTask(t)} style={{width:23,height:23,borderRadius:7,border:`1.5px solid ${completing?C.greenBright:C.textDim}`,background:completing?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:13,fontWeight:800,cursor:"pointer",transition:"all 0.2s ease",flexShrink:0}}>{completing&&"✓"}</div>
       {d&&<div style={{width:4,height:24,borderRadius:2,background:d.color,flexShrink:0,opacity:completing?0.4:1}}/>}
@@ -3582,6 +3644,35 @@ ${body}
                   {!focusReorder&&<div style={{display:"flex",gap:8,marginBottom:10}}>
                     <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFocusQuick();}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
                     <button onClick={addFocusQuick} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
+                    <button onClick={()=>setFocusBuilder(focusBuilder?null:{mode:"steps",text:"",parts:[],target:"",unit:""})} title="Multi-part task" style={{...btnG,padding:"0 12px",fontSize:16,fontWeight:700}}>{focusBuilder?"×":"⋯"}</button>
+                  </div>}
+                  {/* Multi-part builder — a stepped or counted focus task */}
+                  {!focusReorder&&focusBuilder&&<div style={{...card,marginBottom:10,padding:14}}>
+                    <div style={{display:"flex",gap:6,marginBottom:10}}>
+                      {[{k:"steps",l:"Steps"},{k:"count",l:"Count"}].map(m=>{const on=focusBuilder.mode===m.k;return(
+                        <button key={m.k} onClick={()=>setFocusBuilder(b=>({...b,mode:m.k}))} style={{flex:1,padding:"7px 0",borderRadius:8,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:11,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em"}}>{m.l}</button>
+                      );})}
+                    </div>
+                    <input value={focusBuilder.text} onChange={e=>setFocusBuilder(b=>({...b,text:e.target.value}))} placeholder={focusBuilder.mode==="steps"?"Task name (e.g. Clean apartment)":"Task name (e.g. Read pages)"} style={{...inp,width:"100%",boxSizing:"border-box",marginBottom:10}}/>
+                    {focusBuilder.mode==="steps"?<>
+                      {(focusBuilder.parts||[]).map((pt,i)=>(
+                        <div key={pt.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                          <span style={{fontSize:11,color:C.textDim,fontFamily:FN.m,width:16}}>{i+1}.</span>
+                          <span style={{flex:1,fontSize:13,color:C.text}}>{pt.text}</span>
+                          <button onClick={()=>setFocusBuilder(b=>({...b,parts:b.parts.filter(x=>x.id!==pt.id)}))} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:14}}>×</button>
+                        </div>
+                      ))}
+                      <div style={{display:"flex",gap:8,marginBottom:12}}>
+                        <input value={fbStep} onChange={e=>setFbStep(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&fbStep.trim()){setFocusBuilder(b=>({...b,parts:[...(b.parts||[]),{id:uid(),text:fbStep.trim()}]}));setFbStep("");}}} placeholder="Add a step…" style={{...inp,flex:1,fontSize:13}}/>
+                        <button onClick={()=>{if(fbStep.trim()){setFocusBuilder(b=>({...b,parts:[...(b.parts||[]),{id:uid(),text:fbStep.trim()}]}));setFbStep("");}}} style={{...btnG,fontSize:12}}>+ Step</button>
+                      </div>
+                    </>:<>
+                      <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
+                        <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Target</div><input type="number" inputMode="numeric" value={focusBuilder.target} onChange={e=>setFocusBuilder(b=>({...b,target:e.target.value}))} placeholder="30" style={{...inp,width:"100%",boxSizing:"border-box",fontFamily:FN.m,textAlign:"center"}}/></div>
+                        <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Unit (optional)</div><input value={focusBuilder.unit} onChange={e=>setFocusBuilder(b=>({...b,unit:e.target.value}))} placeholder="pages, reps…" style={{...inp,width:"100%",boxSizing:"border-box",fontSize:13}}/></div>
+                      </div>
+                    </>}
+                    <button onClick={addBuiltFocus} style={{...btnB,width:"100%"}}>Add {focusBuilder.mode==="steps"?"stepped":"counted"} task</button>
                   </div>}
                   {todayTasks.length>0&&<><Divider label="Today" color={FOCUS_BLUE} n={todayTasks.length}/>{focusReorder&&todayTasks.length>1?<DragReorderList items={todayTasks} onReorder={reorderFocus} />:todayTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}</>}
                   {prevTasks.length>0&&<><Divider label="Previous" color={C.textDim} n={prevTasks.length}/>{focusReorder&&prevTasks.length>1?<DragReorderList items={prevTasks} onReorder={reorderFocus} />:prevTasks.map(t=><FocusDailyRow key={t.id} t={t} />)}</>}
