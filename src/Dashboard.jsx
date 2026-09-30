@@ -621,10 +621,10 @@ function DragReorderList({items,onReorder,renderContent}){
   const down=(e,id)=>{draggingRef.current=id;setDragId(id);try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}};
   const move=(e)=>{if(!draggingRef.current)return;const el=typeof document!=="undefined"&&document.elementFromPoint(e.clientX,e.clientY);const row=el&&el.closest&&el.closest("[data-rid]");if(row){const oid=row.getAttribute("data-rid");if(oid)reorder(oid);}};
   const up=()=>{if(!draggingRef.current)return;draggingRef.current=null;setDragId(null);setSeq(s=>{onReorder(s);return s;});};
-  return(<div>{seq.map(id=>{const it=byId[id];if(!it)return null;const active=dragId===id;const d=it.diff&&DIFF[it.diff];return(
-    <div key={id} data-rid={id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${active?C.accent:C.hairline}`,boxShadow:active?"0 8px 22px rgba(0,0,0,0.20)":"none",opacity:active?0.97:1,transform:active?"scale(1.01)":"none",transition:active?"none":"box-shadow 0.2s ease, transform 0.2s ease"}}>
-      <div onPointerDown={e=>down(e,id)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} title="Drag to reorder" style={{touchAction:"none",cursor:"grab",padding:"6px 4px",display:"flex",flexDirection:"column",gap:3,flexShrink:0}}>
-        {[0,1,2].map(r=>(<div key={r} style={{display:"flex",gap:3}}><span style={{width:3,height:3,borderRadius:"50%",background:C.textDim}}/><span style={{width:3,height:3,borderRadius:"50%",background:C.textDim}}/></div>))}
+  return(<div style={{position:"relative"}}>{seq.map(id=>{const it=byId[id];if(!it)return null;const active=dragId===id;const dragging=!!dragId;const d=it.diff&&DIFF[it.diff];return(
+    <div key={id} data-rid={id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:8,borderRadius:10,background:active?C.surfaceHi||C.surface:C.surface,border:`1px solid ${active?C.accent:C.hairline}`,boxShadow:active?"0 12px 28px rgba(0,0,0,0.28)":"none",opacity:dragging&&!active?0.55:1,transform:active?"scale(1.02)":"scale(1)",zIndex:active?5:1,position:"relative",transition:active?"box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease":"transform 0.22s cubic-bezier(0.2,0,0,1), opacity 0.2s ease, box-shadow 0.2s ease"}}>
+      <div onPointerDown={e=>down(e,id)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} title="Drag to reorder" style={{touchAction:"none",cursor:active?"grabbing":"grab",padding:"6px 6px",margin:"-6px -2px -6px -6px",display:"flex",flexDirection:"column",gap:3,flexShrink:0}}>
+        {[0,1,2].map(r=>(<div key={r} style={{display:"flex",gap:3}}><span style={{width:3,height:3,borderRadius:"50%",background:active?C.accent:C.textDim}}/><span style={{width:3,height:3,borderRadius:"50%",background:active?C.accent:C.textDim}}/></div>))}
       </div>
       {renderContent?renderContent(it):<>
       {d&&<div style={{width:4,height:22,borderRadius:2,background:d.color,flexShrink:0}}/>}
@@ -799,6 +799,8 @@ export default function Dashboard(){
   const[focusCollapsed,setFocusCollapsed]=useState({}); // {goalId:true} — collapsed goal cards in Today→Focus (default expanded)
   const[reorderMode,setReorderMode]=useState(false); // Today: drag-to-reorder habits
   const[focusReorder,setFocusReorder]=useState(false); // Today: drag-to-reorder focus tasks
+  const[exReorder,setExReorder]=useState(false); // Workout logging: drag-to-reorder exercises in a split
+  const[addExModal,setAddExModal]=useState(null); // {kind:"strength"|"cardio", name} — in-app add-exercise dialog (replaces prompt())
   const[focusQuick,setFocusQuick]=useState(""); // inline "add focus/daily task" composer text
   // Multi-part focus task composer: build a stepped or counted task instead of a plain checkmark.
   const[focusBuilder,setFocusBuilder]=useState(null); // null | {mode:"steps"|"count", text, parts:[], target}
@@ -1994,7 +1996,7 @@ ${body}
   };
   const cancelSession=()=>setShowCancelConfirm(true);
   const confirmCancel=()=>{setActiveSession(null);syncSession(null);setDoneEx({});setShowCancelConfirm(false);setSessionMinimized(false);};
-  const saveWk=()=>{if(!curWkState)return;const durMin=parseFloat(manualDuration);const dur=durMin>0?Math.round(durMin*60000):undefined;setWHist(p=>[...p,{id:uid(),date:manualDate||dk(now),split:curWkState.split,exercises:curWkState.exercises,...(dur?{duration:dur}:{})}]);setConfetti(true);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});setManualDuration("");setManualDate(dk(new Date()));},2000);};
+  const saveWk=()=>{if(!curWkState)return;const durMin=parseFloat(manualDuration);const dur=durMin>0?Math.round(durMin*60000):undefined;setWHist(p=>[...p,{id:uid(),date:manualDate||dk(now),split:curWkState.split,exercises:curWkState.exercises,...(dur?{duration:dur}:{})}]);setConfetti(true);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>ex.kind==="cardio"?{name:ex.name,kind:"cardio",distance:0,distUnit:ex.distUnit||"mi",timeMin:0,sets:[]}:({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});setManualDuration("");setManualDate(dk(new Date()));},2000);};
   // Save a running/cardio workout: distance + time (min:sec) → wHist entry with type:"cardio".
   const saveCardio=()=>{
     const dist=parseFloat(cardioLog.distance)||0;
@@ -2899,6 +2901,24 @@ ${body}
   const CAL_ROW_H=48; // px per 30-min slot
   const minToLabel=(m)=>{const h=Math.floor(m/60)%24,mm=m%60;const ap=h<12?"AM":"PM";const h12=h%12===0?12:h%12;return `${h12}:${String(mm).padStart(2,"0")} ${ap}`;};
   const addTimedFocus=(startMin,text,durMin=30)=>{if(!text||!text.trim())return;addFocus({id:uid(),text:text.trim(),startMin,durMin});};
+  // Reorder exercises within the current split — reorders both the live draft and the saved template.
+  const reorderExercises=(names)=>{
+    setCurWkState(p=>{if(!p)return p;const byName={};p.exercises.forEach(e=>{byName[e.name]=e;});return{...p,exercises:names.map(n=>byName[n]).filter(Boolean)};});
+    setSplits(p=>({...p,[gSplit]:names.slice()}));
+  };
+  // Add a strength exercise into the current split.
+  const addStrengthExercise=(name)=>{
+    const nm=(name||"").trim();if(!nm)return;
+    setSplits(p=>({...p,[gSplit]:[...(p[gSplit]||[]),nm]}));
+    setCurWkState(p=>({...p,exercises:[...p.exercises,{name:nm,sets:[{w:0,r:0},{w:0,r:0},{w:0,r:0}]}]}));
+  };
+  // Add a cardio/running exercise into the current split — logs distance + time alongside lifts.
+  const addCardioExercise=(name)=>{
+    const nm=(name||"").trim();if(!nm)return;
+    setSplits(p=>({...p,[gSplit]:[...(p[gSplit]||[]),nm]}));
+    setExMeta(p=>({...p,[nm.toLowerCase()]:{...(p[nm.toLowerCase()]||{}),kind:"cardio"}}));
+    setCurWkState(p=>({...p,exercises:[...p.exercises,{name:nm,kind:"cardio",distance:0,distUnit:"mi",timeMin:0,sets:[]}]}));
+  };
   const clampMin=(m)=>Math.max(0,Math.min(1440-SLOT_MIN,m));
   // Full-day calendar for timed focus tasks. Rebuilt for fluidity: drags track a LOCAL
   // offset (no state writes mid-drag) and commit once on release; a movement threshold keeps
@@ -3356,6 +3376,17 @@ ${body}
             </div>
             <button onClick={()=>{if(calNewText.trim()){addTimedFocus(calNewSlot.startMin,calNewText);setCalNewSlot(null);setCalNewText("");}}} disabled={!calNewText.trim()} style={{...btnB,width:"100%",opacity:calNewText.trim()?1:0.5}}>Add at {minToLabel(calNewSlot.startMin)}</button>
             <button onClick={()=>setCalNewSlot(null)} style={{...btnG,width:"100%",marginTop:8}}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {/* Add exercise / cardio — in-app dialog (prompt() is blocked in installed PWAs) */}
+      {addExModal&&(
+        <div onClick={()=>setAddExModal(null)} style={{position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:440,background:C.surface,borderRadius:"20px 20px 0 0",padding:"22px 20px 28px"}}>
+            <div style={{...lbl,marginBottom:14}}>{addExModal.kind==="cardio"?"Add Cardio":"Add Exercise"}</div>
+            <input autoFocus value={addExModal.name} onChange={e=>setAddExModal(m=>({...m,name:e.target.value}))} onKeyDown={e=>{if(e.key==="Enter"&&addExModal.name.trim()){(addExModal.kind==="cardio"?addCardioExercise:addStrengthExercise)(addExModal.name);setAddExModal(null);}}} placeholder={addExModal.kind==="cardio"?"e.g. Treadmill, Row, Bike":"e.g. Bench Press"} style={{...inp,width:"100%",boxSizing:"border-box",fontSize:16,marginBottom:16}}/>
+            <button onClick={()=>{if(addExModal.name.trim()){(addExModal.kind==="cardio"?addCardioExercise:addStrengthExercise)(addExModal.name);setAddExModal(null);}}} disabled={!addExModal.name.trim()} style={{...btnB,width:"100%",opacity:addExModal.name.trim()?1:0.4}}>Add {addExModal.kind==="cardio"?"cardio":"exercise"}</button>
+            <button onClick={()=>setAddExModal(null)} style={{...btnG,width:"100%",marginTop:8}}>Cancel</button>
           </div>
         </div>
       )}
@@ -4746,10 +4777,14 @@ ${body}
 
             <div style={{display:"flex",gap:8,marginBottom:8}}>
               {wHist.some(h=>h.split===gSplit&&h.type!=="cardio"&&h.exercises)&&<button className="press" onClick={duplicateLastWorkout} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"9px 0",color:C.text,fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.04em"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Duplicate last</button>}
-              <button className="press" onClick={()=>{const n=prompt("Exercise name:");if(n&&n.trim()){setSplits(p=>({...p,[gSplit]:[...(p[gSplit]||[]),n.trim()]}));setCurWkState(p=>({...p,exercises:[...p.exercises,{name:n.trim(),sets:[{w:0,r:0},{w:0,r:0},{w:0,r:0}]}]}));}}} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"9px 0",color:C.text,fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.04em"}}>+ Exercise</button>
+              <button className="press" onClick={()=>setAddExModal({kind:"strength",name:""})} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"9px 0",color:C.text,fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.04em"}}>+ Exercise</button>
+              <button className="press" onClick={()=>setAddExModal({kind:"cardio",name:""})} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"9px 0",color:C.text,fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.04em"}}>+ Cardio</button>
             </div>
+            {curWkState.exercises.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setExReorder(m=>!m)} style={{background:exReorder?C.accent:"transparent",border:`1px solid ${exReorder?C.accent:C.hairline}`,color:exReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{exReorder?"Done":"⇅ Reorder"}</button></div>}
+            {exReorder&&<DragReorderList items={curWkState.exercises.map(e=>({id:e.name,text:e.name}))} onReorder={reorderExercises} />}
+            {!exReorder&&<></>}
 
-            {curWkState.exercises.map((ex,ei)=>{const lE=lastSess&&lastSess.exercises?lastSess.exercises.find(e=>e.name===ex.name):null;const dn=doneEx[ei];const exM=musclesForExercise(ex.name);const meta=getMeta(ex.name);return(<div key={ei} style={{...card,marginBottom:10,background:dn?C.greenSoft:C.surface}}>
+            {!exReorder&&curWkState.exercises.map((ex,ei)=>{const lE=lastSess&&lastSess.exercises?lastSess.exercises.find(e=>e.name===ex.name):null;const dn=doneEx[ei];const exM=musclesForExercise(ex.name);const meta=getMeta(ex.name);return(<div key={ei} style={{...card,marginBottom:10,background:dn?C.greenSoft:C.surface}}>
               <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
                 <div style={{flexShrink:0,marginTop:2}}><MuscleBody muscles={exM} accent={dn?C.green:clr} base={C.surfaceHi} skin={C.textDim} size={46} gap={3}/></div>
                 <div style={{flex:1,minWidth:0}}>
@@ -4759,6 +4794,15 @@ ${body}
                 <div style={{display:"flex",gap:3,flexShrink:0}}><button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"3px 8px",fontSize:10}}>Done</button><button onClick={()=>rSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>−</button><button onClick={()=>aSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>+</button><button onClick={()=>{setSplits(p=>({...p,[gSplit]:(p[gSplit]||[]).filter((_,i)=>i!==ei)}));setCurWkState(p=>({...p,exercises:p.exercises.filter((_,i)=>i!==ei)}));}} style={{...btnG,padding:"3px 6px",fontSize:11,color:C.red}}>✕</button></div>
               </div>
               {/* Exercise type selectors */}
+              {ex.kind==="cardio"?(()=>{const c=ex;const pace=(c.distance&&c.timeMin)?(()=>{const p=c.timeMin/c.distance;const m=Math.floor(p);const s=Math.round((p-m)*60);return `${m}:${String(s).padStart(2,"0")} /${c.distUnit||"mi"}`;})():"—";return(
+                <div style={{marginBottom:4}}>
+                  <div style={{display:"flex",gap:8,marginBottom:8}}>
+                    <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Distance</div><div style={{display:"flex",gap:4,alignItems:"center"}}><input type="number" inputMode="decimal" value={c.distance||""} onChange={e=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].distance=parseFloat(e.target.value)||0;return n;})} placeholder="0.0" style={{...numI,flex:1}}/><button onClick={()=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].distUnit=(n.exercises[ei].distUnit==="km"?"mi":"km");return n;})} style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${C.hairline}`,background:C.surfaceDim,color:C.text,fontSize:11,fontWeight:700,fontFamily:FN.m,cursor:"pointer"}}>{c.distUnit||"mi"}</button></div></div>
+                    <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Time (min)</div><input type="number" inputMode="decimal" value={c.timeMin||""} onChange={e=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].timeMin=parseFloat(e.target.value)||0;return n;})} placeholder="0" style={{...numI,width:"100%",boxSizing:"border-box"}}/></div>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"7px 10px",borderRadius:8,background:C.surfaceDim}}><span style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase"}}>Pace</span><span style={{fontSize:13,fontWeight:800,color:clr,fontFamily:FN.m}}>{pace}</span></div>
+                </div>
+              );})():<>
               <div style={{display:"flex",gap:6,marginBottom:9,flexWrap:"wrap"}}>
                 <select value={meta.mode} onChange={e=>setMetaFor(ex.name,{mode:e.target.value})} style={{fontSize:9,fontWeight:700,color:C.text,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em",cursor:"pointer",outline:"none"}}>
                   <option value="weight">Weight × Reps</option><option value="time">Time</option>
@@ -4774,6 +4818,7 @@ ${body}
                 const isBw=meta.wtype==="bw";const wPlaceholder=meta.wtype==="bwplus"?"+lbs":meta.wtype==="bwminus"?"−lbs":"lbs";const wd=ls&&!isBw?(s.w||0)-(ls.w||0):null;
                 return(<div key={si} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 56px",gap:5,marginBottom:3,alignItems:"center"}}><span style={{fontSize:10,color:clr,fontWeight:700}}>S{si+1}</span>{isBw?<div style={{...numI,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:C.accent}}>BW</div>:<input type="number" value={s.w||""} onChange={e=>uSet(ei,si,"w",e.target.value)} placeholder={wPlaceholder} style={numI} />}<input type="number" value={s.r||""} onChange={e=>uSet(ei,si,"r",e.target.value)} placeholder="reps" style={numI} /><span style={{fontSize:9,textAlign:"center",fontWeight:600,color:ls?(wd>0?C.greenBright:wd<0?C.red:C.textDim):C.textDim}}>{ls?fmtSet(ls,meta):"—"}</span></div>);})}
               <button className="press" onClick={()=>aSet(ei)} style={{width:"100%",marginTop:5,background:"transparent",border:`1px dashed ${C.hairline}`,borderRadius:8,padding:"7px 0",color:C.textDim,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.05em"}}>+ Add Set</button>
+              </>}
             </div>);})}
 
             {/* Manual logging — optional date + duration, then save directly (no live timer) */}
