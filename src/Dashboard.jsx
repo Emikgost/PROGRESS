@@ -217,8 +217,7 @@ const CSS=`
 @media(min-width:760px){.focus-grid{grid-template-columns:1.7fr 1fr;align-items:start}.focus-grid>.fg-main{grid-row:1/span 2}}
 /* Desktop: use the full width but cap the content column so cards don't stretch uncomfortably thin */
 @media(min-width:900px){
-  .main-content>*{max-width:1040px;margin-left:auto;margin-right:auto;}
-  .main-content{padding-left:32px;padding-right:32px;}
+  .main-content{padding-left:40px;padding-right:40px;}
 }
 @keyframes rowDim{0%{background:rgba(245,158,11,0.12)}100%{background:transparent}}
 @keyframes xpFloat{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-28px)}}
@@ -789,8 +788,8 @@ export default function Dashboard(){
   // Apply theme synchronously so module-level helpers (C, card, btnB, pill, DIFF, etc.) reflect
   // the active palette before any child JSX reads them this render.
   applyTheme(theme==="light"?LIGHT:DARK);
-  const[structuredMode,setStructuredMode]=useState(false);
-  const[gridExpanded,setGridExpanded]=useState(false); // week vs full month
+  const[structuredMode,setStructuredMode]=useState(true); // default to structured (month grid) view
+  const[gridExpanded,setGridExpanded]=useState(true); // week vs full month — default to full month
   const[showFullCal,setShowFullCal]=useState(false);
   const[showRecap,setShowRecap]=useState(false);
   const[confetti,setConfetti]=useState(false);
@@ -3474,7 +3473,12 @@ ${body}
           const weekStart=new Date(y,mo,todayDate-(todayDow===0?6:(todayDow-1)));
           const weekDays=gridExpanded?Array.from({length:daysInMonth},(_,i)=>i+1):Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(d.getDate()+i);return d.getMonth()===mo?d.getDate():null;}).filter(Boolean);
           const dayLabels=weekDays.map(d=>{const dt=new Date(y,mo,d);return["S","M","T","W","T","F","S"][dt.getDay()];});
-          const cellW=gridExpanded?26:Math.floor((window.innerWidth-120)/7);
+          // Fill the available width: label(100) + %(42) + streak(34) + side padding(~96) reserved, rest split across days.
+          // Full-bleed month grid: label(140) + %(60) + streak(40) + side padding(~110) reserved; the rest
+          // is divided across the month's days so day 31 and the % column reach the right edge.
+          const LABEL_W=gridExpanded?140:100, PCT_W=60, STREAK_W=40;
+          const avail=(typeof window!=="undefined"?window.innerWidth:1200)-LABEL_W-PCT_W-STREAK_W-110;
+          const cellW=gridExpanded?Math.max(28,Math.floor(avail/daysInMonth)):Math.floor(((typeof window!=="undefined"?window.innerWidth:390)-200)/7);
           const morningItems=activeTodos(dk(now)).filter(t=>t.grp==="morning");
           const nightItems=activeTodos(dk(now)).filter(t=>t.grp==="night");
           const generalItems=activeTodos(dk(now)).filter(t=>t.grp==="general");
@@ -3499,12 +3503,13 @@ ${body}
               </div>
               {/* Column headers */}
               <div style={{display:"flex",marginBottom:4}}>
-                <div style={{width:100,flexShrink:0}}/>
+                <div style={{width:LABEL_W,flexShrink:0}}/>
                 {weekDays.map(d=>(<div key={d} style={{width:cellW,textAlign:"center"}}>
                   <div style={{fontSize:10,color:d===todayDate?C.accent:C.textDim,fontFamily:FN.m,fontWeight:d===todayDate?800:400}}>{dayLabels[weekDays.indexOf(d)]}</div>
-                  <div style={{fontSize:12,color:d===todayDate?C.accent:C.textDim,fontFamily:FN.m,fontWeight:d===todayDate?800:500}}>{d}</div>
+                  <div style={{fontSize:13,color:d===todayDate?C.accent:C.textDim,fontFamily:FN.m,fontWeight:d===todayDate?800:500}}>{d}</div>
                 </div>))}
-                <div style={{width:40,textAlign:"center",fontSize:7,color:C.textDim,fontFamily:FN.m}}>🔥</div>
+                <div style={{width:PCT_W,textAlign:"center",fontSize:10,color:C.textDim,fontFamily:FN.m,fontWeight:700}}>%</div>
+                <div style={{width:STREAK_W,textAlign:"center",fontSize:10,color:C.textDim,fontFamily:FN.m}}>🔥</div>
               </div>
               {/* Rows */}
               {items.map(t=>{
@@ -3514,11 +3519,11 @@ ${body}
                 const isGoalDerived=!!t.goalId;
                 const isGraduated=t.graduated;
                 const atRisk=ap&&ap.pct<50&&ap.dayOfMonth>=10;
-                return(<div key={id} style={{display:"flex",alignItems:"center",marginBottom:2}}>
-                  <div style={{width:100,flexShrink:0,display:"flex",alignItems:"center",gap:4,paddingRight:4}}>
+                return(<div key={id} style={{display:"flex",alignItems:"center",marginBottom:4}}>
+                  <div style={{width:LABEL_W,flexShrink:0,display:"flex",alignItems:"center",gap:4,paddingRight:4}}>
                     {isGoalDerived&&<div style={{width:4,height:4,borderRadius:"50%",background:C.accent,flexShrink:0}}/>}
                     {isGraduated&&<div style={{width:4,height:4,borderRadius:"50%",background:C.green,flexShrink:0}}/>}
-                    <span style={{fontSize:12,fontWeight:600,color:atRisk?C.red:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{t.text||t.dailyAction}</span>
+                    <span style={{fontSize:13.5,fontWeight:600,color:atRisk?C.red:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{t.text||t.dailyAction}</span>
                     {atRisk&&<span style={{fontSize:7,color:C.red,fontWeight:800}}>!</span>}
                   </div>
                   {weekDays.map(d=>{
@@ -3527,12 +3532,16 @@ ${body}
                     const isToday=d===todayDate;
                     const isPast=d<todayDate;
                     const missed=isPast&&!done;
-                    return(<div key={d} onClick={()=>toggleCell(id,d)} style={{width:cellW,height:cellW>30?30:cellW-4,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",borderRadius:4,margin:"0 0.5px",background:done?`${color}`:missed?`${C.red}15`:isToday?C.surfaceHi:"transparent",border:isToday&&!done?`1px solid ${C.accent}50`:"1px solid transparent",transition:"all 0.15s ease"}}>
-                      {done&&<svg width="10" height="10" viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="#0B1120" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    const ch=Math.max(22,Math.min(40,cellW-6));const ck=Math.round(ch*0.45);
+                    return(<div key={d} onClick={()=>toggleCell(id,d)} style={{width:cellW,height:ch,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",borderRadius:5,margin:"0 1px",background:done?`${color}`:missed?`${C.red}15`:isToday?C.surfaceHi:"transparent",border:isToday&&!done?`1px solid ${C.accent}50`:"1px solid transparent",transition:"all 0.15s ease"}}>
+                      {done&&<svg width={ck} height={ck} viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="#0B1120" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       {missed&&<div style={{width:4,height:1,background:C.red,borderRadius:1}}/>}
                     </div>);
                   })}
-                  <div style={{width:40,textAlign:"center",fontSize:10,fontFamily:FN.m,fontWeight:700,color:streak>=7?C.green:streak>=3?C.accent:C.textDim}}>{streak>0?streak:""}</div>
+                  {(()=>{const elapsed=weekDays.filter(d=>d<=todayDate);const doneC=elapsed.filter(d=>{const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;return(checks[k]||{})[id];}).length;const pct=elapsed.length?Math.round(doneC/elapsed.length*100):0;const pc=pct>=80?C.green:pct>=50?C.accent:C.red;return(
+                    <div style={{width:PCT_W,textAlign:"center",fontSize:13,fontFamily:FN.m,fontWeight:800,color:pc}}>{elapsed.length?`${pct}%`:""}</div>
+                  );})()}
+                  <div style={{width:STREAK_W,textAlign:"center",fontSize:12,fontFamily:FN.m,fontWeight:700,color:streak>=7?C.green:streak>=3?C.accent:C.textDim}}>{streak>0?streak:""}</div>
                 </div>);
               })}
             </div>);
@@ -3562,6 +3571,73 @@ ${body}
             {renderGridSection("Evening",nightItems,"#60A5FA")}
             {generalItems.length>0&&renderGridSection("All Day",generalItems,C.green)}
             {goalItems.length>0&&renderGridSection("Goals",goalItems.map(g=>({...g,id:g.goalId})),C.accent,"auto")}
+
+            {/* ═══ ONE overall monthly completion % — across all habits, all elapsed days ═══ */}
+            {(()=>{
+              const elapsed=weekDays.filter(d=>d<=todayDate);
+              const allItems=[...morningItems,...nightItems,...generalItems];
+              if(!elapsed.length||!allItems.length)return null;
+              let tot=0,cnt=0;allItems.forEach(t=>{const id=t.id||t.goalId;elapsed.forEach(d=>{const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;cnt++;if((checks[k]||{})[id])tot++;});});
+              const pct=cnt?Math.round(tot/cnt*100):0;const pc=pct>=80?C.green:pct>=50?C.accent:C.red;
+              return(
+                <div style={{marginTop:18,padding:"18px 22px",borderRadius:14,background:C.surface,border:`1px solid ${C.hairline}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div>
+                    <div style={{fontSize:10,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>Monthly Completion</div>
+                    <div style={{fontSize:12,color:C.textDim}}>Across all habits · {[ "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][mo]}</div>
+                  </div>
+                  <div style={{fontSize:46,fontWeight:800,color:pc,fontFamily:FN.m,lineHeight:1}}>{pct}%</div>
+                </div>
+              );
+            })()}
+
+            {/* ═══ FOCUS — daily tasks (addable) + goals, mirroring agenda mode ═══ */}
+            <div style={{marginTop:24,paddingTop:20,borderTop:`1px solid ${C.hairline}`}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#60A5FA",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Focus · Today</div>
+              <div style={{display:"flex",gap:8,marginBottom:12}}>
+                <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&focusQuick.trim()){addFocus({id:uid(),text:focusQuick.trim(),diff:"easy"});setFocusQuick("");}}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
+                <button onClick={()=>{if(focusQuick.trim()){addFocus({id:uid(),text:focusQuick.trim(),diff:"easy"});setFocusQuick("");}}} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
+                <button onClick={()=>setFocusBuilder(focusBuilder?null:{mode:"steps",text:"",parts:[],target:"",unit:""})} title="Multi-part task" style={{...btnG,padding:"0 12px",fontSize:16,fontWeight:700}}>{focusBuilder?"×":"⋯"}</button>
+              </div>
+              {focusBuilder&&<div style={{...card,marginBottom:10,padding:14}}>
+                <div style={{display:"flex",gap:6,marginBottom:10}}>
+                  {[{k:"steps",l:"Steps"},{k:"count",l:"Count"}].map(m=>{const on=focusBuilder.mode===m.k;return(
+                    <button key={m.k} onClick={()=>setFocusBuilder(b=>({...b,mode:m.k}))} style={{flex:1,padding:"7px 0",borderRadius:8,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:11,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em"}}>{m.l}</button>
+                  );})}
+                </div>
+                <input value={focusBuilder.text} onChange={e=>setFocusBuilder(b=>({...b,text:e.target.value}))} placeholder={focusBuilder.mode==="steps"?"Task name (e.g. Clean apartment)":"Task name (e.g. Read pages)"} style={{...inp,width:"100%",boxSizing:"border-box",marginBottom:10}}/>
+                {focusBuilder.mode==="steps"?<>
+                  {(focusBuilder.parts||[]).map((pt,i)=>(<div key={pt.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{fontSize:11,color:C.textDim,fontFamily:FN.m,width:16}}>{i+1}.</span><span style={{flex:1,fontSize:13,color:C.text}}>{pt.text}</span><button onClick={()=>setFocusBuilder(b=>({...b,parts:b.parts.filter(x=>x.id!==pt.id)}))} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:14}}>×</button></div>))}
+                  <div style={{display:"flex",gap:8,marginBottom:12}}><input value={fbStep} onChange={e=>setFbStep(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&fbStep.trim()){setFocusBuilder(b=>({...b,parts:[...(b.parts||[]),{id:uid(),text:fbStep.trim()}]}));setFbStep("");}}} placeholder="Add a step…" style={{...inp,flex:1,fontSize:13}}/><button onClick={()=>{if(fbStep.trim()){setFocusBuilder(b=>({...b,parts:[...(b.parts||[]),{id:uid(),text:fbStep.trim()}]}));setFbStep("");}}} style={{...btnG,fontSize:12}}>+ Step</button></div>
+                </>:<>
+                  <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}><div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Target</div><input type="number" inputMode="numeric" value={focusBuilder.target} onChange={e=>setFocusBuilder(b=>({...b,target:e.target.value}))} placeholder="30" style={{...inp,width:"100%",boxSizing:"border-box",fontFamily:FN.m,textAlign:"center"}}/></div><div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Unit (optional)</div><input value={focusBuilder.unit} onChange={e=>setFocusBuilder(b=>({...b,unit:e.target.value}))} placeholder="pages, reps…" style={{...inp,width:"100%",boxSizing:"border-box",fontSize:13}}/></div></div>
+                </>}
+                <button onClick={addBuiltFocus} style={{...btnB,width:"100%"}}>Add {focusBuilder.mode==="steps"?"stepped":"counted"} task</button>
+              </div>}
+              {focusTasks.filter(t=>!dc[t.id]).length===0&&!focusBuilder&&<div style={{fontSize:12,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,padding:"4px 0 10px"}}>No focus tasks yet for today.</div>}
+              {focusTasks.filter(t=>!dc[t.id]).map(t=><FocusDailyRow key={t.id} t={t} />)}
+
+              {/* Weekly + Monthly goals (compact, read-only summaries) */}
+              {weeklyFocusGoals.length>0&&<div style={{marginTop:16}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.accentMed||C.accent,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Weekly Goals</div>
+                {weeklyFocusGoals.map(g=>{const prog=aspirationProgress.find(x=>x.id===g.id);const pct=prog?prog.pct:0;return(
+                  <div key={g.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0"}}>
+                    <span style={{flex:1,fontSize:13,color:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{g.text||g.title}</span>
+                    <div style={{width:90,height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:C.accent,borderRadius:3}}/></div>
+                    <span style={{fontSize:10,fontFamily:FN.m,fontWeight:700,color:C.textDim,width:34,textAlign:"right"}}>{pct}%</span>
+                  </div>
+                );})}
+              </div>}
+              {monthlyFocusGoals.length>0&&<div style={{marginTop:16}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Monthly Goals</div>
+                {monthlyFocusGoals.map(g=>{const prog=aspirationProgress.find(x=>x.id===g.id);const pct=prog?prog.pct:0;return(
+                  <div key={g.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0"}}>
+                    <span style={{flex:1,fontSize:13,color:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{g.text||g.title}</span>
+                    <div style={{width:90,height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:C.green,borderRadius:3}}/></div>
+                    <span style={{fontSize:10,fontFamily:FN.m,fontWeight:700,color:C.textDim,width:34,textAlign:"right"}}>{pct}%</span>
+                  </div>
+                );})}
+              </div>}
+            </div>
           </div>);
         })()}
         
@@ -3648,26 +3724,6 @@ ${body}
               <div className="focus-grid">
               <div className="fg-main">
               {/* List / Calendar toggle — Calendar organizes TIMED focus tasks; List is the existing view */}
-              <div style={{display:"flex",gap:6,marginBottom:14}}>
-                {[{k:"list",l:"List"},{k:"calendar",l:"Calendar"}].map(v=>{const on=focusView===v.k;return(
-                  <button key={v.k} onClick={()=>setFocusView(v.k)} style={{flex:1,padding:"8px 0",borderRadius:9,border:`1px solid ${on?FOCUS_BLUE:C.hairline}`,background:on?FOCUS_BLUE:"transparent",color:on?"#fff":C.textDim,fontSize:11.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.05em"}}>{v.l}</button>
-                );})}
-              </div>
-
-              {focusView==="calendar"&&<div style={{marginBottom:18}}>
-                <FocusCalendar
-                  tasks={focusTasks}
-                  checks={dc}
-                  onCreate={(m)=>{setCalNewSlot({startMin:m});setCalNewText("");}}
-                  onUpdate={updateFocus}
-                  onRemove={removeFocus}
-                  onToggle={(id)=>{const t=focusTasks.find(x=>x.id===id);if(t)toggle(t);}}
-                  isToday={vk===dk(now)}
-                />
-                <div style={{fontSize:10,color:C.textDim,marginTop:8,textAlign:"center",fontFamily:FN.m}}>Tap a time to add · drag to move · drag the bottom edge to resize</div>
-              </div>}
-
-              {focusView==="list"&&<>
               {/* Section 1 — Daily Tasks (highest priority) — add directly here */}
               <SectionHeader title="Daily Tasks" color={FOCUS_BLUE} count={dailyTasks.length+goalFocusTasks.length}/>
               {focusTasks.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setFocusReorder(m=>!m)} style={{background:focusReorder?C.accent:"transparent",border:`1px solid ${focusReorder?C.accent:C.hairline}`,color:focusReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{focusReorder?"Done":"⇅ Reorder"}</button></div>}
@@ -3723,7 +3779,6 @@ ${body}
                 );})}
               </>}
               {renderFocusDone()}
-              </>}
               </div>
 
               <div className="fg-side">
