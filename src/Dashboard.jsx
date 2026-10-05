@@ -819,9 +819,12 @@ export default function Dashboard(){
   // Diet feature toggle — off by default (user tracks nutrition in a dedicated app). All diet DATA
   // stays in storage; this only hides the tab. Re-enable in Settings to bring the feature back.
   const[dietEnabled,setDietEnabled]=useState(false);
+  const[handwriting,setHandwriting]=useState(false); // journal: render in a handwriting font
   const[renameSplitVal,setRenameSplitVal]=useState(null); // in-progress split rename text (null = not editing)
   const[manualDuration,setManualDuration]=useState(""); // minutes for manual workout logging
   const[manualDate,setManualDate]=useState(dk(new Date())); // date for manual workout logging
+  const[savingWk,setSavingWk]=useState(false); // brief "saved" feedback on the Save Workout button
+  const[armDelWk,setArmDelWk]=useState(null); // id of workout whose delete is armed (tap-twice, no browser confirm)
   const[cardioLog,setCardioLog]=useState({distance:"",distUnit:"mi",timeMin:"",timeSec:""}); // running/cardio entry buffer
   // ─── HEALTH: Diet ───
   const[diet,setDiet]=useState({}); // {dateKey:{calories,protein,carbs,fat,water,entries}}
@@ -1846,7 +1849,7 @@ ${body}
       if(d.aspirations)setAspirations(d.aspirations);
       if(d.videoJournal)setVideoJournal(d.videoJournal);if(d.writtenJournal)setWrittenJournal(d.writtenJournal);
       if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",credit:"",...d.accounts});
-      if(d.subscriptions)setSubscriptions(d.subscriptions);if(d.txRules)setTxRules(d.txRules);if(d.weekPlan)setWeekPlan(d.weekPlan);if(d.finGoals)setFinGoals(d.finGoals);if(typeof d.dietEnabled==="boolean")setDietEnabled(d.dietEnabled);if(d.catBudgets)setCatBudgets(d.catBudgets);
+      if(d.subscriptions)setSubscriptions(d.subscriptions);if(d.txRules)setTxRules(d.txRules);if(d.weekPlan)setWeekPlan(d.weekPlan);if(d.finGoals)setFinGoals(d.finGoals);if(typeof d.dietEnabled==="boolean")setDietEnabled(d.dietEnabled);if(typeof d.handwriting==="boolean")setHandwriting(d.handwriting);if(d.catBudgets)setCatBudgets(d.catBudgets);
       if(d.focusCompletionLog)setFocusCompletionLog(d.focusCompletionLog);
       if(d.habitOrder)setHabitOrder(d.habitOrder);
       // Migrate photoLog from main blob to separate key (one-time)
@@ -1921,10 +1924,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -1995,7 +1998,7 @@ ${body}
   };
   const cancelSession=()=>setShowCancelConfirm(true);
   const confirmCancel=()=>{setActiveSession(null);syncSession(null);setDoneEx({});setShowCancelConfirm(false);setSessionMinimized(false);};
-  const saveWk=()=>{if(!curWkState)return;const durMin=parseFloat(manualDuration);const dur=durMin>0?Math.round(durMin*60000):undefined;setWHist(p=>[...p,{id:uid(),date:manualDate||dk(now),split:curWkState.split,exercises:curWkState.exercises,...(dur?{duration:dur}:{})}]);setConfetti(true);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>ex.kind==="cardio"?{name:ex.name,kind:"cardio",distance:0,distUnit:ex.distUnit||"mi",timeMin:0,sets:[]}:({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});setManualDuration("");setManualDate(dk(new Date()));},2000);};
+  const saveWk=()=>{if(!curWkState||savingWk)return;const durMin=parseFloat(manualDuration);const dur=durMin>0?Math.round(durMin*60000):undefined;setWHist(p=>[...p,{id:uid(),date:manualDate||dk(now),split:curWkState.split,exercises:curWkState.exercises,...(dur?{duration:dur}:{})}]);setConfetti(true);setSavingWk(true);setTimeout(()=>setSavingWk(false),2200);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>ex.kind==="cardio"?{name:ex.name,kind:"cardio",distance:0,distUnit:ex.distUnit||"mi",timeMin:0,sets:[]}:({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});setManualDuration("");setManualDate(dk(new Date()));},2000);};
   // Save a running/cardio workout: distance + time (min:sec) → wHist entry with type:"cardio".
   const saveCardio=()=>{
     const dist=parseFloat(cardioLog.distance)||0;
@@ -3238,7 +3241,7 @@ ${body}
   /* ═══ RENDER ═══ */
   return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column",transition:"background 0.4s ease, color 0.4s ease"}}>
-      <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet" />
       {/* #8/#9 — Carryover modal: choose how the remaining work is redistributed */}
       {carryPrompt&&(()=>{const c=carryPrompt;const nm=new Date(now.getFullYear(),now.getMonth()+1,1);
         const nmEnd=new Date(nm.getFullYear(),nm.getMonth()+1,0);const days=nmEnd.getDate();
@@ -3895,8 +3898,8 @@ ${body}
             </div>
             <div style={{flex:1,overflowY:"auto",padding:"28px 20px 60px",maxWidth:900,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
               <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.14em",fontFamily:FN.m,marginBottom:20}}>{jrnlDateLabel(jrnlEditor.ts)}</div>
-              <input value={jrnlEditor.title} onChange={e=>setJrnlEditor(p=>({...p,title:e.target.value}))} placeholder="Title" style={{width:"100%",border:"none",outline:"none",background:"transparent",fontSize:28,fontWeight:600,fontFamily:FN.h,color:C.text,marginBottom:18,lineHeight:1.2}}/>
-              <textarea value={jrnlEditor.body} onChange={e=>setJrnlEditor(p=>({...p,body:e.target.value}))} placeholder="Write freely…" style={{width:"100%",minHeight:"52vh",border:"none",outline:"none",background:"transparent",resize:"none",fontSize:17,lineHeight:1.75,fontFamily:"Georgia,serif",color:C.text}}/>
+              <input value={jrnlEditor.title} onChange={e=>setJrnlEditor(p=>({...p,title:e.target.value}))} placeholder="Title" style={{width:"100%",border:"none",outline:"none",background:"transparent",fontSize:handwriting?38:28,fontWeight:handwriting?700:600,fontFamily:handwriting?'"Caveat",cursive':FN.h,color:C.text,marginBottom:18,lineHeight:1.2}}/>
+              <textarea value={jrnlEditor.body} onChange={e=>setJrnlEditor(p=>({...p,body:e.target.value}))} placeholder="Write freely…" style={{width:"100%",minHeight:"52vh",border:"none",outline:"none",background:"transparent",resize:"none",fontSize:handwriting?25:17,lineHeight:handwriting?1.5:1.75,fontFamily:handwriting?'"Caveat",cursive':"Georgia,serif",color:C.text}}/>
             </div>
           </div>}
 
@@ -3911,8 +3914,8 @@ ${body}
             </div>
             <div style={{flex:1,overflowY:"auto",padding:"28px 20px 60px",maxWidth:900,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
               <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.14em",fontFamily:FN.m,marginBottom:16}}>{jrnlDateLabel(jrnlOpen.ts)}</div>
-              <div style={{fontSize:28,fontWeight:600,fontFamily:FN.h,color:C.text,lineHeight:1.2,marginBottom:20}}>{jrnlOpen.title}</div>
-              <div style={{fontSize:17,lineHeight:1.8,fontFamily:"Georgia,serif",color:C.text,whiteSpace:"pre-wrap"}}>{jrnlOpen.body}</div>
+              <div style={{fontSize:handwriting?38:28,fontWeight:handwriting?700:600,fontFamily:handwriting?'"Caveat",cursive':FN.h,color:C.text,lineHeight:1.2,marginBottom:20}}>{jrnlOpen.title}</div>
+              <div style={{fontSize:handwriting?25:17,lineHeight:handwriting?1.5:1.8,fontFamily:handwriting?'"Caveat",cursive':"Georgia,serif",color:C.text,whiteSpace:"pre-wrap"}}>{jrnlOpen.body}</div>
             </div>
           </div>}
         </div>}
@@ -4389,7 +4392,7 @@ ${body}
                   <span style={{fontSize:13,fontWeight:600,color:C.text}}>{g.text}</span>
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
                     <button onClick={()=>openGoalEdit(g,"weekly")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b,padding:"2px 4px"}}>edit</button>
-                    <button onClick={()=>{if(window.confirm(`Delete "${g.text}"?`))setWGoals(p=>p.filter(x=>x.id!==g.id));}} title="Delete" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 5px"}}>🗑</button>
+                    <button onClick={()=>setWGoals(p=>p.filter(x=>x.id!==g.id))} title="Delete" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 5px"}}>🗑</button>
                     {hasSteps?<span style={{fontFamily:FN.m,fontSize:11,fontWeight:700,color:C.accent}}>{pct}%</span>:<>
                       <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?{...x,current:Math.max(0,(x.current||0)-1)}:x))} style={{...btnG,padding:"3px 10px",fontSize:12}}>−</button>
                       <span style={{fontFamily:FN.m,fontSize:12,fontWeight:700,minWidth:40,textAlign:"center"}}>{g.current||0}/{g.target}</span>
@@ -4408,7 +4411,7 @@ ${body}
                   <span style={{color:C.greenBright,fontSize:13,fontWeight:800}}>✓</span>
                   <span style={{flex:1,fontSize:12.5,color:C.textDim,textDecoration:"line-through"}}>{g.text}</span>
                   <button onClick={()=>setWGoals(p=>p.map(x=>x.id===g.id?((x.steps||[]).length?{...x,steps:x.steps.map(st=>({...st,done:false}))}:{...x,current:0}):x))} title="Reopen" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,padding:"2px 5px"}}>↺</button>
-                  <button onClick={()=>{if(window.confirm(`Delete "${g.text}"?`))setWGoals(p=>p.filter(x=>x.id!==g.id));}} title="Delete" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 5px"}}>🗑</button>
+                  <button onClick={()=>setWGoals(p=>p.filter(x=>x.id!==g.id))} title="Delete" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 5px"}}>🗑</button>
                 </div>
               ))}
             </>);})()}
@@ -4747,7 +4750,21 @@ ${body}
             {/* Recent workouts */}
             {wHist.length>0&&<div style={{marginTop:22}}>
               <div style={{...lbl,marginBottom:10}}>Recent Workouts</div>
-              {wHist.slice().reverse().slice(0,8).map(w=>(<div key={w.id} className="press" onClick={()=>setViewWorkout(w)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:6,borderRadius:12,background:C.surface,cursor:"pointer",border:`1px solid ${C.hairline}`}}><div style={{width:36,height:36,borderRadius:10,background:`${spClr[w.split]||C.accent}1A`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:spClr[w.split]||C.accent}}><DumbbellIcon size={18} color={spClr[w.split]||C.accent}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:spClr[w.split]||C.accent,textTransform:"uppercase",letterSpacing:"0.04em"}}>{w.split}</div><div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>{w.type==="cardio"?`${fd(w.date)} · ${w.distance} ${w.distUnit||"mi"}${w.timeMin?` · ${w.timeMin>=60?`${Math.floor(w.timeMin/60)}h ${Math.round(w.timeMin%60)}m`:`${Math.round(w.timeMin)}m`}`:""}`:`${fd(w.date)} · ${(w.exercises||[]).length} ex · ${(w.exercises||[]).reduce((a,e)=>a+e.sets.length,0)} sets${w.duration?` · ${fmtTime(Math.floor(w.duration/1000))}`:""}`}</div></div><span style={{fontSize:16,color:C.textDim}}>›</span><button onClick={e=>{e.stopPropagation();setWHist(p=>p.filter(x=>x.id!==w.id));}} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,opacity:0.35,padding:"0 2px"}}>×</button></div>))}
+              {wHist.slice().reverse().slice(0,8).map(w=>{const clr=spClr[w.split]||C.accent;return(
+                <div key={w.id} style={{display:"flex",alignItems:"stretch",marginBottom:8,borderRadius:12,overflow:"hidden",border:`1px solid ${C.hairline}`}}>
+                  <div className="press" onClick={()=>setViewWorkout(w)} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:12,padding:"13px 14px",background:C.surface,cursor:"pointer"}}>
+                    <div style={{width:38,height:38,borderRadius:10,background:`${clr}1A`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{w.type==="cardio"?<span style={{fontSize:18}}>🏃</span>:<DumbbellIcon size={18} color={clr}/>}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13.5,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.04em"}}>{w.split}</div>
+                      <div style={{fontSize:10.5,color:C.textDim,fontFamily:FN.m,marginTop:2}}>{w.type==="cardio"?`${fd(w.date)} · ${w.distance} ${w.distUnit||"mi"}${w.timeMin?` · ${w.timeMin>=60?`${Math.floor(w.timeMin/60)}h ${Math.round(w.timeMin%60)}m`:`${Math.round(w.timeMin)}m`}`:""}`:`${fd(w.date)} · ${(w.exercises||[]).length} ex · ${(w.exercises||[]).reduce((a,e)=>a+e.sets.length,0)} sets${w.duration?` · ${fmtTime(Math.floor(w.duration/1000))}`:""}`}</div>
+                    </div>
+                    <span style={{fontSize:16,color:C.textDim,opacity:0.5}}>›</span>
+                  </div>
+                  {armDelWk===w.id
+                    ?<button onClick={()=>{setWHist(p=>p.filter(x=>x.id!==w.id));setArmDelWk(null);}} aria-label="Confirm delete workout" style={{flexShrink:0,width:72,border:"none",borderLeft:`1px solid ${C.hairline}`,background:C.red,color:"#fff",cursor:"pointer",fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.03em",fontFamily:FN.b}}>Delete</button>
+                    :<button onClick={()=>{setArmDelWk(w.id);setTimeout(()=>setArmDelWk(c=>c===w.id?null:c),3000);}} aria-label="Delete workout" style={{flexShrink:0,width:46,border:"none",borderLeft:`1px solid ${C.hairline}`,background:C.surface,color:C.red,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></button>}
+                </div>
+              );})}
             </div>}
           </div>}
           {gView==="workouts"&&gSplit&&isCardioSplit(gSplit)&&(()=>{const clr=spClr[gSplit]||"#3B82F6";
@@ -4876,17 +4893,26 @@ ${body}
               </>}
             </div>);})}
 
-            {/* Manual logging — optional date + duration, then save directly (no live timer) */}
-            <div style={{...card,marginBottom:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.text}}>Manual entry</div>
-              <div style={{fontSize:9,color:C.textDim,marginTop:1,marginBottom:10}}>For logging a completed workout after the fact</div>
+            {/* Manual entry — date + optional duration, then save */}
+            <div style={{...card,marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:800,color:C.text,textTransform:"uppercase",letterSpacing:"0.05em"}}>Manual Entry</div>
+              <div style={{fontSize:10,color:C.textDim,marginTop:2,marginBottom:14}}>Logging a completed workout after the fact</div>
               <div style={{display:"flex",gap:10}}>
-                <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>Date</div><input type="date" value={manualDate} onChange={e=>setManualDate(e.target.value)} max={dk(new Date())} style={{...inp,width:"100%",fontFamily:FN.m,fontSize:12,colorScheme:theme}}/></div>
-                <div style={{width:90}}><div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:3}}>Duration</div><input type="number" value={manualDuration} onChange={e=>setManualDuration(e.target.value)} placeholder="min" style={{...inp,width:"100%",fontFamily:FN.m,textAlign:"center"}}/></div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:5}}>Date</div>
+                  <input type="date" value={manualDate} onChange={e=>setManualDate(e.target.value)} max={dk(new Date())} style={{...inp,width:"100%",boxSizing:"border-box",fontFamily:FN.m,fontSize:13,padding:"11px 12px",colorScheme:theme}}/>
+                </div>
+                <div style={{width:110}}>
+                  <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:5}}>Duration</div>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <input type="number" inputMode="numeric" value={manualDuration} onChange={e=>setManualDuration(e.target.value)} placeholder="—" style={{...inp,width:"100%",boxSizing:"border-box",fontFamily:FN.m,fontSize:13,padding:"11px 12px",textAlign:"center"}}/>
+                    <span style={{fontSize:11,color:C.textDim,fontWeight:600}}>min</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <button className="press" onClick={saveWk} style={{width:"100%",background:clr,border:"none",borderRadius:12,padding:"14px 0",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",marginTop:2}}>Save Workout ✓</button>
+            <button className="press" onClick={saveWk} disabled={savingWk} style={{width:"100%",background:savingWk?C.green:clr,border:"none",borderRadius:12,padding:"15px 0",color:"#fff",fontSize:14.5,fontWeight:800,letterSpacing:"0.03em",cursor:savingWk?"default":"pointer",marginTop:2,transition:"background 0.2s ease",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>{savingWk?<><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="M20 6 9 17l-5-5"/></svg>Saved!</>:"Save Workout"}</button>
           </div>);})()}
 
           {/* ═══════════ DIET ═══════════ */}
@@ -6054,6 +6080,17 @@ ${body}
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Planning Day</div><div style={{display:"flex",gap:4}}>{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>(<button key={d} onClick={()=>setSettings(p=>({...p,planDay:i}))} style={{...pill((settings.planDay??0)===i),flex:1,fontSize:10,padding:"6px 0"}}>{d}</button>))}</div></div>
 
 
+        {/* Journal handwriting font */}
+        <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.textDim}}>Handwriting journal font</div>
+            <div style={{fontSize:10,color:C.textDim,opacity:0.7,marginTop:2,lineHeight:1.4}}>Render journal entries in a handwritten-style font.</div>
+          </div>
+          <button onClick={()=>setHandwriting(v=>!v)} style={{flexShrink:0,width:46,height:26,borderRadius:13,border:"none",background:handwriting?C.accent:C.hairline,position:"relative",cursor:"pointer",transition:"background 0.2s ease"}}>
+            <span style={{position:"absolute",top:3,left:handwriting?23:3,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 0.2s ease",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+          </button>
+        </div>
+
         {/* Diet feature — off by default. Data is preserved; this only shows/hides the tab. */}
         <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
           <div style={{minWidth:0}}>
@@ -6144,7 +6181,7 @@ ${body}
               </div>
               <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginBottom:4}}>App data: {mainKB} KB · Photos: {photoKB} KB ({photoLog.length} photos)</div>
               {photoKB>500&&<div style={{fontSize:10,color:C.orange,fontFamily:FN.m,marginBottom:8}}>⚠ Photos are using {photoKB} KB. Consider clearing old ones to free space.</div>}
-              {photoLog.length>0&&<button onClick={()=>{if(confirm("Clear all proof photos? This frees storage but photos are gone forever.")){setPhotoLog([]);try{localStorage.removeItem("dash-v18-photos");}catch(e){}}}} style={{...btnG,width:"100%",fontSize:10,color:C.red,borderColor:C.red+"40"}}>Clear All Photos ({photoLog.length})</button>}
+              {photoLog.length>0&&<button onClick={()=>{setPhotoLog([]);try{localStorage.removeItem("dash-v18-photos");}catch(e){}}} style={{...btnG,width:"100%",fontSize:10,color:C.red,borderColor:C.red+"40"}}>Clear All Photos ({photoLog.length})</button>}
             </div>);
           })()}
         </div>
