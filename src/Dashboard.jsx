@@ -2911,10 +2911,12 @@ ${body}
     if(key==="workout"||key==="budget"){setMenuTab(key);setTab(null);}else{setTab(key);setMenuTab(null);}
   };
   const swipeNav=(dir)=>{const i=pageOrder.indexOf(curPage);const ni=i+dir;if(ni<0||ni>=pageOrder.length)return;goPage(pageOrder[ni]);};
-  // Page-level swipe: only fires for clearly-horizontal gestures that don't start on a swipe-to-delete row.
+  // Page-level swipe: only fires for a clear, deliberate horizontal gesture that doesn't start
+  // on a swipe-to-delete row OR inside a horizontally-scrollable strip (calendars, the split row,
+  // any .hide-scroll track) — otherwise scrolling those used to flip tabs.
   const pageTouch=useRef({x:0,y:0,active:false});
-  const onPageTouchStart=e=>{if(e.target.closest("[data-swiperow]")){pageTouch.current.active=false;return;}const t=e.touches[0];pageTouch.current={x:t.clientX,y:t.clientY,active:true};};
-  const onPageTouchEnd=e=>{if(!pageTouch.current.active)return;pageTouch.current.active=false;const t=e.changedTouches[0];const dx=t.clientX-pageTouch.current.x,dy=t.clientY-pageTouch.current.y;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.6){swipeNav(dx<0?1:-1);}};
+  const onPageTouchStart=e=>{if(e.target.closest("[data-swiperow]")||e.target.closest(".hide-scroll")){pageTouch.current.active=false;return;}const t=e.touches[0];pageTouch.current={x:t.clientX,y:t.clientY,active:true};};
+  const onPageTouchEnd=e=>{if(!pageTouch.current.active)return;pageTouch.current.active=false;const t=e.changedTouches[0];const dx=t.clientX-pageTouch.current.x,dy=t.clientY-pageTouch.current.y;if(Math.abs(dx)>110&&Math.abs(dx)>Math.abs(dy)*2.2){swipeNav(dx<0?1:-1);}};
 
   /* ─── Focus task CRUD (per-date) ─── */
   const addFocus=(t)=>setFocusByDate(p=>({...p,[vk]:[...(p[vk]||[]),{createdOn:dk(now),...t}]}));
