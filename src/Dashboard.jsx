@@ -4007,10 +4007,10 @@ ${body}
               <span style={{fontSize:11,color:C.textDim,fontFamily:FN.m}}>{wordCount(jrnlEditor.body)} words</span>
               <button onClick={saveJournalEntry} style={{background:C.accent,border:"none",borderRadius:9,padding:"8px 18px",color:C.btnText,fontSize:13,fontWeight:700,fontFamily:FN.b,cursor:"pointer"}}>Done</button>
             </div>
-            <div style={{flex:1,overflowY:"auto",padding:"28px 20px 60px",maxWidth:900,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
-              <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.14em",fontFamily:FN.m,marginBottom:20}}>{jrnlDateLabel(jrnlEditor.ts)}</div>
-              <input value={jrnlEditor.title} onChange={e=>setJrnlEditor(p=>({...p,title:e.target.value}))} placeholder="Title" style={{width:"100%",border:"none",outline:"none",background:"transparent",fontSize:handwriting?38:28,fontWeight:handwriting?700:600,fontFamily:handwriting?'"Caveat",cursive':FN.h,color:C.text,marginBottom:18,lineHeight:1.2}}/>
-              <textarea value={jrnlEditor.body} onChange={e=>setJrnlEditor(p=>({...p,body:e.target.value}))} placeholder="Write freely…" style={{width:"100%",minHeight:"52vh",border:"none",outline:"none",background:"transparent",resize:"none",fontSize:handwriting?25:17,lineHeight:handwriting?1.5:1.75,fontFamily:handwriting?'"Caveat",cursive':"Georgia,serif",color:C.text}}/>
+            <div style={{flex:1,overflowY:"auto",padding:"26px 18px 60px",width:"100%",boxSizing:"border-box"}}>
+              <div style={{fontSize:13,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.18em",fontFamily:FN.m,marginBottom:10}}>{jrnlDateLabel(jrnlEditor.ts)}</div>
+              <input value={jrnlEditor.title} onChange={e=>setJrnlEditor(p=>({...p,title:e.target.value}))} placeholder="Title" style={{width:"100%",boxSizing:"border-box",border:"none",outline:"none",background:"transparent",fontSize:handwriting?44:34,fontWeight:handwriting?700:800,fontFamily:handwriting?'"Caveat",cursive':FN.h,color:C.text,marginBottom:14,lineHeight:1.15,paddingBottom:14,borderBottom:`1px solid ${C.hairline}`}}/>
+              <textarea value={jrnlEditor.body} onChange={e=>setJrnlEditor(p=>({...p,body:e.target.value}))} placeholder="Write freely…" style={{width:"100%",boxSizing:"border-box",minHeight:"52vh",border:"none",outline:"none",background:"transparent",resize:"none",fontSize:handwriting?25:18,lineHeight:handwriting?1.5:1.75,fontFamily:handwriting?'"Caveat",cursive':"Georgia,serif",color:C.text,marginTop:16}}/>
             </div>
           </div>}
 
@@ -4023,10 +4023,10 @@ ${body}
                 <button onClick={()=>deleteJournalEntry(jrnlOpen.id)} style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:8,padding:"7px 12px",color:C.red,fontSize:12,fontWeight:600,fontFamily:FN.b,cursor:"pointer"}}>Delete</button>
               </div>
             </div>
-            <div style={{flex:1,overflowY:"auto",padding:"28px 20px 60px",maxWidth:900,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
-              <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.14em",fontFamily:FN.m,marginBottom:16}}>{jrnlDateLabel(jrnlOpen.ts)}</div>
-              <div style={{fontSize:handwriting?38:28,fontWeight:handwriting?700:600,fontFamily:handwriting?'"Caveat",cursive':FN.h,color:C.text,lineHeight:1.2,marginBottom:20}}>{jrnlOpen.title}</div>
-              <div style={{fontSize:handwriting?25:17,lineHeight:handwriting?1.5:1.8,fontFamily:handwriting?'"Caveat",cursive':"Georgia,serif",color:C.text,whiteSpace:"pre-wrap"}}>{jrnlOpen.body}</div>
+            <div style={{flex:1,overflowY:"auto",padding:"26px 18px 60px",width:"100%",boxSizing:"border-box"}}>
+              <div style={{fontSize:13,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.18em",fontFamily:FN.m,marginBottom:10}}>{jrnlDateLabel(jrnlOpen.ts)}</div>
+              <div style={{fontSize:handwriting?44:34,fontWeight:handwriting?700:800,fontFamily:handwriting?'"Caveat",cursive':FN.h,color:C.text,lineHeight:1.15,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.hairline}`}}>{jrnlOpen.title}</div>
+              <div style={{fontSize:handwriting?25:18,lineHeight:handwriting?1.5:1.8,fontFamily:handwriting?'"Caveat",cursive':"Georgia,serif",color:C.text,whiteSpace:"pre-wrap",marginTop:16}}>{jrnlOpen.body}</div>
             </div>
           </div>}
         </div>}
