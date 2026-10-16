@@ -794,6 +794,7 @@ export default function Dashboard(){
   applyTheme(theme==="light"?LIGHT:DARK);
   const[structuredMode,setStructuredMode]=useState(true); // default to structured (month grid) view
   const[gridExpanded,setGridExpanded]=useState(true); // week vs full month — default to full month
+  const[vw,setVw]=useState(typeof window!=="undefined"?window.innerWidth:1200); // live viewport width (drives the habit grid sizing)
   const[showFullCal,setShowFullCal]=useState(false);
   const[showRecap,setShowRecap]=useState(false);
   const[confetti,setConfetti]=useState(false);
@@ -870,6 +871,7 @@ export default function Dashboard(){
   const[splitGraphMetric,setSplitGraphMetric]=useState("weight"); // weight | reps | both
   const[expandedWk,setExpandedWk]=useState(null); // timeline: expanded workout id
   const[progCalDay,setProgCalDay]=useState(null); // Progress calendar: selected day key
+  const[goalViewDay,setGoalViewDay]=useState(null); // Goals calendar: selected day for historical completed goals (null=today)
   const progCalRef=useRef(null); // Progress calendar strip scroll ref
   const[sleepDraft,setSleepDraft]=useState(""); // sleep-score input on the Progress card
   const[nutriRange,setNutriRange]=useState("30");
@@ -892,12 +894,13 @@ export default function Dashboard(){
   const[gcSteps,setGcSteps]=useState(["","",""]);
   const[gcTarget,setGcTarget]=useState(""); // days per month for habit type
   const[gcAction,setGcAction]=useState(""); // daily action text for habit type
+  const[gcSlot,setGcSlot]=useState("morning"); // habit-building: when ("morning"|"night")
   const[gcIntention,setGcIntention]=useState(""); // implementation intention — situational cue
   const[intentionPromptFor,setIntentionPromptFor]=useState(null); // legacy goal being asked about
   const[intentionPromptText,setIntentionPromptText]=useState("");
   const[intentionPromptDismissed,setIntentionPromptDismissed]=useState({}); // {goalId:true}
   const[gcOverride,setGcOverride]=useState(false); // direct habit override
-  const resetGc=()=>{setGcStep(0);setGcName("");setGcType(null);setGcDeadline("");setGcHours("");setGcSteps(["","",""]);setGcTarget("");setGcAction("");setGcIntention("");setGcOverride(false);setShowGoalCreator(false);};
+  const resetGc=()=>{setGcStep(0);setGcName("");setGcType(null);setGcDeadline("");setGcHours("");setGcSteps(["","",""]);setGcTarget("");setGcAction("");setGcSlot("morning");setGcIntention("");setGcOverride(false);setShowGoalCreator(false);};
   const[showGal,setShowGal]=useState(false);
   const[selGrp,setSelGrp]=useState(null);const[mkGrp,setMkGrp]=useState(false);const[nGrpName,setNGrpName]=useState("");const[nGrpTasks,setNGrpTasks]=useState([]);
   const[modal,setModal]=useState(null);
@@ -963,6 +966,33 @@ export default function Dashboard(){
   useEffect(()=>{if(tab==="goals"&&goalCalRef.current){goalCalRef.current.scrollLeft=goalCalRef.current.scrollWidth;}},[tab,gTab]);
   useEffect(()=>{if(menuTab==="workout"&&gView==="workouts"&&!gSplit&&wkCalRef.current){wkCalRef.current.scrollLeft=wkCalRef.current.scrollWidth;}},[menuTab,gView,gSplit]);
   useEffect(()=>{if(menuTab==="workout"&&gView==="progress"&&progCalRef.current){progCalRef.current.scrollLeft=progCalRef.current.scrollWidth;}},[menuTab,gView]);
+  // Re-read the viewport width after mount (and on resize/orientation). On first paint in an
+  // installed PWA innerWidth isn't settled yet, which made the structured habit grid render
+  // squished until the Week/Month toggle forced a re-render. Re-measuring here fixes it on open.
+  useEffect(()=>{const on=()=>setVw(window.innerWidth);on();const r=requestAnimationFrame(on);const t=setTimeout(on,120);window.addEventListener("resize",on);window.addEventListener("orientationchange",on);return()=>{cancelAnimationFrame(r);clearTimeout(t);window.removeEventListener("resize",on);window.removeEventListener("orientationchange",on);};},[]);
+  // Goals redesign: the "General" habit category is retired. Migrate any existing general
+  // rituals into Morning so their history (checks keyed by id) is preserved and nothing is hidden.
+  useEffect(()=>{if(todos.some(t=>t.grp==="general"))setTodos(p=>p.map(t=>t.grp==="general"?{...t,grp:"morning"}:t));},[todos]);
+  // Long-Term Goals: stamp completedOn the day a goal finishes (don't delete it), and clear it if the
+  // goal is reopened. completedOn drives the active-vs-completed split and the calendar history view.
+  useEffect(()=>{
+    let changed=false;const justDone=[];
+    const next=aspirations.map(a=>{
+      if(a.graduated)return a;
+      const done=isMonthlyDone(a);
+      if(done&&!a.completedOn){changed=true;justDone.push(a.id);return{...a,completedOn:dk(now)};}
+      if(!done&&a.completedOn){changed=true;const{completedOn,...rest}=a;return rest;}
+      return a;
+    });
+    if(changed){setAspirations(next);justDone.forEach(id=>completeGoalAnim(id,"monthly"));}
+  },[aspirations]);
+  // Experimental habits graduate automatically after a 30-day consecutive streak: drop the testing
+  // flag so they become permanent. Clearing the flag makes this fire once; history/streak are kept
+  // (same todo id, same checks). A reached-30 graduation is independent of the daily-roster streak.
+  useEffect(()=>{
+    const grads=todos.filter(t=>t.experimental&&!t.removedOn&&habitStreakFor(t.id)>=30);
+    if(grads.length){const ids=new Set(grads.map(g=>g.id));setTodos(p=>p.map(t=>ids.has(t.id)?{...t,experimental:false,graduatedOn:dk(now)}:t));}
+  },[checks,todos]);
 
   const now=new Date();const vk=dk(vDate);const isToday=vk===dk(now);const dc=checks[vk]||{};
 
@@ -982,6 +1012,15 @@ export default function Dashboard(){
   });
   const dayHabitRoster=(k)=>[...activeTodos(k),...graduatedHabitsOn(k)];
   const dayHabitPct=(k)=>{const all=dayHabitRoster(k);if(all.length===0)return 0;const ch=checks[k]||{};return Math.round(all.filter(t=>ch[t.id]).length/all.length*100);};
+  /* Measurable-goal progress = manual logged hours (hoursLogged) + the sum of per-day task
+     completions (taskLog:{dayKey:hours}). Deriving from a per-day record makes checking/unchecking
+     a day idempotent: toggling re-sets or deletes that day's entry instead of adding/subtracting a
+     drifting delta, so repeated toggles can never inflate progress. Manual entries are never touched. */
+  const goalDone=(a)=>Math.round(((Number(a.hoursLogged)||0)+Object.values(a.taskLog||{}).reduce((s,v)=>s+(Number(v)||0),0))*10)/10;
+  /* Consecutive-day completion streak for a habit id, ending today (or yesterday if not yet done
+     today). Uses the same `checks` + local date rules as the rest of the app. Drives the "Testing"
+     habit badge and the 30-day graduation of experimental habits. */
+  const habitStreakFor=(id)=>{let s=0;const d=new Date();if(!((checks[dk(d)]||{})[id]))d.setDate(d.getDate()-1);while((checks[dk(d)]||{})[id]){s++;d.setDate(d.getDate()-1);}return s;};
   const removeHabit=(id)=>setTodos(p=>p.map(t=>t.id===id?{...t,removedOn:dk(now)}:t)); // soft-delete: keep on past days, drop from today onward
   const focusTasks=focusByDate[vk]||[];
   const morningT=activeTodos(vk).filter(t=>t.grp==="morning");
@@ -1118,10 +1157,14 @@ export default function Dashboard(){
       const steps=gcSteps.filter(s=>s.trim()).map(s=>({id:uid(),text:s.trim(),done:false}));
       goal={...base,goalType:"outcome",steps};
     }else{
-      // habit-building — implementation intention is required
-      if(!gcIntention.trim())return;
-      const td=parseInt(gcTarget)||20;
-      goal={...base,goalType:"habit",targetDays:td,weeklyPace:Math.round((td/30)*7*10)/10,dailyAction:gcAction.trim()||gcName.trim(),implementationIntention:gcIntention.trim()};
+      // habit-building: a daily experimental habit. It lives directly in the daily-habits system
+      // (todos) in the chosen Morning/Evening slot, flagged experimental, and graduates to a
+      // permanent habit after a 30-day consecutive streak. No separate goal record is created.
+      const slot=gcSlot==="night"?"night":"morning";
+      const text=gcAction.trim()||gcName.trim();
+      setTodos(p=>[...p,{id:uid(),text,grp:slot,diff:"easy",createdOn:dk(now),experimental:true,expStart:dk(now)}]);
+      resetGc();
+      return;
     }
     setAspirations(p=>[...p,goal]);
     resetGc();
@@ -1131,7 +1174,7 @@ export default function Dashboard(){
   const weeklyTargets=useMemo(()=>{
     return aspirations.filter(a=>a.status==="active"&&!a.graduated).map(a=>{
       if(a.goalType==="measurable"){
-        const remaining=Math.max(0,(a.totalHours||0)-(a.hoursLogged||0));
+        const remaining=Math.max(0,(a.totalHours||0)-goalDone(a));
         if(remaining<=0)return null; // goal met — disappears from the weekly funnel
         const deadlineDate=new Date(a.deadline||dk(now));
         const weeksLeft=Math.max(1,Math.ceil((deadlineDate-now)/(7*24*60*60*1000)));
@@ -1155,7 +1198,9 @@ export default function Dashboard(){
       if(a.graduated&&a.goalType!=="established")return null; // graduated habits don't need focus
       const hitToday=!!(checks[dk(now)]||{})[a.id];
       if(a.goalType==="measurable")return{id:a.id,text:`${a.text} — study session`,goalId:a.id,goalType:a.goalType,hitToday,parentText:a.text};
-      if(a.goalType==="outcome"){const next=(a.steps||[]).find(s=>!s.done);return next?{id:a.id,stepId:next.id,text:next.text,goalId:a.id,goalType:a.goalType,hitToday,parentText:a.text}:null;}
+      if(a.goalType==="outcome"){const next=(a.steps||[]).find(s=>!s.done);if(next)return{id:a.id,stepId:next.id,text:next.text,goalId:a.id,goalType:a.goalType,hitToday,parentText:a.text};
+        // All steps done: keep it visible (struck) on its completion day; gone on later days.
+        return a.completedOn===dk(now)?{id:a.id,text:a.text,goalId:a.id,goalType:a.goalType,hitToday:true,done:true,parentText:a.text}:null;}
       if(a.goalType==="habit"||a.goalType==="established")return{id:a.id,text:a.dailyAction||a.text,goalId:a.id,goalType:a.goalType,hitToday,graduated:a.graduated,implementationIntention:a.implementationIntention,parentText:a.text};
       return null;
     }).filter(Boolean);
@@ -1179,6 +1224,7 @@ export default function Dashboard(){
   // checking it off here never advanced anything). For habit/measurable/established types, the daily
   // action is tracked the same way habits are (via `checks`), since there's no discrete "step" to advance.
   const completeMonthlyFocus=(item)=>{
+    if(item.done)return; // already-complete outcome marker — shown struck, not interactive
     const wasHit=item.goalType==="outcome"?false:item.hitToday;
     if(item.goalType==="outcome"&&item.stepId){
       setAspirations(p=>p.map(a=>a.id===item.goalId?{...a,steps:(a.steps||[]).map(s=>s.id===item.stepId?{...s,done:!s.done}:s)}:a));
@@ -1226,15 +1272,17 @@ export default function Dashboard(){
     if(g.steps&&g.steps.length>0){const done=g.steps.filter(s=>s.done).length;return{id:g.id,text:g.text,kind:"steps",steps:g.steps,done,total:g.steps.length,complete:done>=g.steps.length};}
     const current=g.current||0,target=g.target||1;return{id:g.id,text:g.text,kind:"count",current,target,complete:current>=target};
   }).filter(g=>!g.complete),[wGoals]);
-  const monthlyFocusGoals=useMemo(()=>aspirations.filter(a=>a.status==="active"&&!a.graduated&&a.goalType!=="established").map(a=>{
-    if(a.goalType==="outcome"){const steps=a.steps||[];const done=steps.filter(s=>s.done).length;return{id:a.id,text:a.text,kind:"steps",steps,done,total:steps.length,complete:steps.length>0&&done>=steps.length};}
-    const hit=!!(checks[dk(now)]||{})[a.id];
-    return{id:a.id,text:a.text,kind:"action",actionText:a.dailyAction||(a.goalType==="measurable"?`${a.text} — study session`:a.text),implementationIntention:a.implementationIntention,complete:hit};
-  }).filter(g=>!g.complete),[aspirations,checks,now]);
+  const monthlyFocusGoals=useMemo(()=>{const tkn=dk(now);return aspirations.filter(a=>a.status==="active"&&!a.graduated&&a.goalType!=="established").map(a=>{
+    if(a.goalType==="outcome"){const steps=a.steps||[];const done=steps.filter(s=>s.done).length;return{id:a.id,text:a.text,kind:"steps",steps,done,total:steps.length,complete:steps.length>0&&done>=steps.length,completedOn:a.completedOn};}
+    const hit=!!(checks[tkn]||{})[a.id];
+    return{id:a.id,text:a.text,kind:"action",actionText:a.dailyAction||(a.goalType==="measurable"?`${a.text} — study session`:a.text),implementationIntention:a.implementationIntention,complete:hit||a.completedOn===tkn,completedOn:a.completedOn};
+  // Keep a goal that was completed TODAY (shown struck through, like a finished Focus task); drop it
+  // only once it was completed on an earlier day, giving a clean slate for the new day.
+  }).filter(g=>!(g.completedOn&&g.completedOn!==tkn));},[aspirations,checks,now]);
 
   const toggleWeeklyStep=(goalId,stepId)=>{const g=wGoals.find(x=>x.id===goalId);const s=g&&(g.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setWGoals(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st)}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&g){const after=(g.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId,"weekly");}};
   const setWeeklyCount=(goalId,newCount)=>{const g=wGoals.find(x=>x.id===goalId);if(!g)return;const tgt=g.target||1;const nc=Math.max(0,Math.min(tgt,newCount));logFocusCompletion(nc-(g.current||0));setWGoals(p=>p.map(x=>x.id===goalId?{...x,current:nc}:x));if(nc>=tgt&&(g.current||0)<tgt)completeGoalAnim(goalId,"weekly");};
-  const toggleMonthlyStep=(goalId,stepId)=>{const a=aspirations.find(x=>x.id===goalId);const s=a&&(a.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setAspirations(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st),lastProgress:turningOn?dk(now):x.lastProgress}:x));logFocusCompletion(turningOn?1:-1);if(turningOn&&a){const after=(a.steps||[]).map(st=>st.id===stepId?{...st,done:true}:st);if(after.length>0&&after.every(st=>st.done))completeGoalAnim(goalId,"monthly");}};
+  const toggleMonthlyStep=(goalId,stepId)=>{const a=aspirations.find(x=>x.id===goalId);const s=a&&(a.steps||[]).find(st=>st.id===stepId);const turningOn=s?!s.done:true;if(turningOn)flashChecked(stepId);setAspirations(p=>p.map(x=>x.id===goalId?{...x,steps:(x.steps||[]).map(st=>st.id===stepId?{...st,done:!st.done}:st),lastProgress:turningOn?dk(now):x.lastProgress}:x));logFocusCompletion(turningOn?1:-1);/* completion animation + completedOn handled centrally by the completion effect */};
   const toggleMonthlyAction=(goalId)=>{const on=!!(checks[dk(now)]||{})[goalId];if(!on)flashChecked(goalId);setChecks(p=>({...p,[dk(now)]:{...(p[dk(now)]||{}),[goalId]:!on}}));logFocusCompletion(on?-1:1);if(!on)celebrateGoal();};
 
   // Graduation check — runs when aspirationProgress updates
@@ -1503,7 +1551,7 @@ export default function Dashboard(){
         wkCount.forEach(g=>{body+=bar(g.text,Math.round((g.progress||0)/g.target*100),amber,`${g.progress||0}/${g.target}`);});}
       if(outcome.length||measurable.length||habitG.length){body+=`<div style="font-size:11px;font-weight:700;color:${purple};text-transform:uppercase;letter-spacing:0.06em;margin:16px 0 8px">Monthly</div>`;
         outcome.forEach(a=>{const t=(a.steps||[]).length,d=(a.steps||[]).filter(s=>s.done).length;body+=bar(a.text,t?Math.round(d/t*100):0,purple,`${d}/${t} steps`);});
-        measurable.forEach(a=>{const g=a.totalHours||0,h=a.hoursLogged||0;body+=bar(a.text,g?Math.round(h/g*100):0,purple,`${h}/${g} hrs`);});
+        measurable.forEach(a=>{const g=a.totalHours||0,h=goalDone(a);body+=bar(a.text,g?Math.round(h/g*100):0,purple,`${h}/${g} hrs`);});
         habitG.forEach(a=>{body+=bar(a.text+" (habit)",0,purple,`${a.weeklyPace||5}×/wk pace`);});}
     }
 
@@ -2346,7 +2394,7 @@ ${body}
     const plans={};
     aspirations.filter(a=>a.goalType==="measurable"&&!a.graduated).forEach(a=>{
       const total=Number(a.totalHours)||0;
-      const done=Number(a.hoursLogged)||0;
+      const done=total>0?Math.min(total,goalDone(a)):goalDone(a);
       const remaining=Math.max(0,total-done);
       const pct=total>0?Math.min(100,Math.round(done/total*100)):0;
       // Deadline: explicit, else end of the current month.
@@ -2374,23 +2422,34 @@ ${body}
   // DERIVED (not stored) so they can never drift out of sync or duplicate. Check state
   // lives in `checks`, which already persists per-day.
   const goalFocusTasks=useMemo(()=>{
-    const out=[];
+    const out=[];const tkn=dk(now);
     aspirations.filter(a=>a.goalType==="measurable"&&!a.graduated).forEach(a=>{
       const pl=goalPlan[a.id];
-      if(!pl||pl.remaining<=0)return;
-      out.push({id:"gt_"+a.id,goalId:a.id,text:a.text,hours:pl.perDay,total:pl.total,done:pl.done,pct:pl.pct});
+      if(!pl)return;
+      // Completed on an earlier day → gone (clean slate). Completed today → stays, shown struck.
+      if(a.completedOn&&a.completedOn!==tkn)return;
+      if(!a.completedOn&&pl.remaining<=0)return;
+      out.push({id:"gt_"+a.id,goalId:a.id,text:a.text,hours:pl.perDay,total:pl.total,done:pl.done,pct:pl.pct,goalComplete:a.completedOn===tkn});
     });
     return out;
-  },[aspirations,goalPlan]);
+  },[aspirations,goalPlan,now]);
   const toggleGoalTask=(t)=>{
     const key=dk(now);
     const on=!!(checks[key]||{})[t.id];
     if(!on){
       flashChecked(t.id);
-      logGoalHours(t.goalId,t.hours);   // checking it off logs the day's hours
+      // Idempotent: record this day's hours in taskLog[key]. Re-checking the same day overwrites
+      // the same key (never adds), so toggling can't inflate progress (fixes the creep bug).
+      setAspirations(p=>p.map(a=>{
+        if(a.id!==t.goalId)return a;
+        // Idempotent per-day record. Completion animation + completedOn are handled centrally by
+        // the completion effect, so both measurable and outcome goals animate the same way.
+        return{...a,taskLog:{...(a.taskLog||{}),[key]:t.hours},lastProgress:key};
+      }));
       logFocusCompletion(1);
     }else{
-      logGoalHours(t.goalId,-t.hours);
+      // Unchecking deletes exactly this day's recorded hours — returns to the prior value precisely.
+      setAspirations(p=>p.map(a=>{if(a.id!==t.goalId)return a;const tl={...(a.taskLog||{})};delete tl[key];return{...a,taskLog:tl};}));
       logFocusCompletion(-1);
     }
     setChecks(p=>({...p,[key]:{...(p[key]||{}),[t.id]:!on}}));
@@ -2405,7 +2464,7 @@ ${body}
   // A goal is "done" when it hits 100%. Done goals leave the active list and move to Completed.
   const isWeeklyDone=(g)=>{const st=g.steps||[];return st.length?st.every(x=>x.done):(g.target>0&&(g.current||0)>=g.target);};
   const isMonthlyDone=(a)=>{
-    if(a.goalType==="measurable")return (Number(a.totalHours)||0)>0&&(Number(a.hoursLogged)||0)>=(Number(a.totalHours)||0);
+    if(a.goalType==="measurable")return (Number(a.totalHours)||0)>0&&goalDone(a)>=(Number(a.totalHours)||0);
     const st=a.steps||[];if(st.length)return st.every(x=>x.done);
     if(a.goalType==="check")return !!a.done;
     return false;
@@ -2467,7 +2526,7 @@ ${body}
     if(goalPeriod.month!==gpMonthKey){
       const snap={};
       aspirations.filter(a=>!a.graduated).forEach(a=>{
-        snap[a.id]={text:a.text,done:Number(a.hoursLogged)||0,total:Number(a.totalHours)||0};});
+        snap[a.id]={text:a.text,done:goalDone(a),total:Number(a.totalHours)||0};});
       setGoalHistory(p=>({...p,["m_"+goalPeriod.month]:snap}));
       // Monthly goals whose deadline has passed are retired; the carryover prompt already
       // offered to roll their remaining hours into a fresh goal for this month.
@@ -2530,11 +2589,10 @@ ${body}
   };
   const logGoalHours=(id,delta)=>setAspirations(p=>p.map(a=>{
     if(a.id!==id)return a;
-    const total=Number(a.totalHours)||0;
-    const next=Math.max(0,Math.round(((Number(a.hoursLogged)||0)+delta)*10)/10);
-    const capped=total>0?Math.min(total,next):next;
-    if(total>0&&capped>=total&&(Number(a.hoursLogged)||0)<total)completeGoalAnim(id,"monthly");
-    return{...a,hoursLogged:capped,lastProgress:delta>0?dk(now):a.lastProgress};
+    // Manual +/- hours are stored separately in hoursLogged; task-day completions live in taskLog.
+    // Completion animation + completedOn are handled centrally by the completion effect.
+    const nextManual=Math.max(0,Math.round(((Number(a.hoursLogged)||0)+delta)*10)/10);
+    return{...a,hoursLogged:nextManual,lastProgress:delta>0?dk(now):a.lastProgress};
   }));
   // ── Smart suggestions: which goals are stalled or behind pace, so they feel alive ──
   const goalSuggestions=useMemo(()=>{
@@ -2546,7 +2604,7 @@ ${body}
         if(days>=7)out[a.id]={txt:`No progress in ${days} days`,tone:"warn"};}
       // pace vs deadline for measurable (hours) goals
       if(a.goalType==="measurable"&&a.deadline){
-        const total=Number(a.totalHours)||0,done=Number(a.hoursLogged)||0,left=total-done;
+        const total=Number(a.totalHours)||0,done=goalDone(a),left=total-done;
         const daysLeft=Math.ceil((new Date(a.deadline)-today)/86400000);
         if(left>0&&daysLeft>0&&total>0){
           const created=new Date(a.created||a.createdOn||dk(now));
@@ -3216,7 +3274,8 @@ ${body}
       <div onClick={()=>handleCheck(t)} style={{position:"relative",zIndex:2,width:big?22:20,height:big?22:20,borderRadius:4,flexShrink:0,border:`1.5px solid ${on?C.greenBright:C.textDim}`,background:on?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:big?13:11,fontWeight:800,cursor:"pointer",transition:"all 0.3s ease"}}>{on&&"✓"}</div>
       {t.diff&&DIFF[t.diff]&&<div style={{position:"relative",zIndex:2,width:4,height:big?26:20,borderRadius:2,background:DIFF[t.diff].color,flexShrink:0,opacity:on?0.4:1}}/>}
       <span onClick={()=>handleCheck(t)} style={{position:"relative",zIndex:2,flex:1,fontSize:big?15:13,fontWeight:500,fontFamily:big?FN.h:FN.b,fontStyle:big?"italic":"normal",color:on?C.textDim:C.text,cursor:"pointer",transition:"color 0.4s ease"}}>{t.text}</span>
-      {t.diff&&DIFF[t.diff]&&<span style={{position:"relative",zIndex:2,fontSize:9,fontWeight:700,fontFamily:FN.m,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 7px",flexShrink:0,opacity:on?0.5:1}}>{DIFF[t.diff].label}</span>}
+      {t.experimental&&(()=>{const st=habitStreakFor(t.id);return(<span style={{position:"relative",zIndex:2,display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}><span style={{fontSize:8.5,fontWeight:800,color:C.accent,background:`${C.accent}1F`,border:`1px solid ${C.accent}55`,borderRadius:5,padding:"2px 6px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.05em"}}>🧪 Test</span><span style={{fontSize:9.5,fontWeight:800,color:st>=1?"#E8A33D":C.textDim,fontFamily:FN.m}}>{st}/30</span></span>);})()}
+      {!t.experimental&&t.diff&&DIFF[t.diff]&&<span style={{position:"relative",zIndex:2,fontSize:9,fontWeight:700,fontFamily:FN.m,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 7px",flexShrink:0,opacity:on?0.5:1}}>{DIFF[t.diff].label}</span>}
       {t.proof&&<svg style={{position:"relative",zIndex:2}} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>}
       {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}} style={{position:"relative",zIndex:2,background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 6px"}}>edit</button>}
     </div>
@@ -3352,7 +3411,7 @@ ${body}
             <div style={{...lbl,marginBottom:4}}>Plan this week</div>
             <div style={{fontSize:11,color:C.textDim,marginBottom:16,lineHeight:1.5}}>Set the hours you want to put toward each goal this week. This becomes your target — daily focus tasks pull from it.</div>
             {goals.length===0?<div style={{fontSize:12,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,textAlign:"center",padding:20}}>No hour-based goals yet.</div>:
-            goals.map(a=>{const pl=goalPlan[a.id];const rem=pl?pl.remaining:(Number(a.totalHours)||0)-(Number(a.hoursLogged)||0);const v=Number(planDraft[a.id])||0;return(
+            goals.map(a=>{const pl=goalPlan[a.id];const rem=pl?pl.remaining:(Number(a.totalHours)||0)-goalDone(a);const v=Number(planDraft[a.id])||0;return(
               <div key={a.id} style={{padding:"12px 0",borderTop:`1px solid ${C.hairline}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
                   <span style={{fontSize:13,fontWeight:600,color:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{a.text}</span>
@@ -3531,8 +3590,8 @@ ${body}
           // Full-bleed month grid: label(140) + %(60) + streak(40) + side padding(~110) reserved; the rest
           // is divided across the month's days so day 31 and the % column reach the right edge.
           const LABEL_W=gridExpanded?140:100, PCT_W=60, STREAK_W=40;
-          const avail=(typeof window!=="undefined"?window.innerWidth:1200)-LABEL_W-PCT_W-STREAK_W-110;
-          const cellW=gridExpanded?Math.max(28,Math.floor(avail/daysInMonth)):Math.floor(((typeof window!=="undefined"?window.innerWidth:390)-200)/7);
+          const avail=vw-LABEL_W-PCT_W-STREAK_W-110;
+          const cellW=gridExpanded?Math.max(28,Math.floor(avail/daysInMonth)):Math.floor((vw-200)/7);
           const morningItems=activeTodos(dk(now)).filter(t=>t.grp==="morning");
           const nightItems=activeTodos(dk(now)).filter(t=>t.grp==="night");
           const generalItems=activeTodos(dk(now)).filter(t=>t.grp==="general");
@@ -3577,6 +3636,7 @@ ${body}
                   <div style={{width:LABEL_W,flexShrink:0,display:"flex",alignItems:"center",gap:4,paddingRight:4}}>
                     {isGoalDerived&&<div style={{width:4,height:4,borderRadius:"50%",background:C.accent,flexShrink:0}}/>}
                     {isGraduated&&<div style={{width:4,height:4,borderRadius:"50%",background:C.green,flexShrink:0}}/>}
+                    {t.experimental&&<span style={{fontSize:10,flexShrink:0}} title="Testing — graduates at a 30-day streak">🧪</span>}
                     <span style={{fontSize:13.5,fontWeight:600,color:atRisk?C.red:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{t.text||t.dailyAction}</span>
                     {atRisk&&<span style={{fontSize:7,color:C.red,fontWeight:800}}>!</span>}
                   </div>
@@ -3821,8 +3881,8 @@ ${body}
               {/* #4 — auto-generated from your hour-based goals (no manual duplication) */}
               {goalFocusTasks.length>0&&<>
                 <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color:FOCUS_PURPLE,textTransform:"uppercase",letterSpacing:"0.12em"}}>From your goals</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{goalFocusTasks.length}</span></div>
-                {goalFocusTasks.map(t=>{const done=!!(checks[dk(now)]||{})[t.id];const flash=justChecked[t.id];return(
-                  <div key={t.id} onClick={()=>toggleGoalTask(t)} className={`task-row${flash?" just-checked":""}`} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${FOCUS_PURPLE}`,cursor:"pointer"}}>
+                {goalFocusTasks.map(t=>{const done=!!(checks[dk(now)]||{})[t.id]||t.goalComplete;const flash=justChecked[t.id];return(
+                  <div key={t.id} onClick={()=>{if(!t.goalComplete)toggleGoalTask(t);}} className={`task-row${flash?" just-checked":""}`} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${t.goalComplete?C.greenBright:C.hairline}`,borderLeft:`3px solid ${t.goalComplete?C.greenBright:FOCUS_PURPLE}`,cursor:t.goalComplete?"default":"pointer",opacity:t.goalComplete?0.75:1}}>
                     <div style={{width:20,height:20,borderRadius:4,flexShrink:0,border:`1.5px solid ${done?C.greenBright:C.textDim}`,background:done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:11,fontWeight:800,animation:flash?"checkStamp 0.4s ease":"none"}}>{done&&"✓"}</div>
                     <div style={{flex:1,minWidth:0}}>
                       <span style={{fontSize:9,fontFamily:FN.m,color:FOCUS_PURPLE,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Goal · {t.hours}h today</span>
@@ -3867,12 +3927,12 @@ ${body}
                     </GoalCard>);
                   }
                   // habit / measurable daily action — single checkbox row (no sub-steps to expand)
-                  const flash=justChecked[goal.id];
-                  return(<div key={goal.id} onClick={()=>toggleMonthlyAction(goal.id)} className={`task-row${flash?" just-checked":""}`} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 18px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,borderLeft:`3px solid ${FOCUS_PURPLE}`,cursor:"pointer"}}>
-                    <div style={{width:22,height:22,borderRadius:4,flexShrink:0,border:`1.5px solid ${C.textDim}`,display:"flex",alignItems:"center",justifyContent:"center"}}/>
+                  const flash=justChecked[goal.id];const done=goal.complete;const fullyDone=!!goal.completedOn;
+                  return(<div key={goal.id} onClick={()=>{if(!fullyDone)toggleMonthlyAction(goal.id);}} className={`task-row${flash?" just-checked":""}`} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 18px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${done?C.greenBright:C.hairline}`,borderLeft:`3px solid ${done?C.greenBright:FOCUS_PURPLE}`,cursor:fullyDone?"default":"pointer",opacity:done?0.75:1}}>
+                    <div style={{width:22,height:22,borderRadius:4,flexShrink:0,border:`1.5px solid ${done?C.greenBright:C.textDim}`,background:done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:12,fontWeight:800}}>{done&&"✓"}</div>
                     <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:2}}>
                       <span style={{fontSize:9,fontFamily:FN.m,color:FOCUS_PURPLE,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Monthly{goal.implementationIntention?` · ${goal.implementationIntention}`:""}</span>
-                      <span style={{fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:C.text}}>{goal.actionText}</span>
+                      <span style={{position:"relative",display:"inline-block",alignSelf:"flex-start",fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:done?C.textDim:C.text}}>{goal.actionText}<span className={flash?"strike-line animate":"strike-line"} style={done?undefined:{display:"none"}}/></span>
                     </div>
                   </div>);
                 })}
@@ -4333,39 +4393,57 @@ ${body}
                 </span>
               </div>
               <div ref={goalCalRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",padding:"4px 0"}}>
-                {days.map((dy,i)=>(
-                  <div key={i} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,
-                    background:dy.hits>0?`${C.greenBright}1F`:"transparent",
-                    border:dy.hits>0?`1px solid ${C.greenBright}`:dy.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,
-                    borderLeft:dy.isMonthStart?`2px solid ${FOCUS_PURPLE_G}`:dy.isWeekStart?`2px solid ${FOCUS_ORANGE_G}`:undefined,
+                {days.map((dy,i)=>{const sel=(goalViewDay||dk(now))===dy.key;const hasDone=aspirations.some(a=>!a.graduated&&a.completedOn===dy.key);return(
+                  <div key={i} onClick={()=>!dy.isFuture&&setGoalViewDay(dy.key===dk(now)?null:dy.key)} className={dy.isFuture?"":"press"} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:dy.isFuture?"default":"pointer",
+                    background:sel?C.accent:dy.hits>0?`${C.greenBright}1F`:"transparent",
+                    border:sel?`2px solid ${C.accent}`:dy.hits>0?`1px solid ${C.greenBright}`:dy.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,
+                    borderLeft:sel?`2px solid ${C.accent}`:dy.isMonthStart?`2px solid ${FOCUS_PURPLE_G}`:dy.isWeekStart?`2px solid ${FOCUS_ORANGE_G}`:undefined,
                     opacity:dy.isFuture?0.5:1}}>
-                    <div style={{fontSize:9,fontWeight:600,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{dy.dayName}</div>
-                    <div className="hero-num" style={{fontSize:16,color:dy.isToday?C.accent:C.text}}>{dy.dayNum}</div>
-                    <div style={{fontFamily:FN.m,fontSize:8,fontWeight:700,color:dy.hits>0?C.greenBright:C.textDim,marginTop:1,whiteSpace:"nowrap",overflow:"hidden"}}>
-                      {dy.isMonthEndDay?"M•END":dy.isWeekEndDay?"W•END":dy.hits>0?dy.hits:"·"}
+                    <div style={{fontSize:9,fontWeight:600,color:sel?C.btnText:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{dy.dayName}</div>
+                    <div className="hero-num" style={{fontSize:16,color:sel?C.btnText:dy.isToday?C.accent:C.text}}>{dy.dayNum}</div>
+                    <div style={{fontFamily:FN.m,fontSize:8,fontWeight:700,color:sel?C.btnText:hasDone?GOLD:dy.hits>0?C.greenBright:C.textDim,marginTop:1,whiteSpace:"nowrap",overflow:"hidden"}}>
+                      {hasDone?"✦":dy.isMonthEndDay?"M•END":dy.isWeekEndDay?"W•END":dy.hits>0?dy.hits:"·"}
                     </div>
                   </div>
-                ))}
+                );})}
               </div>
               <div style={{display:"flex",gap:12,marginTop:7}}>
                 <span style={{fontSize:8,color:C.textDim,display:"flex",alignItems:"center",gap:4}}><span style={{width:2,height:9,background:FOCUS_ORANGE_G,display:"inline-block"}}/>Week starts</span>
                 <span style={{fontSize:8,color:C.textDim,display:"flex",alignItems:"center",gap:4}}><span style={{width:2,height:9,background:FOCUS_PURPLE_G,display:"inline-block"}}/>Month starts</span>
               </div>
             </div>);})()}
-          <div style={{display:"flex",gap:4,marginBottom:16,flexWrap:"wrap"}}>{[{k:"monthly",l:"Monthly"},{k:"weekly",l:"Weekly"},{k:"focus",l:"Focus"},{k:"habits",l:"Habits"}].map(t=>(<button key={t.k} onClick={()=>setGTab(t.k)} className="pill-btn" style={pill(gTab===t.k)}>{t.l}</button>))}</div>
+          <div style={{display:"flex",gap:10,marginBottom:18}}>{[{k:"monthly",l:"Long-Term Goals"},{k:"focus",l:"Focus"},{k:"habits",l:"Habits"}].map(t=>{const on=gTab===t.k;return(<button key={t.k} onClick={()=>setGTab(t.k)} style={{flex:1,padding:"14px 0",borderRadius:14,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",lineHeight:1.15,transition:"all 0.2s ease"}}>{t.l}</button>);})}</div>
 
           {/* ─── MONTHLY GOALS ─── */}
           {gTab==="monthly"&&<div>
-            <button onClick={()=>setShowGoalCreator(true)} className="press" style={{...btnB,width:"100%",padding:"14px 0",fontSize:12,marginBottom:14}}>+ New Monthly Goal</button>
+            <button onClick={()=>setShowGoalCreator(true)} className="press" style={{...btnB,width:"100%",padding:"14px 0",fontSize:12,marginBottom:14}}>+ New Long-Term Goal</button>
             {aspirations.filter(a=>!a.graduated).length===0&&<div style={{textAlign:"center",padding:30,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:14}}>No goals yet. What are you working toward?</div>}
-            {aspirations.filter(a=>!a.graduated&&(!isMonthlyDone(a)||completingGoal[a.id])).map(a=>{const p=aspirationProgress.find(x=>x.id===a.id);const pct=p?.pct||0;const typeBadge=a.goalType==="measurable"?"📐":a.goalType==="outcome"?"🎯":"🔄";return(
+            {aspirations.filter(a=>!a.graduated).map(a=>{const selDay=goalViewDay||dk(now);
+              // Completed goals stay in place, struck through, on their completion day (and when the
+              // calendar navigates back to it). On any later day they drop out of the active list —
+              // a clean slate — without being deleted. Same strike-sweep + dim as a Focus task.
+              if(a.completedOn&&a.completedOn!==selDay&&!completingGoal[a.id])return null;
+              if(a.completedOn){const flash=!!completingGoal[a.id];const steps=(a.steps||[]);return(
+                <SwipeRow key={a.id} onDelete={()=>removeGoal(a.id)} bg={C.surface} padY={14}>
+                  <div style={{display:"flex",alignItems:"center",gap:12,opacity:0.72,transition:"opacity 0.5s ease"}}>
+                    <div style={{width:20,height:20,borderRadius:4,background:C.greenBright,display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:11,fontWeight:800,flexShrink:0}}>✓</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <span className="strike-wrap"><span style={{fontSize:14,fontWeight:600,color:C.textDim}}>{a.text}</span><span className={flash?"strike-line animate":"strike-line"}/></span>
+                      <div style={{fontSize:9,color:GOLD,fontFamily:FN.m,marginTop:3}}>{a.goalType==="measurable"?`${goalDone(a)}/${a.totalHours}h complete`:a.goalType==="outcome"?`${steps.length}/${steps.length} steps complete`:"complete"}</div>
+                    </div>
+                    <span style={{fontSize:13,color:GOLD,fontWeight:800,flexShrink:0}}>✦</span>
+                  </div>
+                  {a.goalType==="outcome"&&steps.length>0&&<div style={{marginTop:8,paddingLeft:32}}>{steps.map((s,si)=>(<div key={s.id||si} style={{fontSize:10.5,color:C.textDim,padding:"2px 0",display:"flex",alignItems:"center",gap:6}}><span style={{color:GOLD,fontSize:9}}>✓</span><span style={{textDecoration:"line-through"}}>{s.text}</span></div>))}</div>}
+                </SwipeRow>
+              );}
+              const p=aspirationProgress.find(x=>x.id===a.id);const pct=p?.pct||0;const typeBadge=a.goalType==="measurable"?"📐":a.goalType==="outcome"?"🎯":"🔄";return(
               <SwipeRow key={a.id} onDelete={()=>removeGoal(a.id)} bg={C.surface} padY={14}>
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:a.goalType==="habit"||a.goalType==="measurable"?8:0}}>
                   <span style={{fontSize:14}}>{typeBadge}</span>
                   <div style={{flex:1}}>
                     <div style={{fontSize:14,fontWeight:600,color:C.text}}>{a.text}</div>
                     <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:2}}>
-                      {a.goalType==="measurable"&&(()=>{const pl=goalPlan[a.id];return pl?`${pl.done}/${pl.total}h · ${pl.pct}%`:`${a.hoursLogged||0}/${a.totalHours}h`;})()}
+                      {a.goalType==="measurable"&&(()=>{const pl=goalPlan[a.id];return pl?`${pl.done}/${pl.total}h · ${pl.pct}%`:`${goalDone(a)}/${a.totalHours}h`;})()}
                       {a.goalType==="outcome"&&`${(a.steps||[]).filter(s=>s.done).length}/${(a.steps||[]).length} steps`}
                       {a.goalType==="habit"&&`${p?.daysHit||0}/${a.targetDays} days · ${p?.onPace?"on pace":"behind"}`}
                     </div>
@@ -4404,19 +4482,7 @@ ${body}
                 </div>);})}</div></>);})()}
               </SwipeRow>
             );})}
-            {(()=>{const done=aspirations.filter(a=>!a.graduated&&isMonthlyDone(a)&&!completingGoal[a.id]);if(done.length===0)return null;return(<>
-              <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color:GOLD,textTransform:"uppercase",letterSpacing:"0.12em"}}>Completed this month</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{done.length}</span></div>
-              {done.map(a=>(
-                <div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:6,borderRadius:10,background:C.surfaceDim,border:`1px solid ${GOLD}44`,borderLeft:`3px solid ${GOLD}`,opacity:0.85}}>
-                  <span style={{color:GOLD,fontSize:13,fontWeight:800}}>✦</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12.5,color:C.textDim,textDecoration:"line-through"}}>{a.text}</div>
-                    {a.goalType==="measurable"&&<div style={{fontSize:9,color:GOLD,fontFamily:FN.m,marginTop:2}}>{a.hoursLogged}/{a.totalHours}h complete</div>}
-                  </div>
-                  <button onClick={()=>removeGoal(a.id)} title="Delete" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:"2px 5px"}}>🗑</button>
-                </div>
-              ))}
-            </>);})()}
+            {(()=>{const selDay=goalViewDay||dk(now);const isToday=selDay===dk(now);const anyActive=aspirations.some(a=>!a.graduated&&!a.completedOn);const doneHere=aspirations.some(a=>!a.graduated&&a.completedOn===selDay);if(isToday||anyActive||doneHere)return null;return(<div style={{textAlign:"center",padding:24,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",fontSize:13}}>Nothing completed on {fd(selDay)}.</div>);})()}
           </div>}
 
           {/* ─── WEEKLY (auto-derived) ─── */}
@@ -4547,22 +4613,24 @@ ${body}
             {/* Daily Rituals — morning/evening/general recurring tasks */}
             <div style={{marginTop:28}}>
               <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Daily Rituals</div>
-              {["morning","night","general"].map(grp=>{const items=todos.filter(t=>t.grp===grp&&!t.removedOn);return(
+              {["morning","night"].map(grp=>{const items=todos.filter(t=>t.grp===grp&&!t.removedOn);return(
                 <div key={grp} style={{marginBottom:16}}>
                   <div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6,paddingLeft:2}}>{grp==="night"?"Evening":grp.charAt(0).toUpperCase()+grp.slice(1)}</div>
-                  {items.map(t=>(<SwipeRow key={t.id} onDelete={()=>removeHabit(t.id)} bg={C.surface} padY={11}>
-                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  {items.map(t=>{const exp=t.experimental;const st=exp?habitStreakFor(t.id):0;return(<SwipeRow key={t.id} onDelete={()=>removeHabit(t.id)} bg={exp?`${C.accent}0D`:C.surface} border={exp?`1px solid ${C.accent}55`:undefined} padY={11}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <span style={{fontSize:13,fontWeight:500,flex:1,color:C.text}}>{t.text}</span>
+                      {exp&&<span style={{fontSize:8.5,fontWeight:800,color:C.accent,background:`${C.accent}1F`,border:`1px solid ${C.accent}55`,borderRadius:5,padding:"2px 7px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",whiteSpace:"nowrap"}}>🧪 Testing</span>}
+                      {exp&&<span style={{fontSize:10,fontWeight:800,color:st>=1?"#E8A33D":C.textDim,fontFamily:FN.m,whiteSpace:"nowrap"}}>{st}/30🔥</span>}
                       {t.proof&&<span style={{fontSize:12,opacity:0.6}}>📷</span>}
-                      {t.diff&&DIFF[t.diff]&&<span style={{fontSize:9,fontWeight:700,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 6px",fontFamily:FN.m}}>{DIFF[t.diff].label}</span>}
+                      {!exp&&t.diff&&DIFF[t.diff]&&<span style={{fontSize:9,fontWeight:700,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 6px",fontFamily:FN.m}}>{DIFF[t.diff].label}</span>}
                       <button onClick={()=>openEdit(t,"todos")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:11,fontFamily:FN.b}}>edit</button>
                     </div>
-                  </SwipeRow>))}
+                  </SwipeRow>);})}
                   {addForm===grp?
                     <div style={{background:C.surfaceDim,borderRadius:12,padding:14,marginTop:6,border:`1px solid ${C.hairline}`}}>
                       <input value={fText} onChange={e=>setFText(e.target.value)} placeholder="New task..." style={{...inp,marginBottom:10}} autoFocus/>
                       <div style={{display:"flex",gap:4,marginBottom:8}}>{["easy","medium","hard"].map(d=>(<button key={d} onClick={()=>setFDiff(d)} style={{...pill(fDiff===d,DIFF[d].color),flex:1,fontSize:11}}>{DIFF[d].label}</button>))}</div>
-                      <div style={{display:"flex",gap:4,marginBottom:8}}>{["morning","night","general"].map(g=>(<button key={g} onClick={()=>setFGrp(g)} style={{...pill(fGrp===g),flex:1,fontSize:11,textTransform:"capitalize"}}>{g==="night"?"Evening":g}</button>))}</div>
+                      <div style={{display:"flex",gap:4,marginBottom:8}}>{["morning","night"].map(g=>(<button key={g} onClick={()=>setFGrp(g)} style={{...pill(fGrp===g),flex:1,fontSize:11,textTransform:"capitalize"}}>{g==="night"?"Evening":g}</button>))}</div>
                       <div style={{display:"flex",gap:4,marginBottom:10}}><button onClick={()=>setFProof(false)} style={{...pill(!fProof),flex:1,fontSize:11}}>📷 No</button><button onClick={()=>setFProof(true)} style={{...pill(fProof,C.blue),flex:1,fontSize:11}}>📸 Yes</button></div>
                       <div style={{display:"flex",gap:8}}><button onClick={submitAddForm} style={{...btnB,flex:1}}>Add</button><button onClick={()=>setAddForm(null)} style={btnG}>Cancel</button></div>
                     </div>
@@ -4676,7 +4744,7 @@ ${body}
             {[
               {k:"measurable",icon:"📐",title:"Measurable",desc:"Has a deadline and estimated hours. Study for an exam, complete a project.",ex:"Study 50 hours by May 15"},
               {k:"outcome",icon:"🎯",title:"Outcome",desc:"A result you want to achieve, broken into actionable steps.",ex:"Get an offer from Morgan Stanley"},
-              {k:"habit",icon:"🔄",title:"Habit-Building",desc:"A behavior you want to make automatic over time.",ex:"Read daily, learn Spanish, drink more water"},
+              {k:"habit",icon:"🔄",title:"Habit-Building",desc:"Test a new daily habit. Added to your daily habits now; graduates to permanent after a 30-day streak.",ex:"Read daily, stretch every morning"},
             ].map(t=>(<button key={t.k} onClick={()=>{setGcType(t.k);setGcStep(2);}} className="press" style={{display:"block",width:"100%",textAlign:"left",padding:"16px 18px",marginBottom:8,borderRadius:12,background:C.surfaceDim,border:`1px solid ${C.hairline}`,cursor:"pointer",transition:"all 0.2s ease"}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}><span style={{fontSize:18}}>{t.icon}</span><span style={{fontSize:14,fontWeight:700,color:C.text}}>{t.title}</span></div>
               <div style={{fontSize:11,color:C.textDim,marginBottom:4}}>{t.desc}</div>
@@ -4698,26 +4766,23 @@ ${body}
             {gcType==="outcome"&&<div>
               <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>Break it into 2-4 actionable steps:</div>
               {gcSteps.map((s,i)=>(<input key={i} value={s} onChange={e=>{const n=[...gcSteps];n[i]=e.target.value;setGcSteps(n);}} placeholder={`Step ${i+1}...`} style={{...inp,marginBottom:8}}/>))}
-              {gcSteps.length<5&&<button onClick={()=>setGcSteps(p=>[...p,""])} style={{...btnG,width:"100%",fontSize:10,marginBottom:8}}>+ Add step</button>}
+              {gcSteps.length<20&&<button onClick={()=>setGcSteps(p=>[...p,""])} style={{...btnG,width:"100%",fontSize:10,marginBottom:8}}>+ Add step</button>}
+              {gcSteps.length>=20&&<div style={{fontSize:10,color:C.textDim,textAlign:"center",fontStyle:"italic",marginBottom:8}}>Maximum 20 steps</div>}
             </div>}
             {gcType==="habit"&&<div>
-              <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>How many days per month do you want to hit?</div>
-              <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
-                {[{l:"Few times/wk",v:12},{l:"Most days",v:22},{l:"Every day",v:28}].map(p=>(<button key={p.v} onClick={()=>setGcTarget(String(p.v))} style={{...pill(gcTarget===String(p.v)),fontSize:11}}>{p.l} ({p.v})</button>))}
+              <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>This becomes a <strong style={{color:C.text}}>daily</strong> habit. When will you do it?</div>
+              <div style={{display:"flex",gap:8,marginBottom:16}}>
+                {[{k:"morning",l:"☀️ Morning"},{k:"night",l:"🌙 Evening"}].map(s=>{const on=gcSlot===s.k;return(<button key={s.k} onClick={()=>setGcSlot(s.k)} style={{flex:1,padding:"13px 0",borderRadius:12,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:13,fontWeight:800,fontFamily:FN.b,cursor:"pointer",transition:"all 0.2s ease"}}>{s.l}</button>);})}
               </div>
-              <input type="number" value={gcTarget} onChange={e=>setGcTarget(e.target.value)} placeholder="Or type a custom number" style={{...inp,marginBottom:12}}/>
-              <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>What's the daily action?</div>
+              <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Daily action (optional — defaults to the title):</div>
               <input value={gcAction} onChange={e=>setGcAction(e.target.value)} placeholder="e.g. Read 30 min, Study Spanish 20 min" style={{...inp,marginBottom:14}}/>
-              {/* ─── IMPLEMENTATION INTENTION — required for habit goals ─── */}
-              <div style={{padding:"12px 14px",background:C.accentSoft,borderRadius:10,border:`1px solid ${C.accentMed}`,marginBottom:14}}>
-                <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>When will you do this?</div>
-                <input value={gcIntention} onChange={e=>setGcIntention(e.target.value)} placeholder="e.g. after morning coffee, when I get home from class, before I open my laptop" style={{...inp,marginBottom:6,background:C.surface}}/>
-                <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,lineHeight:1.5,fontStyle:"italic"}}>A situational cue — not a time. Anchor it to something you already do.</div>
+              <div style={{padding:"12px 14px",background:C.accentSoft,borderRadius:10,border:`1px solid ${C.accentMed}`,marginBottom:4}}>
+                <div style={{fontSize:11,color:C.text,fontFamily:FN.m,lineHeight:1.55}}>It's added to your daily habits right away, marked <strong>Testing</strong>. Keep a <strong>30-day streak</strong> and it graduates into a permanent habit automatically.</div>
               </div>
             </div>}
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>setGcStep(1)} style={{...btnG,flex:1}}>Back</button>
-              <button onClick={submitGoal} disabled={gcType==="habit"&&!gcIntention.trim()} style={{...btnB,flex:2,opacity:(gcType==="habit"&&!gcIntention.trim())?0.4:1,cursor:(gcType==="habit"&&!gcIntention.trim())?"not-allowed":"pointer"}}>Create Goal</button>
+              <button onClick={submitGoal} style={{...btnB,flex:2}}>{gcType==="habit"?"Start Habit":"Create Goal"}</button>
             </div>
           </div>}
         </Overlay>
@@ -6185,7 +6250,7 @@ ${body}
         {editGoal?.kind==="weekly"&&<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Weekly Target</div><input type="number" min="1" value={egNum} onChange={e=>setEgNum(e.target.value)} style={numI} /></div>}
         {editGoal?.kind==="monthly"&&editGoal?.goal?.goalType==="habit"&&<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Target Days / Month</div><input type="number" min="1" max="31" value={egNum} onChange={e=>setEgNum(e.target.value)} style={numI} /></div>}
         {editGoal?.kind==="monthly"&&editGoal?.goal?.goalType==="measurable"&&<><div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Total Hours</div><input type="number" min="1" value={egNum} onChange={e=>setEgNum(e.target.value)} style={numI} /></div><div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Deadline</div><input type="date" value={egDeadline} onChange={e=>setEgDeadline(e.target.value)} style={{...inp,fontFamily:FN.m}} /></div></>}
-        {editGoal?.kind==="monthly"&&editGoal?.goal?.goalType==="outcome"&&<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Steps</div>{egSteps.map((s,si)=>(<div key={s.id||si} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}><input value={s.text||""} onChange={e=>setEgSteps(p=>p.map((x,i)=>i===si?{...x,text:e.target.value}:x))} placeholder={`Step ${si+1}`} style={{...inp,flex:1,padding:"9px 12px"}} /><button onClick={()=>setEgSteps(p=>p.filter((_,i)=>i!==si))} style={{...btnG,color:C.red,padding:"6px 10px"}}>×</button></div>))}<button onClick={()=>setEgSteps(p=>[...p,{id:uid(),text:"",done:false}])} style={{width:"100%",background:"transparent",border:`1px dashed ${C.hairline}`,borderRadius:8,padding:9,color:C.textDim,fontSize:11,fontWeight:600,cursor:"pointer",marginTop:2,textTransform:"uppercase",letterSpacing:"0.06em"}}>+ Add step</button></div>}
+        {editGoal?.kind==="monthly"&&editGoal?.goal?.goalType==="outcome"&&<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Steps</div>{egSteps.map((s,si)=>(<div key={s.id||si} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}><input value={s.text||""} onChange={e=>setEgSteps(p=>p.map((x,i)=>i===si?{...x,text:e.target.value}:x))} placeholder={`Step ${si+1}`} style={{...inp,flex:1,padding:"9px 12px"}} /><button onClick={()=>setEgSteps(p=>p.filter((_,i)=>i!==si))} style={{...btnG,color:C.red,padding:"6px 10px"}}>×</button></div>))}{egSteps.length<20&&<button onClick={()=>setEgSteps(p=>[...p,{id:uid(),text:"",done:false}])} style={{width:"100%",background:"transparent",border:`1px dashed ${C.hairline}`,borderRadius:8,padding:9,color:C.textDim,fontSize:11,fontWeight:600,cursor:"pointer",marginTop:2,textTransform:"uppercase",letterSpacing:"0.06em"}}>+ Add step</button>}{egSteps.length>=20&&<div style={{fontSize:10,color:C.textDim,textAlign:"center",fontStyle:"italic",marginTop:4}}>Maximum 20 steps</div>}</div>}
         <div style={{display:"flex",gap:8}}><button className="press" onClick={saveGoalEdit} style={{...btnB,flex:1,background:C.green}}>Save</button><button onClick={deleteGoalEdit} style={{...btnG,color:C.red}}>Delete</button></div>
       </Overlay>
 
