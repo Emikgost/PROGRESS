@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Brush, ReferenceLine } from "recharts";
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Brush, ReferenceLine } from "recharts";
 
 /* ═══ TOKENS ═══ */
 // Two palettes: DARK (navy editorial) and LIGHT (warm paper editorial). Both keep the same
@@ -57,7 +57,7 @@ const SANS="-apple-system,'SF Pro Text','Inter',system-ui,'Segoe UI',Roboto,Helv
 const DISP="-apple-system,'SF Pro Display','Inter',system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 const FN={h:DISP,b:SANS,m:SANS};
 // Smooth red→orange→yellow→green gradient by percent-to-goal (0=red, 100=green).
-const progressColor=(pct)=>{const p=Math.max(0,Math.min(100,pct||0));return `hsl(${Math.round((p/100)*130)},82%,45%)`;};
+const progressColor=(pct)=>`hsl(${ladderHue(pct)},82%,45%)`;
 let pC=p=>{const v=Math.max(0,Math.min(100,p||0));
   if(v>=90)return `hsl(${Math.round(100+((v-90)/10)*40)},72%,45%)`;      // 90-100  green
   if(v>=70)return `hsl(${Math.round(30+((v-70)/20)*25)},88%,52%)`;        // 70-90   orange -> yellow
@@ -74,7 +74,10 @@ let pctBg=p=>{if(p<=0)return "transparent";const v=Math.max(0,Math.min(100,p));c
 // the number brightens + bolds, and three thresholds add markers (50% border, 90%
 // accent hairline, 100% full accent ring). Same red→amber→green hue ramp as pctBg,
 // so every rung stays in one family — a perfect day is just the top of the ladder.
-const ladderHue=v=>v>=90?Math.round(100+((v-90)/10)*40):v>=70?Math.round(30+((v-70)/20)*25):Math.round((v/70)*18);
+// One smooth, continuous completion ramp: 0% = red (hue 0) → orange → yellow → green (hue ~132) at
+// 100%. A gentle power curve keeps low values red/orange and reaches green near the top, with NO
+// hue jumps at arbitrary thresholds. Every completion-% color in the app derives from this.
+const ladderHue=v=>Math.round(Math.pow(Math.max(0,Math.min(100,v||0))/100,0.92)*132);
 let dayLadder=p=>{
   const v=Math.max(0,Math.min(100,p||0));
   if(v<=0)return{fill:"transparent",border:`1px solid ${C.hairline}`,ring:"none",num:C.textDim,weight:600,perfect:false};
@@ -122,16 +125,11 @@ let Tip=({active,payload,label:lb})=>{if(!active||!payload?.length)return null;r
 function applyTheme(palette){
   C=palette;
   DIFF={easy:{pts:1,label:"Easy",color:C.green,bg:C.greenSoft},medium:{pts:3,label:"Med",color:C.blue,bg:C.blueSoft},hard:{pts:6,label:"Hard",color:C.orange,bg:C.orangeSoft}};
-  pC=p=>{const v=Math.max(0,Math.min(100,p||0));
-  if(v>=90)return `hsl(${Math.round(100+((v-90)/10)*40)},72%,45%)`;      // 90-100  green
-  if(v>=70)return `hsl(${Math.round(30+((v-70)/20)*25)},88%,52%)`;        // 70-90   orange -> yellow
-  return `hsl(${Math.round((v/70)*18)},80%,50%)`;                          // 0-70    red -> red-orange
-};
-  gB=p=>p>=80?`linear-gradient(90deg,${C.green},${C.greenBright})`:p>=50?`linear-gradient(90deg,${C.blue},${C.green})`:p>=25?`linear-gradient(90deg,${C.gold},${C.blue})`:`linear-gradient(90deg,${C.red},${C.gold})`;
-  pctBg=p=>{if(p<=0)return "transparent";const v=Math.max(0,Math.min(100,p));const a=C.mode==="light"?0.30:0.42;
-  const h=v>=90?Math.round(100+((v-90)/10)*40):v>=70?Math.round(30+((v-70)/20)*25):Math.round((v/70)*18);
-  return `hsla(${h},80%,50%,${a})`;
-};
+  // All completion-% colors ride the single smooth ladderHue ramp. Lightness is theme-aware so the
+  // value stays legible on both the near-black and cream backgrounds.
+  pC=p=>`hsl(${ladderHue(p)},${C.mode==="light"?80:82}%,${C.mode==="light"?40:56}%)`;
+  gB=p=>{const v=Math.max(0,Math.min(100,p||0));return `linear-gradient(90deg,hsl(${ladderHue(v*0.35)},82%,50%),hsl(${ladderHue(v)},82%,48%))`;};
+  pctBg=p=>{if(p<=0)return "transparent";const v=Math.max(0,Math.min(100,p));const a=C.mode==="light"?0.30:0.42;return `hsla(${ladderHue(v)},80%,50%,${a})`;};
   dayLadder=p=>{
     const v=Math.max(0,Math.min(100,p||0));
     if(v<=0)return{fill:"transparent",border:`1px solid ${C.hairline}`,ring:"none",num:C.textDim,weight:600,perfect:false};
@@ -288,6 +286,7 @@ input::placeholder,textarea::placeholder{color:var(--tdim);opacity:0.75}
 input:focus,textarea:focus,select:focus{border-color:var(--acc)!important;box-shadow:0 0 0 3px var(--acc-soft)}
 button{cursor:pointer}
 button:disabled{cursor:default}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:0.001ms!important;animation-iteration-count:1!important;transition-duration:0.001ms!important;scroll-behavior:auto!important}}
 `;
 
 /* ═══ SEED DATA ═══ */
@@ -347,7 +346,9 @@ const seedWH=[{id:"h6",date:"2026-03-15",split:"upper",exercises:[{name:"Bench P
 const seedBW=[{date:"2025-10-01",weight:72.5},{date:"2026-01-01",weight:74.5},{date:"2026-03-01",weight:75.2},{date:"2026-03-29",weight:75.8}];
 const seedTx={"2026-03-01":[{id:"t14",type:"out",amount:26.5,desc:"Sunday"}],"2026-03-06":[{id:"t16",type:"in",amount:30,desc:"Income"}]};
 const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000,focusTransferHour:22,
-  nwMin:0,nwTarget:1000,debtMax:1000,debtTarget:0,planDay:0};
+  nwMin:0,nwTarget:1000,debtMax:1000,debtTarget:0,planDay:0,
+  quickActions:["focus","workout","weight","journal"]}; // configurable + bar shortcut ids, in order
+const QA_DEFAULT=["focus","workout","weight","journal"]; // fallback when none saved
 
 // ─── Budget categories (spec's taxonomy) ───
 const TX_CATEGORIES=["Food","Transportation","Housing","Utilities","Entertainment","Shopping","Healthcare","Travel","Investments","Subscriptions","Income","Transfers","Other"];
@@ -969,6 +970,12 @@ export default function Dashboard(){
   // ─── Focus productivity log: {dateKey: count} — counts Daily Tasks + Weekly/Monthly step completions.
   // Deliberately separate from `checks` (habit tracking) so habit and focus metrics can never be combined. ───
   const[focusCompletionLog,setFocusCompletionLog]=useState({});
+  const[wantFocusInput,setWantFocusInput]=useState(false); // request to focus the Focus-task input after navigating
+  const[anRange,setAnRange]=useState("1M"); // Analytics · Consistency graph range
+  const[anGoalRange,setAnGoalRange]=useState("1M"); // Analytics · Goal Analytics focus-count range
+  const[anGoalSel,setAnGoalSel]=useState(null); // selected goal id in the long-term timeline
+  // The + "Focus Task" quick action routes here and asks the Focus-task input to take focus.
+  useEffect(()=>{if(!wantFocusInput)return;const id=setTimeout(()=>{try{const el=document.querySelector('[data-focusquick]');if(el)el.focus();}catch(e){}setWantFocusInput(false);},90);return()=>clearTimeout(id);},[wantFocusInput,tab,todaySub,structuredMode]);
   // ─── PDF / report export wizard ───
   const[showExport,setShowExport]=useState(false);
   const[exportStep,setExportStep]=useState(1);
@@ -1001,6 +1008,7 @@ export default function Dashboard(){
   // Goals redesign: the "General" habit category is retired. Migrate any existing general
   // rituals into Morning so their history (checks keyed by id) is preserved and nothing is hidden.
   useEffect(()=>{if(todos.some(t=>t.grp==="general"))setTodos(p=>p.map(t=>t.grp==="general"?{...t,grp:"morning"}:t));},[todos]);
+  // The + "Focus Task" quick action routes here and asks the Focus-task input to take focus.
   // Long-Term Goals: stamp completedOn the day a goal finishes (don't delete it), and clear it if the
   // goal is reopened. completedOn drives the active-vs-completed split and the calendar history view.
   useEffect(()=>{
@@ -1410,6 +1418,16 @@ export default function Dashboard(){
   const focusBestWeek=useMemo(()=>{const keys=Object.keys(focusCompletionLog).sort();let best=0;for(let i=0;i<keys.length;i++){const start=new Date(keys[i]);let sum=0;for(let d=0;d<7;d++){const k=dk(new Date(start.getFullYear(),start.getMonth(),start.getDate()+d));sum+=focusCompletionLog[k]||0;}best=Math.max(best,sum);}return best;},[focusCompletionLog]);
   const focusBestMonth=useMemo(()=>{const byMonth={};Object.entries(focusCompletionLog).forEach(([k,v])=>{const ym=k.slice(0,7);byMonth[ym]=(byMonth[ym]||0)+v;});return Object.values(byMonth).reduce((a,v)=>Math.max(a,v),0);},[focusCompletionLog]);
   const focusTrend14d=useMemo(()=>{const out=[];for(let i=13;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);out.push({date:`${d.getMonth()+1}/${d.getDate()}`,items:focusCompletionLog[dk(d)]||0});}return out;},[focusCompletionLog,now]);
+  // ─── Analytics shared series (same calc the PDF reuses). Local calendar days; null = no data (gap). ───
+  const RANGE_DAYS={"1W":7,"1M":30,"3M":90,"6M":180,"1Y":365};
+  const consistencySeries=useMemo(()=>{const days=RANGE_DAYS[anRange]||30;const out=[];for(let i=days-1;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);const k=dk(d);const roster=dayHabitRoster(k);out.push({key:k,date:fd(d),pct:roster.length===0?null:habitPctForDate(k)});}return out;},[anRange,checks,todos,aspirations,now]);
+  const focusCountSeries=useMemo(()=>{const keys=Object.keys(focusCompletionLog).sort();const firstDay=keys.length?pd(keys[0]):now;const dayCount=k=>focusCompletionLog[k]||0;const known=d=>pd(dk(d))>=pd(dk(firstDay));const r=anGoalRange;const out=[];
+    if(r==="today"){out.push({label:"Today",count:dayCount(dk(now))});return out;}
+    if(r==="week"||r==="month"||r==="3M"){const n=r==="week"?7:r==="month"?30:90;for(let i=n-1;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);out.push({label:fd(d),count:known(d)?dayCount(dk(d)):null});}return out;}
+    if(r==="year"){for(let w=51;w>=0;w--){const end=new Date(now);end.setDate(end.getDate()-w*7);let sum=0,any=false;for(let dd=0;dd<7;dd++){const d=new Date(end);d.setDate(d.getDate()-dd);if(known(d)){any=true;sum+=dayCount(dk(d));}}out.push({label:fd(end),count:any?sum:null});}return out;}
+    const start=new Date(firstDay.getFullYear(),firstDay.getMonth(),1),cur=new Date(now.getFullYear(),now.getMonth(),1);for(let d=new Date(start);d<=cur;d.setMonth(d.getMonth()+1)){const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;const sum=Object.entries(focusCompletionLog).filter(([k])=>k.startsWith(ym)).reduce((a,[,v])=>a+v,0);out.push({label:d.toLocaleDateString("en-US",{month:"short",year:"2-digit"}),count:sum});}return out;
+  },[anGoalRange,focusCompletionLog,now]);
+  const goalsTimeline=useMemo(()=>aspirations.map(a=>({id:a.id,text:a.text,type:a.goalType,start:a.created||a.createdOn||null,end:a.completedOn||(a.graduated?a.graduatedAt:null)||null,status:a.graduated?"graduated":a.completedOn?"completed":a.status==="archived"?"archived":a.status==="paused"?"paused":"active"})).sort((x,y)=>(pd(y.start||dk(now))-pd(x.start||dk(now)))),[aspirations,now]);
 
   // Weekly recap (in terms of completion %)
   const weekRecap=useMemo(()=>{
@@ -1539,7 +1557,7 @@ export default function Dashboard(){
     const focusBest=focusEntries.reduce((a,[,v])=>Math.max(a,v),0);
 
     const esc=s=>String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-    const acc="#0AA063",ink="#16203A",dim="#6B7280",line="#E8E3D8",amber="#E0820A",blue="#3B82F6",purple="#7C3AED",red="#DC2626";
+    const acc="#12B76A",ink="#171B24",dim="#626D7D",line="#E2E7EF",amber="#C77700",blue="#0A6DD6",purple="#9333C4",red="#D92D20";
     const money=n=>`${n<0?"-":""}$${Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     const card=(label,val,sub,color)=>`<div style="flex:1;min-width:118px;border:1px solid ${line};border-radius:12px;padding:15px 16px;background:#fff"><div style="font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:${dim};font-weight:700;margin-bottom:7px">${esc(label)}</div><div style="font-size:26px;font-weight:800;color:${color||ink};line-height:1">${esc(val)}</div>${sub?`<div style="font-size:10px;color:${dim};margin-top:4px">${esc(sub)}</div>`:""}</div>`;
     const cards=arr=>`<div style="display:flex;gap:9px;flex-wrap:wrap">${arr.join("")}</div>`;
@@ -1644,6 +1662,22 @@ export default function Dashboard(){
         body+=table(["Name","Category","Bills","Cost"],subscriptions.map(s=>[esc(s.name),esc(s.category||"—"),s.billDay?`Day ${s.billDay}`:"—",money(parseFloat(s.cost)||0)]),["left","left","left","right"]);}
     }
 
+    // ── SLEEP ANALYTICS (available scores only; never fabricated) ──
+    {const sVals=Object.keys(sleepLog).filter(inRange).map(k=>({k,s:sleepLog[k]})).filter(x=>typeof x.s==="number").sort((a,b)=>pd(a.k)-pd(b.k));
+      if(sVals.length){const sc=sVals.map(x=>x.s);const avg=Math.round(sc.reduce((a,b)=>a+b,0)/sc.length);const best=Math.max(...sc),worst=Math.min(...sc);
+        body+=sectionTitle("Sleep Analytics",rangeLabel);
+        body+=`<div class="pdf-sec">`+cards([card("Avg Score",avg,`${sVals.length} nights`,blue),card("Best",best,null,acc),card("Lowest",worst,null,worst<60?red:amber)]);
+        body+=table(["Date","Score"],sVals.slice().reverse().slice(0,24).map(x=>[esc(fd(x.k)),`<b>${x.s}</b>`]),["left","right"]);
+        body+=note("Scores are the Garmin 0–100 values you entered. Nights without an entry are omitted (no data, not zero).")+`</div>`;}}
+    // ── LONG-TERM GOALS TIMELINE (stored dates only) ──
+    {if(goalsTimeline.length){body+=sectionTitle("Long-Term Goals","Timeline");
+      body+=`<div class="pdf-sec">`+table(["Goal","Type","Started","Status","Completed"],goalsTimeline.map(g=>[esc(g.text),esc(g.type||"—"),g.start?esc(fd(g.start)):"unavailable",`<span style="color:${(g.status==="completed"||g.status==="graduated")?acc:g.status==="active"?blue:dim};font-weight:700;text-transform:capitalize">${esc(g.status)}</span>`,g.end?esc(fd(g.end)):(g.status==="active"?"active":"unavailable")]),["left","left","left","left","left"])+`</div>`;}}
+    // ── INSIGHTS (Patterns / behavior) ──
+    {const hasP=patternInsights&&patternInsights.length;if(hasP||behaviorPattern){body+=sectionTitle("Insights");body+=`<div class="pdf-sec">`;
+      if(behaviorPattern)body+=`<div style="font-size:12.5px;color:${ink};margin-bottom:10px">${esc(behaviorPattern)}</div>`;
+      if(hasP)body+=`<ul style="margin:0;padding-left:18px">${patternInsights.map(p=>`<li style="font-size:12px;color:${ink};margin-bottom:6px;line-height:1.5">${esc(typeof p==="string"?p:(p.txt||p.text||p.label||""))}</li>`).join("")}</ul>`;
+      body+=`</div>`;}}
+
     if(exportSections.journal){
       body+=sectionTitle("Journal");
       const entries=[...writtenJournal].sort((a,b)=>b.ts-a.ts);
@@ -1653,13 +1687,13 @@ export default function Dashboard(){
 
     const html=`<!doctype html><html><head><meta charset="utf-8"><title>Progress Report — ${esc(rangeLabel)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>@page{margin:42px 38px}@media print{.noprint{display:none}}body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:${ink};margin:0;padding:38px 40px 56px;background:#fff}
-h2{page-break-after:avoid}table{page-break-inside:auto}tr{page-break-inside:avoid}
+<style>@page{margin:48px 38px 56px;@bottom-right{content:"Page " counter(page);font-family:'Inter',sans-serif;font-size:9px;color:#8993A2}}@media print{.noprint{display:none}}body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:${ink};margin:0;padding:38px 40px 56px;background:#fff}
+h2{page-break-after:avoid}table{page-break-inside:auto}tr{page-break-inside:avoid}.pdf-sec{page-break-inside:avoid}
 .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${acc};padding-bottom:16px;margin-bottom:6px}
 .foot{position:fixed;bottom:14px;left:0;right:0;text-align:center;font-size:9px;color:${dim}}</style></head>
 <body>
 <div class="hd"><div><div style="font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${acc}">Progress</div><div style="font-size:13px;color:${dim};margin-top:3px;font-weight:500">Personal Performance Report</div></div>
-<div style="text-align:right;font-size:11px;color:${dim}"><div style="font-weight:700;color:${ink};font-size:13px">${esc(rangeLabel)}</div><div>Generated ${esc(new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}))}</div></div></div>
+<div style="text-align:right;font-size:11px;color:${dim}"><div style="font-weight:700;color:${ink};font-size:13px">${esc(rangeLabel)}</div><div>Generated ${esc(new Date().toLocaleString("en-US",{month:"long",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}))}</div><div>Appearance: ${esc(theme==="light"?"Light":"Dark")} · green-led palette</div></div></div>
 ${body}
 <div class="foot">Progress · Personal Performance Report · ${esc(rangeLabel)} · ${esc(new Date().toLocaleDateString("en-US"))}</div>
 </body></html>`;
@@ -2966,6 +3000,29 @@ ${body}
   const jrnlDateLabel=ts=>new Date(ts).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
   const wordCount=t=>((t||"").trim().match(/\S+/g)||[]).length;
   const openNewJournal=()=>setJrnlEditor({title:"",body:"",ts:Date.now()});
+  // ─── Configurable quick-action registry. Only valid destinations; stale ids are filtered out. ───
+  const QA_ALL=[
+    {id:"focus",l:"Focus Task",ic:"◎"},
+    {id:"workout",l:"Log Workout",ic:<DumbbellIcon size={15} color="#fff"/>},
+    {id:"weight",l:"Add Weight",ic:"⚖️"},
+    {id:"journal",l:"Journal",ic:"✎"},
+    {id:"goal",l:"New Goal",ic:"🎯"},
+    {id:"habits",l:"Habits",ic:"✅"},
+    {id:"transaction",l:"Add Transaction",ic:"＄"},
+    {id:"analytics",l:"Analytics",ic:"📊"},
+  ];
+  const QUICK_REG=Object.fromEntries(QA_ALL.map(a=>[a.id,a]));
+  const runQuickAction=(id)=>{switch(id){
+    case"focus":setTab("today");setMenuTab(null);setTodaySub("focus");setWantFocusInput(true);break;
+    case"workout":setMenuTab("workout");setGView("workouts");setGSplit(null);setTab(null);break;
+    case"weight":setMenuTab("workout");setGView("progress");setTab(null);break;
+    case"journal":setTab("groups");setMenuTab(null);openNewJournal();break;
+    case"goal":setTab("goals");setMenuTab(null);setGTab("monthly");setShowGoalCreator(true);break;
+    case"habits":setTab("goals");setMenuTab(null);setGTab("habits");break;
+    case"transaction":setMenuTab("budget");setTab(null);setSelDay(new Date().getDate());break;
+    case"analytics":setTab("analytics");setMenuTab(null);break;
+    default:break;
+  }};
   const[showQuickAdd,setShowQuickAdd]=useState(false); // floating + quick-add menu
   const saveJournalEntry=()=>{const e=jrnlEditor;if(!e)return;const title=(e.title||"").trim(),body=(e.body||"").trim();if(!title&&!body){setJrnlEditor(null);return;}setWrittenJournal(p=>{if(e.id)return p.map(x=>x.id===e.id?{...x,title:title||"Untitled",body,ts:e.ts}:x);return[{id:uid(),ts:e.ts||Date.now(),title:title||"Untitled",body},...p];});setJrnlEditor(null);};
   const deleteJournalEntry=id=>{setWrittenJournal(p=>p.filter(x=>x.id!==id));setJrnlOpen(null);setJrnlEditor(null);};
@@ -3318,7 +3375,7 @@ ${body}
       const doneN=t.parts.filter(p=>p.done).length;
       return(<div style={{padding:"11px 13px",borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,marginBottom:8}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-          <span style={{flex:1,fontSize:14.5,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:C.text}}>{t.text}</span>
+          <span style={{flex:1,fontSize:15,fontWeight:600,fontFamily:FN.b,color:C.text}}>{t.text}</span>
           <span style={{fontSize:10,fontFamily:FN.m,fontWeight:700,color:doneN===t.parts.length?C.greenBright:C.textDim}}>{doneN}/{t.parts.length}</span>
         </div>
         <div style={{height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden",marginBottom:9}}><div style={{height:"100%",width:`${doneN/t.parts.length*100}%`,background:doneN===t.parts.length?C.greenBright:C.accent,borderRadius:3,transition:"width 0.3s ease"}}/></div>
@@ -3335,7 +3392,7 @@ ${body}
       const count=t.count||0;const pct=Math.min(100,count/t.target*100);const hit=count>=t.target;
       return(<div style={{padding:"11px 13px",borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,marginBottom:8}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-          <span style={{flex:1,fontSize:14.5,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:C.text}}>{t.text}</span>
+          <span style={{flex:1,fontSize:15,fontWeight:600,fontFamily:FN.b,color:C.text}}>{t.text}</span>
           <span style={{fontSize:12,fontFamily:FN.m,fontWeight:800,color:hit?C.greenBright:C.text}}>{count}<span style={{color:C.textDim,fontWeight:600}}>/{t.target}{t.unit?` ${t.unit}`:""}</span></span>
         </div>
         <div style={{height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden",marginBottom:10}}><div style={{height:"100%",width:`${pct}%`,background:hit?C.greenBright:C.accent,borderRadius:3,transition:"width 0.3s ease"}}/></div>
@@ -3349,7 +3406,7 @@ ${body}
     return(<div className={completing?"focus-complete":""} style={{display:"flex",alignItems:"center",gap:11,padding:"13px 4px",marginBottom:7,borderBottom:`1px solid ${C.hairline}`}}>
       <div onClick={()=>!completing&&completeFocusTask(t)} style={{width:24,height:24,borderRadius:7,border:completing?"none":`2px solid ${C.textDim}`,background:completing?`linear-gradient(135deg,${C.greenBright},${C.green})`:"transparent",boxShadow:completing?`0 2px 8px ${C.green}55`:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s cubic-bezier(0.34,1.4,0.5,1)",flexShrink:0}}>{completing&&<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>}</div>
       {d&&<div style={{width:4,height:24,borderRadius:2,background:d.color,flexShrink:0,opacity:completing?0.4:1}}/>}
-      <span onClick={()=>!completing&&completeFocusTask(t)} style={{flex:1,position:"relative",fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:completing?C.textDim:C.text,cursor:"pointer"}}>
+      <span onClick={()=>!completing&&completeFocusTask(t)} style={{flex:1,position:"relative",fontSize:15.5,fontWeight:500,fontFamily:FN.b,color:completing?C.textDim:C.text,cursor:"pointer"}}>
         {t.text}
         {completing&&<span style={{position:"absolute",left:0,top:"52%",height:2,width:"100%",background:C.green,transformOrigin:"left center",animation:"focusStrike 0.28s ease forwards"}}/>}
       </span>
@@ -3736,7 +3793,7 @@ ${body}
             <div style={{marginTop:24,paddingTop:20,borderTop:`1px solid ${C.hairline}`}}>
               <div style={{fontSize:12,fontWeight:700,color:"#60A5FA",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Focus · Today</div>
               <div style={{display:"flex",gap:8,marginBottom:12}}>
-                <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&focusQuick.trim()){addFocus({id:uid(),text:focusQuick.trim(),diff:"easy"});setFocusQuick("");}}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
+                <input data-focusquick value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&focusQuick.trim()){addFocus({id:uid(),text:focusQuick.trim(),diff:"easy"});setFocusQuick("");}}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
                 <button onClick={()=>{if(focusQuick.trim()){addFocus({id:uid(),text:focusQuick.trim(),diff:"easy"});setFocusQuick("");}}} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
                 <button onClick={()=>setFocusBuilder(focusBuilder?null:{mode:"steps",text:"",parts:[],target:"",unit:""})} title="Multi-part task" style={{...btnG,padding:"0 12px",fontSize:16,fontWeight:700}}>{focusBuilder?"×":"⋯"}</button>
               </div>
@@ -3871,7 +3928,7 @@ ${body}
               {focusTasks.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>setFocusReorder(m=>!m)} style={{background:focusReorder?C.accent:"transparent",border:`1px solid ${focusReorder?C.accent:C.hairline}`,color:focusReorder?C.btnText:C.textDim,borderRadius:8,padding:"5px 12px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{focusReorder?"Done":"⇅ Reorder"}</button></div>}
               {(()=>{const today=dk(now);const todayTasks=dailyTasks.filter(t=>t.createdOn===today);const prevTasks=dailyTasks.filter(t=>t.createdOn!==today);const Divider=({label,color,n})=>(<div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0 9px"}}><span style={{fontSize:10,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.12em"}}>{label}</span><div style={{flex:1,height:1,background:C.hairline}}/><span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{n}</span></div>);return(<>
                   {!focusReorder&&<div style={{display:"flex",gap:8,marginBottom:10}}>
-                    <input value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFocusQuick();}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
+                    <input data-focusquick value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFocusQuick();}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
                     <button onClick={addFocusQuick} disabled={!focusQuick.trim()} style={{...btnB,opacity:focusQuick.trim()?1:0.4,cursor:focusQuick.trim()?"pointer":"default"}}>Add</button>
                     <button onClick={()=>setFocusBuilder(focusBuilder?null:{mode:"steps",text:"",parts:[],target:"",unit:""})} title="Multi-part task" style={{...btnG,padding:"0 12px",fontSize:16,fontWeight:700}}>{focusBuilder?"×":"⋯"}</button>
                   </div>}
@@ -4062,7 +4119,7 @@ ${body}
         {/* ═══ ANALYTICS ═══ (simplified) */}
         {tab==="analytics"&&<div className="tab-content">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <h2 style={{fontWeight:700,fontSize:18,margin:0,fontFamily:FN.h,fontStyle:"italic"}}>Analytics Hub</h2>
+            <h2 style={{fontWeight:700,fontSize:24,margin:0,fontFamily:FN.b,letterSpacing:"-0.01em"}}>Analytics</h2>
             <button onClick={()=>{setExportStep(1);setShowExport(true);}} className="press" style={{...btnB,display:"flex",alignItems:"center",gap:6}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Export
@@ -4079,30 +4136,40 @@ ${body}
             </div>
           </div>
 
-          {/* ═══ HABIT ANALYTICS — consistency ═══ */}
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-            <div style={{width:8,height:8,borderRadius:2,background:C.green}}/>
-            <span style={{fontSize:12,fontWeight:800,color:C.green,textTransform:"uppercase",letterSpacing:"0.1em"}}>Habit Analytics</span>
-            <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>consistency</span>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
-            {[{l:"Today",v:habitToday},{l:"Weekly",v:habitWeekly},{l:"Monthly",v:habitMonthly}].map((s,i)=>(<div key={i} style={{...card,padding:"16px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{s.l}</div><div className="hero-num" style={{fontSize:26,color:pC(s.v),lineHeight:1}}>{s.v}<span style={{fontSize:12,color:C.textDim}}>%</span></div></div>))}
+          {/* ═══ 1 · CONSISTENCY ═══ */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <div style={{width:9,height:9,borderRadius:3,background:C.green}}/>
+            <span style={{fontSize:20,fontWeight:700,color:C.text,letterSpacing:"-0.01em"}}>Consistency</span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
-            <div style={{...card,padding:"14px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Streak</div><div style={{fontSize:20,fontWeight:800,color:streak>=7?C.green:streak>=3?C.accent:C.text,fontFamily:FN.m}}>{streak}<span style={{fontSize:10,color:C.textDim}}>d</span></div></div>
-            <div style={{...card,padding:"14px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Longest</div><div style={{fontSize:20,fontWeight:800,color:C.text,fontFamily:FN.m}}>{longestHabitStreak}<span style={{fontSize:10,color:C.textDim}}>d</span></div></div>
-            <div style={{...card,padding:"14px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Trend</div><div style={{fontSize:20,fontWeight:800,color:habitTrendColor,fontFamily:FN.m}}>{habitTrendArrow}{habitTrendDelta>0?"+":""}{habitTrendDelta}<span style={{fontSize:10,color:C.textDim}}>%</span></div></div>
+            {[{l:"Today",v:habitToday},{l:"Weekly",v:habitWeekly},{l:"Monthly",v:habitMonthly}].map((s,i)=>(<div key={i} style={{...card,padding:"16px 12px",textAlign:"center"}}><div style={{fontSize:11,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:7}}>{s.l}</div><div className="hero-num" style={{fontSize:32,color:pC(s.v),lineHeight:1}}>{s.v}<span style={{fontSize:15,color:C.textDim}}>%</span></div></div>))}
           </div>
-          <div style={{...card,marginBottom:18}}>
-            <div style={lbl}>Consistency · Last 14 Days</div>
-            <ResponsiveContainer width="100%" height={140}><LineChart data={habitConsistency14d}><CartesianGrid strokeDasharray="3 3" stroke={C.surfaceDim} vertical={false}/><XAxis dataKey="date" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} interval={2}/><YAxis domain={[0,100]} tick={{fill:C.textDim,fontSize:10}} axisLine={false} tickLine={false} width={28}/><Tooltip content={<Tip />}/><Line type="monotone" dataKey="pct" stroke={C.green} strokeWidth={2} dot={false} name="%"/></LineChart></ResponsiveContainer>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+            <div style={{...card,padding:"14px 14px",textAlign:"center"}}><div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:5}}>Current Streak</div><div style={{fontSize:22,fontWeight:800,color:streak>=7?C.green:streak>=3?C.accent:C.text,fontFamily:FN.m}}>{streak}<span style={{fontSize:11,color:C.textDim}}>d</span></div></div>
+            <div style={{...card,padding:"14px 14px",textAlign:"center"}}><div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:5}}>Longest Streak</div><div style={{fontSize:22,fontWeight:800,color:C.text,fontFamily:FN.m}}>{longestHabitStreak}<span style={{fontSize:11,color:C.textDim}}>d</span></div></div>
+          </div>
+          {/* Interactive completion-consistency graph with range controls */}
+          <div style={{...card,marginBottom:20}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{...lbl,margin:0}}>Completion over time</div>
+              <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m}}>{anRange==="1W"?"7 days":anRange==="1M"?"30 days":anRange==="3M"?"90 days":anRange==="6M"?"180 days":"1 year"}</div>
+            </div>
+            {(()=>{const hasAny=consistencySeries.some(p=>p.pct!=null);if(!hasAny)return(<div style={{height:150,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.textDim,fontStyle:"italic",fontFamily:FN.h}}>No completion data in this range yet.</div>);
+              return(<ResponsiveContainer width="100%" height={160}><AreaChart data={consistencySeries} margin={{top:6,right:6,left:-14,bottom:0}}>
+                <defs><linearGradient id="consGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.green} stopOpacity={0.32}/><stop offset="100%" stopColor={C.green} stopOpacity={0}/></linearGradient></defs>
+                <CartesianGrid stroke={C.hairline} strokeDasharray="2 5" vertical={false}/>
+                <XAxis dataKey="date" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} minTickGap={28}/>
+                <YAxis domain={[0,100]} tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} width={30}/>
+                <Tooltip content={<Tip />}/>
+                <Area type="monotone" dataKey="pct" stroke={C.green} strokeWidth={2.5} fill="url(#consGrad)" dot={false} connectNulls={false} isAnimationActive={false} name="%"/>
+              </AreaChart></ResponsiveContainer>);})()}
+            <div style={{display:"flex",gap:5,marginTop:10}}>{["1W","1M","3M","6M","1Y"].map(r=>{const on=anRange===r;return(<button key={r} onClick={()=>setAnRange(r)} style={{flex:1,padding:"7px 0",borderRadius:8,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:11,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{r}</button>);})}</div>
           </div>
 
-          {/* ═══ FOCUS ANALYTICS — productivity (items/day, never %) ═══ */}
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-            <div style={{width:8,height:8,borderRadius:2,background:"#60A5FA"}}/>
-            <span style={{fontSize:12,fontWeight:800,color:"#60A5FA",textTransform:"uppercase",letterSpacing:"0.1em"}}>Focus Analytics</span>
-            <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>productivity</span>
+          {/* ═══ 2 · GOAL ANALYTICS — focus tasks + long-term goals ═══ */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <div style={{width:9,height:9,borderRadius:3,background:C.blue}}/>
+            <span style={{fontSize:20,fontWeight:700,color:C.text,letterSpacing:"-0.01em"}}>Goal Analytics</span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
             <div style={{...card,padding:"16px 12px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Today</div><div className="hero-num" style={{fontSize:26,color:C.text,lineHeight:1}}>{focusToday}</div><div style={{fontSize:8,color:C.textDim,fontFamily:FN.m,marginTop:2}}>completed</div></div>
@@ -4117,20 +4184,67 @@ ${body}
             <div style={{...card,padding:"14px 16px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Best Week</div><div style={{fontSize:22,fontWeight:800,color:C.text,fontFamily:FN.m}}>{focusBestWeek}<span style={{fontSize:11,color:C.textDim,fontWeight:500}}> items</span></div></div>
             <div style={{...card,padding:"14px 16px"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Best Month</div><div style={{fontSize:22,fontWeight:800,color:C.text,fontFamily:FN.m}}>{focusBestMonth}<span style={{fontSize:11,color:C.textDim,fontWeight:500}}> items</span></div></div>
           </div>
-          <div style={{...card,marginBottom:18}}>
-            <div style={lbl}>Productivity · Items Completed Per Day</div>
-            <ResponsiveContainer width="100%" height={140}><BarChart data={focusTrend14d}><CartesianGrid strokeDasharray="3 3" stroke={C.surfaceDim} vertical={false}/><XAxis dataKey="date" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} interval={2}/><YAxis allowDecimals={false} tick={{fill:C.textDim,fontSize:10}} axisLine={false} tickLine={false} width={24}/><Tooltip content={<Tip />}/><Bar dataKey="items" fill="#60A5FA" radius={[3,3,0,0]} name="items"/></BarChart></ResponsiveContainer>
+          {/* Focus tasks completed — range-controlled, counted on completion date */}
+          <div style={{...card,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{...lbl,margin:0}}>Focus tasks completed</div>
+            </div>
+            {(()=>{const hasAny=focusCountSeries.some(p=>p.count!=null&&p.count>0);if(!hasAny)return(<div style={{height:150,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.textDim,fontStyle:"italic",fontFamily:FN.h}}>No completed focus tasks in this range yet.</div>);
+              return(<ResponsiveContainer width="100%" height={160}><BarChart data={focusCountSeries} margin={{top:6,right:6,left:-18,bottom:0}}>
+                <CartesianGrid stroke={C.hairline} strokeDasharray="2 5" vertical={false}/>
+                <XAxis dataKey="label" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} minTickGap={24}/>
+                <YAxis allowDecimals={false} tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} width={26}/>
+                <Tooltip content={<Tip />}/>
+                <Bar dataKey="count" fill={C.blue} radius={[3,3,0,0]} name="completed" isAnimationActive={false}/>
+              </BarChart></ResponsiveContainer>);})()}
+            <div style={{display:"flex",gap:4,marginTop:10,flexWrap:"wrap"}}>{[["today","Today"],["week","Week"],["month","Month"],["3M","3M"],["year","Year"],["all","All"]].map(([k,l])=>{const on=anGoalRange===k;return(<button key={k} onClick={()=>setAnGoalRange(k)} style={{flex:"1 0 14%",padding:"7px 0",borderRadius:8,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:10.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{l}</button>);})}</div>
+          </div>
+          {/* Long-term goals timeline — stored dates only; active goals extend to today, clearly marked */}
+          <div style={{...card,marginBottom:20}}>
+            <div style={{...lbl,marginBottom:12}}>Long-Term Goals Timeline</div>
+            {goalsTimeline.length===0?<div style={{fontSize:12.5,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,padding:"4px 0"}}>No long-term goals yet.</div>
+              :(()=>{const stClr={active:C.blue,completed:C.green,graduated:C.green,paused:C.accent,archived:C.textDim};const tzb={measurable:"📐",outcome:"🎯",habit:"🔄"};return(
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>{goalsTimeline.map(g=>{const sel=anGoalSel===g.id;const clr=stClr[g.status]||C.textDim;return(
+                <div key={g.id}>
+                  <div onClick={()=>setAnGoalSel(sel?null:g.id)} className="press" style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",borderRadius:10,background:sel?C.surfaceDim:"transparent",cursor:"pointer",borderBottom:`1px solid ${C.hairline}`}}>
+                    <span style={{fontSize:14,flexShrink:0}}>{tzb[g.type]||"•"}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:14,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.text}</div>
+                      <div style={{fontSize:10.5,color:C.textDim,fontFamily:FN.m,marginTop:2}}>{g.start?fd(g.start):"start unavailable"} → {g.status==="active"?"active":g.end?fd(g.end):"date unavailable"}</div>
+                    </div>
+                    <span style={{fontSize:9,fontWeight:800,color:clr,background:`${clr}1F`,border:`1px solid ${clr}44`,borderRadius:5,padding:"2px 8px",textTransform:"uppercase",letterSpacing:"0.04em",flexShrink:0}}>{g.status}</span>
+                  </div>
+                  {sel&&(()=>{const a=aspirations.find(x=>x.id===g.id);if(!a)return null;const steps=a.steps||[];return(
+                    <div style={{padding:"8px 12px 12px 34px",fontSize:11.5,color:C.textDim}}>
+                      {a.goalType==="measurable"&&<div>{goalDone(a)}/{a.totalHours}h logged</div>}
+                      {a.goalType==="outcome"&&steps.length>0&&<div>{steps.filter(s=>s.done).length}/{steps.length} steps · {steps.map(s=>s.text).slice(0,4).join(", ")}{steps.length>4?"…":""}</div>}
+                      {a.goalType==="habit"&&<div>Habit-building goal</div>}
+                      {g.start&&<div style={{marginTop:3}}>Started {pd(g.start).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}{g.end?` · ${g.status} ${pd(g.end).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:g.status==="active"?" · still active":""}</div>}
+                    </div>);})()}
+                </div>
+              );})}</div>);})()}
           </div>
 
-          {/* ═══ JOURNAL ACTIVITY ═══ */}
-          {(()=>{const entries=writtenJournal;const total=entries.length;const words=entries.reduce((a,e)=>a+wordCount(e.body),0);const avg=total?Math.round(words/total):0;const days=new Set(entries.map(e=>dk(new Date(e.ts))));let s=0,dd=new Date();while(days.has(dk(dd))){s++;dd.setDate(dd.getDate()-1);}const vids=Object.values(videoJournal).reduce((a,v)=>a+v.length,0);if(total===0&&vids===0)return null;return(<>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><div style={{width:8,height:8,borderRadius:2,background:C.accent}}/><span style={{fontSize:12,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em"}}>Journal Activity</span></div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:18}}>
-              <div style={{...card,padding:"16px 10px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Entries</div><div className="hero-num" style={{fontSize:24,color:C.text,lineHeight:1}}>{total}</div><div style={{fontSize:8,color:C.textDim,fontFamily:FN.m,marginTop:2}}>{vids>0?`+${vids} video`:"written"}</div></div>
-              <div style={{...card,padding:"16px 10px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Writing Streak</div><div className="hero-num" style={{fontSize:24,color:s>=3?C.accent:C.text,lineHeight:1}}>{s}<span style={{fontSize:11,color:C.textDim}}>d</span></div></div>
-              <div style={{...card,padding:"16px 10px",textAlign:"center"}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Avg Words</div><div className="hero-num" style={{fontSize:24,color:C.text,lineHeight:1}}>{avg}</div><div style={{fontSize:8,color:C.textDim,fontFamily:FN.m,marginTop:2}}>per entry</div></div>
-            </div>
-          </>);})()}
+          {/* ═══ 3 · JOURNAL TIMELINE ═══ */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <div style={{width:9,height:9,borderRadius:3,background:C.purple}}/>
+            <span style={{fontSize:20,fontWeight:700,color:C.text,letterSpacing:"-0.01em"}}>Journal Timeline</span>
+          </div>
+          {(()=>{const entries=[...writtenJournal].sort((a,b)=>b.ts-a.ts);if(entries.length===0)return(<div style={{...card,marginBottom:20,padding:"22px 16px",textAlign:"center",fontSize:12.5,color:C.textDim,fontStyle:"italic",fontFamily:FN.h}}>No journal entries yet — write one from the Journal tab.</div>);
+            return(<div style={{...card,marginBottom:20,padding:"6px 0"}}>{entries.slice(0,40).map((en,i)=>{const preview=(en.body||"").replace(/\s+/g," ").trim().slice(0,90);return(
+              <button key={en.id} onClick={()=>{setTab("groups");setMenuTab(null);setJrnlOpen(en);}} className="press" style={{display:"flex",alignItems:"flex-start",gap:12,width:"100%",textAlign:"left",background:"transparent",border:"none",cursor:"pointer",padding:"12px 16px",borderBottom:i<Math.min(entries.length,40)-1?`1px solid ${C.hairline}`:"none"}}>
+                <div style={{width:46,flexShrink:0,textAlign:"center"}}>
+                  <div style={{fontSize:9,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:"0.04em"}}>{new Date(en.ts).toLocaleDateString("en-US",{month:"short"})}</div>
+                  <div className="hero-num" style={{fontSize:20,color:C.text,lineHeight:1.05}}>{new Date(en.ts).getDate()}</div>
+                  <div style={{fontSize:8,color:C.textDim,fontFamily:FN.m}}>{new Date(en.ts).getFullYear()}</div>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14.5,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{en.title||"Untitled"}</div>
+                  {preview&&<div style={{fontSize:11.5,color:C.textDim,marginTop:3,lineHeight:1.4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{preview}</div>}
+                </div>
+                <span style={{fontSize:14,color:C.textDim,flexShrink:0,marginTop:2}}>›</span>
+              </button>
+            );})}</div>);})()}
 
           {/* ═══ WORKOUT ANALYTICS — frequency + most-trained muscles (30d) ═══ */}
           {(()=>{const cutoff=Date.now()-30*864e5;const wk=wHist.filter(w=>pd(w.date).getTime()>=cutoff);if(wk.length===0)return null;const totalMin=Math.round(wk.reduce((a,w)=>a+(w.duration||0),0)/60000);const cnt={};wk.forEach(w=>(w.exercises||[]).forEach(ex=>musclesForExercise(ex.name).forEach(m=>{cnt[m]=(cnt[m]||0)+1;})));const ranked=Object.entries(cnt).sort((a,b)=>b[1]-a[1]);const maxM=ranked.length?ranked[0][1]:1;return(<>
@@ -4242,28 +4356,10 @@ ${body}
             </div>
           </>);})()}
 
-          {/* ═══ GOAL PROGRESS — completed steps ÷ total ═══ */}
-          {(aspirations.filter(a=>a.goalType==="outcome"&&!a.graduated).length>0||wGoals.some(g=>g.steps&&g.steps.length>0))&&<div style={{...card,marginBottom:18}}>
-            <div style={lbl}>Goal Progress</div>
-            {wGoals.filter(g=>g.steps&&g.steps.length>0).map(g=>{const done=g.steps.filter(s=>s.done).length;const pct=Math.round(done/g.steps.length*100);return(<div key={g.id} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:C.text}}><span style={{fontSize:8,color:"#FB923C",fontWeight:700,textTransform:"uppercase",marginRight:6}}>Weekly</span>{g.text}</span><span style={{fontSize:11,fontFamily:FN.m,fontWeight:700,color:C.accent}}>{done}/{g.steps.length} · {pct}%</span></div><div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:"#FB923C",borderRadius:2}}/></div></div>);})}
-            {aspirations.filter(a=>a.goalType==="outcome"&&!a.graduated).map(a=>{const done=(a.steps||[]).filter(s=>s.done).length;const tot=(a.steps||[]).length;const pct=tot>0?Math.round(done/tot*100):0;return(<div key={a.id} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:C.text}}><span style={{fontSize:8,color:"#A78BFA",fontWeight:700,textTransform:"uppercase",marginRight:6}}>Monthly</span>{a.text}</span><span style={{fontSize:11,fontFamily:FN.m,fontWeight:700,color:C.accent}}>{done}/{tot} · {pct}%</span></div><div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:"#A78BFA",borderRadius:2}}/></div></div>);})}
-          </div>}
-
-          {/* Top metric cards: Completion, Focus — now with trend indicators */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
-            <div style={{...card,padding:"22px 18px"}}>
-              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:12}}>Habit Month Avg</div>
-              <div className="hero-num" style={{fontSize:48,color:C.text,lineHeight:1}}>{monthCompletionAvg}<span style={{fontSize:20,color:C.textDim}}>%</span></div>
-              <div style={{fontSize:10,color:C.textDim,marginTop:8,fontFamily:FN.m,display:"flex",alignItems:"center",gap:6}}>
-                <span>month avg</span>
-                <span style={{color:trendColor,fontWeight:700}}>{trendArrow} {trendDelta>0?"+":""}{trendDelta}% wk</span>
-              </div>
-            </div>
-            <div style={{...card,padding:"22px 18px"}}>
-              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:12}}>Win Rate</div>
-              <div className="hero-num" style={{fontSize:48,color:winRate>=4?C.greenBright:winRate>=2?C.accent:C.textDim,lineHeight:1}}>{winRate}<span style={{fontSize:20,color:C.textDim}}>/7</span></div>
-              <div style={{fontSize:10,color:C.textDim,marginTop:8,fontFamily:FN.m}}>days ≥ 85% this week</div>
-            </div>
+          {/* ═══ 5 · INSIGHTS ═══ */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,marginTop:4}}>
+            <div style={{width:9,height:9,borderRadius:3,background:C.accent}}/>
+            <span style={{fontSize:20,fontWeight:700,color:C.text,letterSpacing:"-0.01em"}}>Insights</span>
           </div>
 
           {/* Behavior pattern */}
@@ -5966,18 +6062,13 @@ ${body}
       {showQuickAdd&&<div onClick={()=>setShowQuickAdd(false)} style={{position:"fixed",inset:0,zIndex:150,background:"rgba(0,0,0,0.4)"}}/>}
       <div style={{position:"fixed",right:18,bottom:74,zIndex:160,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10}}>
         {showQuickAdd&&(()=>{
-          const items=[
-            {l:"Log Workout",ic:<DumbbellIcon size={16} color="#fff"/>,go:()=>{setMenuTab("workout");setGView("workouts");setGSplit(null);setTab(null);}},
-            {l:"Add Weight",ic:<span style={{fontSize:15}}>⚖️</span>,go:()=>{setMenuTab("workout");setGView("progress");setTab(null);}},
-            {l:"Focus Task",ic:<span style={{fontSize:15}}>◎</span>,go:()=>{setTab("today");setMenuTab(null);setTodaySub("focus");}},
-            {l:"Journal",ic:<span style={{fontSize:15}}>✎</span>,go:()=>{setTab("groups");setMenuTab(null);openNewJournal();}},
-          ];
-          return items.map((it,i)=>(
-            <button key={it.l} onClick={()=>{it.go();setShowQuickAdd(false);}} className="press" style={{display:"flex",alignItems:"center",gap:10,background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:24,padding:"9px 16px 9px 12px",cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.25)",animation:`fabIn 0.18s ease ${i*0.03}s both`}}>
-              <span style={{width:28,height:28,borderRadius:"50%",background:C.accent,display:"flex",alignItems:"center",justifyContent:"center"}}>{it.ic}</span>
-              <span style={{fontSize:12.5,fontWeight:700,color:C.text,fontFamily:FN.b,whiteSpace:"nowrap"}}>{it.l}</span>
+          const ids=(settings.quickActions&&settings.quickActions.length?settings.quickActions:QA_DEFAULT).filter(id=>QUICK_REG[id]);
+          return ids.map((id,i)=>{const it=QUICK_REG[id];return(
+            <button key={id} onClick={()=>{runQuickAction(id);setShowQuickAdd(false);}} className="press" aria-label={it.l} style={{display:"flex",alignItems:"center",gap:10,background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:24,padding:"10px 18px 10px 12px",cursor:"pointer",boxShadow:C.modalShadow,animation:`fabIn 0.18s ease ${i*0.03}s both`}}>
+              <span style={{width:30,height:30,borderRadius:"50%",background:C.accentGrad||C.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>{it.ic}</span>
+              <span style={{fontSize:14,fontWeight:600,color:C.text,fontFamily:FN.b,whiteSpace:"nowrap"}}>{it.l}</span>
             </button>
-          ));
+          );})
         })()}
         <button onClick={()=>setShowQuickAdd(v=>!v)} className="press" aria-label="Quick add" style={{width:56,height:56,borderRadius:"50%",background:C.accent,border:"none",cursor:"pointer",boxShadow:`0 6px 20px ${C.accent}55, 0 2px 8px rgba(0,0,0,0.3)`,display:"flex",alignItems:"center",justifyContent:"center",transition:"transform 0.2s ease",transform:showQuickAdd?"rotate(45deg)":"rotate(0)"}}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -6008,8 +6099,32 @@ ${body}
               <span>Light</span>
             </button>
           </div>
-          <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:8,textAlign:"center"}}>{theme==="dark"?"Navy editorial. Built for night.":"Warm paper. Built for day."}</div>
+          <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:8,textAlign:"center"}}>{theme==="dark"?"Graphite. Built for night.":"Soft cream. Built for day."}</div>
         </div>
+
+        {/* ─── QUICK ACTIONS (+ bar) ─── */}
+        {(()=>{const list=(settings.quickActions||QA_DEFAULT).filter(id=>QUICK_REG[id]);const avail=QA_ALL.filter(a=>!list.includes(a.id));const ibtn={width:30,height:30,borderRadius:8,border:`1px solid ${C.hairline}`,background:C.surface,color:C.text,fontSize:13,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"};
+        const move=(id,dir)=>setSettings(p=>{const a=[...(p.quickActions||QA_DEFAULT)];const j=a.indexOf(id);const k=j+dir;if(j<0||k<0||k>=a.length)return p;[a[j],a[k]]=[a[k],a[j]];return{...p,quickActions:a};});
+        return(<div style={{marginBottom:22}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Quick Actions · + Bar</div>
+          <div style={{fontSize:11.5,color:C.textDim,marginBottom:11,lineHeight:1.45}}>Shortcuts shown when you tap the + button. Reorder or remove below, then add more.</div>
+          {list.map((id,i)=>(
+            <div key={id} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 12px",marginBottom:6,borderRadius:10,background:C.surfaceDim,border:`1px solid ${C.hairline}`}}>
+              <span style={{width:26,height:26,borderRadius:"50%",background:C.accentSoft,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>{QUICK_REG[id].ic}</span>
+              <span style={{flex:1,fontSize:14,fontWeight:600,color:C.text}}>{QUICK_REG[id].l}</span>
+              <button aria-label={`Move ${QUICK_REG[id].l} up`} disabled={i===0} onClick={()=>move(id,-1)} style={{...ibtn,opacity:i===0?0.3:1}}>↑</button>
+              <button aria-label={`Move ${QUICK_REG[id].l} down`} disabled={i===list.length-1} onClick={()=>move(id,1)} style={{...ibtn,opacity:i===list.length-1?0.3:1}}>↓</button>
+              <button aria-label={`Remove ${QUICK_REG[id].l}`} onClick={()=>setSettings(p=>({...p,quickActions:(p.quickActions||QA_DEFAULT).filter(x=>x!==id)}))} style={{...ibtn,color:C.red}}>✕</button>
+            </div>
+          ))}
+          {list.length===0&&<div style={{fontSize:12,color:C.textDim,fontStyle:"italic",padding:"4px 0 10px"}}>No shortcuts — add some below.</div>}
+          {avail.length>0&&<>
+            <div style={{fontSize:10,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",margin:"11px 0 7px"}}>Add shortcut</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{avail.map(a=>(
+              <button key={a.id} aria-label={`Add ${a.l}`} onClick={()=>setSettings(p=>({...p,quickActions:[...((p.quickActions||QA_DEFAULT).filter(id=>QUICK_REG[id])),a.id]}))} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 13px",borderRadius:10,border:`1px dashed ${C.hairline}`,background:"transparent",color:C.text,fontSize:12.5,fontWeight:600,cursor:"pointer"}}><span style={{fontSize:13}}>{a.ic}</span>{a.l}</button>
+            ))}</div>
+          </>}
+        </div>);})()}
 
         <div style={{fontSize:11,fontWeight:700,color:C.textDim,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Time Ranges</div>
         <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.textDim,marginBottom:6}}>Morning Range</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={settings.morningStart} onChange={e=>setSettings(p=>({...p,morningStart:parseInt(e.target.value)||5}))} style={{...numI,width:60}} /><span style={{color:C.textDim}}>to</span><input type="number" value={settings.morningEnd} onChange={e=>setSettings(p=>({...p,morningEnd:parseInt(e.target.value)||12}))} style={{...numI,width:60}} /></div></div>
