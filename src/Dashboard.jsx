@@ -110,6 +110,21 @@ const pd=d=>{if(d instanceof Date)return d;if(typeof d==="string"){const m=d.mat
 const dk=d=>{const t=pd(d);return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;};
 const fd=d=>pd(d).toLocaleDateString("en-US",{month:"short",day:"numeric"});
 const uid=()=>`_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
+// ─── Shared calendar navigation ─── used by Today (daily + structured) and Health workout calendars.
+// Monday-based start of the week containing d.
+const weekStartOf=d=>{const t=new Date(pd(d));t.setHours(0,0,0,0);const dow=t.getDay();t.setDate(t.getDate()-(dow===0?6:dow-1));return t;};
+// The 7 dates (Mon→Sun) of the week containing `anchor`.
+const weekOf=anchor=>{const ws=weekStartOf(anchor);return Array.from({length:7},(_,i)=>{const d=new Date(ws);d.setDate(ws.getDate()+i);return d;});};
+// Calendar-month cells for (year,monthIndex): leading blanks (null) so day 1 lands under its weekday, then each day Date. Sunday-first grid.
+const monthGridCells=(year,month)=>{const lead=new Date(year,month,1).getDay();const dim=new Date(year,month+1,0).getDate();const cells=[];for(let i=0;i<lead;i++)cells.push(null);for(let dd=1;dd<=dim;dd++)cells.push(new Date(year,month,dd));return cells;};
+// Short uppercase weekday label for a Date.
+const DOW2=["SU","MO","TU","WE","TH","FR","SA"];
+// Swipe gesture → prev/next. Right swipe (dx>0) = back in time (onPrev); left swipe = forward (onNext).
+// Horizontal dominance + min distance guard so vertical scroll and taps never trigger it.
+const makeSwipe=(ref,onPrev,onNext)=>({
+  onTouchStart:e=>{const t=e.touches[0];ref.current={x:t.clientX,y:t.clientY,on:true};},
+  onTouchEnd:e=>{const r=ref.current;if(!r||!r.on)return;r.on=false;const t=e.changedTouches[0];const dx=t.clientX-r.x,dy=t.clientY-r.y;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*2){if(dx>0)onPrev();else onNext();}}
+});
 
 let card={background:C.surface,borderRadius:16,padding:18,border:`1px solid ${C.hairline}`,boxShadow:C.shadow};
 let lbl={fontFamily:FN.b,fontSize:12,fontWeight:700,color:C.textDim,marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"};
@@ -815,6 +830,10 @@ export default function Dashboard(){
   applyTheme(theme==="light"?LIGHT:DARK);
   const[structuredMode,setStructuredMode]=useState(true); // default to structured (month grid) view
   const[gridExpanded,setGridExpanded]=useState(false); // week vs full month — default to Week
+  const[dayWk,setDayWk]=useState(0); // Daily-tasks strip: weeks back from the current week (0=this week, never negative/future)
+  const[structAnchor,setStructAnchor]=useState(()=>new Date()); // Structured mode: date whose week/month is displayed
+  const[healthCalView,setHealthCalView]=useState("week"); // Health workout calendar: "week" | "month"
+  const[healthAnchor,setHealthAnchor]=useState(()=>new Date()); // Health workout calendar: date whose week/month is displayed
   const[vw,setVw]=useState(typeof window!=="undefined"?window.innerWidth:1200); // live viewport width (drives the habit grid sizing)
   const[showFullCal,setShowFullCal]=useState(false);
   const[showRecap,setShowRecap]=useState(false);
@@ -3061,6 +3080,21 @@ ${body}
   const onPageTouchStart=e=>{if(e.target.closest("[data-swiperow]")||e.target.closest(".hide-scroll")){pageTouch.current.active=false;return;}const t=e.touches[0];pageTouch.current={x:t.clientX,y:t.clientY,active:true};};
   const onPageTouchEnd=e=>{if(!pageTouch.current.active)return;pageTouch.current.active=false;const t=e.changedTouches[0];const dx=t.clientX-pageTouch.current.x,dy=t.clientY-pageTouch.current.y;if(Math.abs(dx)>110&&Math.abs(dx)>Math.abs(dy)*2.2){swipeNav(dx<0?1:-1);}};
 
+  /* ─── Calendar navigation (shared) ─── per-calendar touch refs + prev/next handlers.
+     "prev" = back in time, "next" = forward; forward is clamped so no calendar runs past the current week/month. */
+  const dayCalTouch=useRef(null), structCalTouch=useRef(null), structStripTouch=useRef(null), healthCalTouch=useRef(null);
+  const structMonthStripRef=useRef(null);
+  const dayCalPrev=()=>setDayWk(w=>w+1);
+  const dayCalNext=()=>setDayWk(w=>Math.max(0,w-1));
+  const shiftAnchor=(a,view,dir)=>{const d=new Date(a);if(view==="month"){const day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+dir);const dim=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(day,dim));}else d.setDate(d.getDate()+dir*7);return d;};
+  const pastCurrent=(d,view)=>{const lim=new Date();if(view==="month")return d.getFullYear()>lim.getFullYear()||(d.getFullYear()===lim.getFullYear()&&d.getMonth()>lim.getMonth());return weekStartOf(d).getTime()>weekStartOf(lim).getTime();};
+  const structPrev=()=>setStructAnchor(a=>shiftAnchor(a,gridExpanded?"month":"week",-1));
+  const structNext=()=>setStructAnchor(a=>{const d=shiftAnchor(a,gridExpanded?"month":"week",1);return pastCurrent(d,gridExpanded?"month":"week")?a:d;});
+  const healthPrev=()=>setHealthAnchor(a=>shiftAnchor(a,healthCalView,-1));
+  const healthNext=()=>setHealthAnchor(a=>{const d=shiftAnchor(a,healthCalView,1);return pastCurrent(d,healthCalView)?a:d;});
+  // Keep the structured month scroll-strip positioned on today (current month) or the start (past months).
+  useEffect(()=>{if(structuredMode&&gridExpanded&&structMonthStripRef.current){const el=structMonthStripRef.current;const inMonth=structAnchor.getFullYear()===now.getFullYear()&&structAnchor.getMonth()===now.getMonth();el.scrollLeft=inMonth?Math.max(0,(now.getDate()-1)*48-el.clientWidth/2+24):0;}},[structAnchor,gridExpanded,structuredMode]);
+
   /* ─── Focus task CRUD (per-date) ─── */
   const addFocus=(t)=>setFocusByDate(p=>({...p,[vk]:[...(p[vk]||[]),{createdOn:dk(now),...t}]}));
   // ── Multi-part focus tasks ── a task can carry `parts` (steps) or `target` (a count).
@@ -3611,24 +3645,65 @@ ${body}
 
         {/* Calendar — only on the Today tab; other tabs get the full page */}
         {curPage==="today"&&<>
-        <div style={{display:"flex",alignItems:"center",gap:4,padding:"0 12px"}}>
-          <div ref={calRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",flex:1,padding:"4px 0"}}>
-            {calDays.map((d,i)=>{const sel=vk===d.key;const L=dayLadder(d.pct);const perf=L.perfect;return(
-              <div key={i} onClick={()=>{setVDate(d.date);setTab("today");setMenuTab(null);}} className={perf?"perfect-cell":""} style={{flex:"0 0 48px",textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:"pointer",
-                "--acc":C.accent,
-                background:sel?C.accent:L.fill,
-                border:sel?"1px solid transparent":(d.isToday&&!perf?`1px solid ${C.accent}`:L.border),
-                boxShadow:sel?"none":L.ring,
-                transition:"background 0.3s ease,box-shadow 0.3s ease"}}>
-                <div style={{fontSize:9,fontWeight:600,color:sel?"#0B1120":C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{d.dayName}</div>
-                <div className="hero-num" style={{fontSize:16,color:sel?"#0B1120":d.isToday?C.accent:C.text}}>{d.dayNum}</div>
-                <div style={{fontFamily:FN.m,fontSize:9,fontWeight:L.weight,color:sel?"rgba(11,17,32,0.7)":d.pct>0?L.num:C.textDim,marginTop:1}}>{d.pct>0?`${d.pct}%`:"—"}</div>
+        {!structuredMode&&<div style={{display:"flex",alignItems:"center",gap:6,padding:"0 12px"}}>
+          <button className="press" onClick={dayCalPrev} title="Previous week" style={{background:"transparent",border:"none",color:C.textSec,fontSize:20,lineHeight:1,cursor:"pointer",padding:"0 2px",flexShrink:0}}>‹</button>
+          <div ref={calRef} data-swiperow {...makeSwipe(dayCalTouch,dayCalPrev,dayCalNext)} style={{display:"flex",gap:4,flex:1,padding:"4px 0",touchAction:"pan-y"}}>
+            {(()=>{const ws=weekStartOf(now);ws.setDate(ws.getDate()-dayWk*7);const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();return Array.from({length:7},(_,i)=>{const d=new Date(ws);d.setDate(ws.getDate()+i);const k=dk(d);const pct=dayHabitPct(k);const isToday=k===dk(now);const sel=vk===k;const future=d.getTime()>todayMid;return(
+              <div key={i} onClick={()=>{if(future)return;setVDate(d);setTab("today");setMenuTab(null);}} style={{flex:1,minWidth:0,textAlign:"center",padding:"6px 0",borderRadius:9,cursor:future?"default":"pointer",opacity:future?0.4:1,
+                background:sel?C.accent:C.surfaceDim,
+                border:sel?"1px solid transparent":isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,
+                transition:"background 0.25s ease"}}>
+                <div style={{fontSize:9,fontWeight:700,color:sel?C.btnText:C.textSec,textTransform:"uppercase",letterSpacing:"0.04em"}}>{DOW2[d.getDay()]}</div>
+                <div className="hero-num" style={{fontSize:16,color:sel?C.btnText:isToday?C.accent:C.text,lineHeight:1.15}}>{d.getDate()}</div>
+                <div style={{fontFamily:FN.m,fontSize:9,fontWeight:700,color:sel?C.btnText:pct>0?pC(pct):C.textDim,marginTop:1}}>{pct>0?`${pct}%`:"·"}</div>
+                <div style={{height:3,borderRadius:2,margin:"4px 6px 0",background:sel?"rgba(255,255,255,0.28)":C.surface,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:sel?C.btnText:pC(pct),borderRadius:2,transition:"width 0.4s ease"}}/></div>
               </div>
-            );})}
+            );});})()}
           </div>
+          <button className="press" onClick={dayCalNext} disabled={dayWk===0} title="Next week" style={{background:"transparent",border:"none",color:dayWk===0?C.hairline:C.textSec,fontSize:20,lineHeight:1,cursor:dayWk===0?"default":"pointer",padding:"0 2px",flexShrink:0}}>›</button>
           <button className="press" onClick={()=>setShowFullCal(!showFullCal)} style={{background:showFullCal?C.goldSoft:C.surfaceDim,border:"none",borderRadius:10,padding:"6px 8px",cursor:"pointer",flexShrink:0}}><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="13" rx="2.5" stroke={showFullCal?C.goldBright:C.textDim} strokeWidth="1.4"/><line x1="2" y1="7" x2="16" y2="7" stroke={showFullCal?C.goldBright:C.textDim} strokeWidth="1.2"/></svg></button>
-        </div>
-        {showFullCal&&<div className="card-enter" style={{...card,margin:"4px 12px 0",padding:14}}>
+        </div>}
+        {/* Structured-mode calendar — the left-to-right scroll strip (Week) or full month grid (Month), driven by structAnchor */}
+        {structuredMode&&(()=>{
+          const anchor=structAnchor;
+          const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+          const atCur=gridExpanded?(anchor.getFullYear()===now.getFullYear()&&anchor.getMonth()===now.getMonth()):(weekStartOf(anchor).getTime()===weekStartOf(now).getTime());
+          const wk=weekOf(anchor);
+          const periodLabel=gridExpanded?anchor.toLocaleDateString("en-US",{month:"long",year:"numeric"}):`${fd(wk[0])} – ${fd(wk[6])}`;
+          const navB=dis=>({background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:8,width:28,height:28,color:dis?C.hairline:C.textSec,fontSize:15,lineHeight:1,cursor:dis?"default":"pointer",padding:0,flexShrink:0});
+          const weekBox=d=>{const k=dk(d);const pct=dayHabitPct(k);const isToday=k===dk(now);const sel=vk===k;const future=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()>todayMid;return(
+            <div key={k} onClick={()=>{if(future)return;setVDate(d);}} style={{flex:1,minWidth:0,textAlign:"center",padding:"9px 0",borderRadius:11,cursor:future?"default":"pointer",opacity:future?0.4:1,background:sel?C.accent:C.surfaceDim,border:sel?"1px solid transparent":isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,transition:"background 0.25s ease"}}>
+              <div style={{fontSize:10,fontWeight:700,color:sel?C.btnText:C.textSec,textTransform:"uppercase",letterSpacing:"0.04em"}}>{DOW2[d.getDay()]}</div>
+              <div className="hero-num" style={{fontSize:20,color:sel?C.btnText:isToday?C.accent:C.text,lineHeight:1.15,marginTop:1}}>{d.getDate()}</div>
+              <div style={{fontFamily:FN.m,fontSize:10,fontWeight:700,color:sel?C.btnText:pct>0?pC(pct):C.textDim,marginTop:2}}>{pct>0?`${pct}%`:"·"}</div>
+              <div style={{height:3,borderRadius:2,margin:"5px 7px 0",background:sel?"rgba(255,255,255,0.28)":C.surface,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:sel?C.btnText:pC(pct),borderRadius:2,transition:"width 0.4s ease"}}/></div>
+            </div>
+          );};
+          return(<div style={{padding:"0 12px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:5}}>
+              <span style={{fontSize:11,fontFamily:FN.m,fontWeight:700,color:C.textSec,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{atCur?(gridExpanded?"This Month":"This Week"):periodLabel}</span>
+              <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
+                <button className="press" onClick={structPrev} title={gridExpanded?"Previous month":"Previous week"} style={navB(false)}>‹</button>
+                <button className="press" onClick={structNext} disabled={atCur} title={gridExpanded?"Next month":"Next week"} style={navB(atCur)}>›</button>
+                <button className="press" onClick={()=>setGridExpanded(p=>!p)} style={{...btnG,fontSize:10,padding:"6px 10px"}}>{gridExpanded?"Week":"Month"}</button>
+              </div>
+            </div>
+            {!gridExpanded
+              ?<div data-swiperow {...makeSwipe(structStripTouch,structPrev,structNext)} style={{display:"flex",gap:4,padding:"2px 0 4px",touchAction:"pan-y"}}>
+                {wk.map(weekBox)}
+              </div>
+              :<div ref={structMonthStripRef} className="hide-scroll" style={{display:"flex",gap:4,overflowX:"auto",padding:"2px 0 6px"}}>
+                {Array.from({length:new Date(anchor.getFullYear(),anchor.getMonth()+1,0).getDate()},(_,i)=>new Date(anchor.getFullYear(),anchor.getMonth(),i+1)).map(cd=>{const k=dk(cd);const pct=dayHabitPct(k);const isToday=k===dk(now);const sel=vk===k;const future=new Date(cd.getFullYear(),cd.getMonth(),cd.getDate()).getTime()>todayMid;return(
+                  <div key={k} onClick={()=>{if(future)return;setVDate(cd);}} style={{flex:"1 0 44px",minWidth:44,textAlign:"center",padding:"8px 0",borderRadius:10,cursor:future?"default":"pointer",opacity:future?0.4:1,background:sel?C.accent:C.surfaceDim,border:sel?"1px solid transparent":isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`}}>
+                    <div style={{fontSize:9,fontWeight:700,color:sel?C.btnText:C.textSec,textTransform:"uppercase",letterSpacing:"0.04em"}}>{DOW2[cd.getDay()]}</div>
+                    <div className="hero-num" style={{fontSize:17,color:sel?C.btnText:isToday?C.accent:C.text,lineHeight:1.15,marginTop:1}}>{cd.getDate()}</div>
+                    <div style={{fontFamily:FN.m,fontSize:9,fontWeight:700,color:sel?C.btnText:pct>0?pC(pct):C.textDim,marginTop:2}}>{pct>0?`${pct}%`:"·"}</div>
+                  </div>
+                );})}
+              </div>}
+          </div>);
+        })()}
+        {!structuredMode&&showFullCal&&<div className="card-enter" style={{...card,margin:"4px 12px 0",padding:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><button onClick={()=>setVDate(new Date(vDate.getFullYear(),vDate.getMonth()-1,1))} style={btnG}>‹</button><span style={{fontSize:13,fontWeight:700}}>{vDate.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span><button onClick={()=>setVDate(new Date(vDate.getFullYear(),vDate.getMonth()+1,1))} style={btnG}>›</button></div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:9,color:C.textDim,fontWeight:600}}>{d}</div>)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth(),1).getDay()}).map((_,i)=><div key={`e${i}`} />)}{Array.from({length:new Date(vDate.getFullYear(),vDate.getMonth()+1,0).getDate()}).map((_,i)=>{const cd=new Date(vDate.getFullYear(),vDate.getMonth(),i+1);const cp=dayHabitPct(dk(cd));const L=dayLadder(cp);const perf=L.perfect;const selD=vDate.getDate()===i+1;return(<div key={i+1} onClick={()=>{setVDate(cd);setShowFullCal(false);}} className={perf?"perfect-cell":""} style={{textAlign:"center",padding:"5px 0",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:selD?700:L.weight===800?600:400,
   "--acc":C.accent,
@@ -3663,34 +3738,37 @@ ${body}
         {/* ═══ TODAY TAB ═══ */}
         {/* ═══ STRUCTURED MODE — interactive grid view ═══ */}
         {tab==="today"&&structuredMode&&(()=>{
-          const y=now.getFullYear(),mo=now.getMonth();
+          // Real "today" references (streaks & elapsed-% always measure against the actual current day, not the viewed period).
+          const RY=now.getFullYear(),RM=now.getMonth(),RD=now.getDate();
+          const todayMid=new Date(RY,RM,RD).getTime();
+          const RK=dk(now);
+          // Displayed period is driven by structAnchor + the Week/Month toggle (shared nav).
+          const anchor=structAnchor;
+          const y=anchor.getFullYear(),mo=anchor.getMonth();
           const daysInMonth=new Date(y,mo+1,0).getDate();
-          const todayDate=now.getDate();
-          const todayDow=now.getDay(); // 0=Sun
-          // Week view: Mon-Sun containing today
-          const weekStart=new Date(y,mo,todayDate-(todayDow===0?6:(todayDow-1)));
-          const weekDays=gridExpanded?Array.from({length:daysInMonth},(_,i)=>i+1):Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(d.getDate()+i);return d.getMonth()===mo?d.getDate():null;}).filter(Boolean);
-          const dayLabels=weekDays.map(d=>{const dt=new Date(y,mo,d);return["S","M","T","W","T","F","S"][dt.getDay()];});
-          // Fill the available width: label(100) + %(42) + streak(34) + side padding(~96) reserved, rest split across days.
-          // Full-bleed month grid: label(140) + %(60) + streak(40) + side padding(~110) reserved; the rest
-          // is divided across the month's days so day 31 and the % column reach the right edge.
+          // Columns as real Date objects (so week views crossing a month boundary, and any month, resolve keys correctly).
+          const colDates=gridExpanded
+            ?Array.from({length:daysInMonth},(_,i)=>new Date(y,mo,i+1))
+            :weekOf(anchor);
+          const dayLabels=colDates.map(d=>["S","M","T","W","T","F","S"][d.getDay()]);
+          // Fill the available width: label + %(60) + streak(40) + side padding reserved, rest split across the day columns.
           const LABEL_W=gridExpanded?140:100, PCT_W=60, STREAK_W=40;
           const avail=vw-LABEL_W-PCT_W-STREAK_W-110;
-          const cellW=gridExpanded?Math.max(28,Math.floor(avail/daysInMonth)):Math.floor((vw-200)/7);
+          const cellW=gridExpanded?Math.max(28,Math.floor(avail/colDates.length)):Math.floor((vw-200)/7);
           const morningItems=activeTodos(dk(now)).filter(t=>t.grp==="morning");
           const nightItems=activeTodos(dk(now)).filter(t=>t.grp==="night");
           const generalItems=activeTodos(dk(now)).filter(t=>t.grp==="general");
           const goalItems=goalDerivedFocus;
 
-          const toggleCell=(id,day)=>{
-            const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+          const toggleCell=(id,cd)=>{
+            const k=dk(cd);
             const cur=(checks[k]||{})[id];
             if(!cur)flashChecked(id);
             setChecks(p=>({...p,[k]:{...(p[k]||{}),[id]:!cur}}));
           };
 
-          // Streak calc for a habit
-          const getStreak=(id)=>{let s=0;for(let d=todayDate;d>=1;d--){const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;if((checks[k]||{})[id])s++;else break;}return s;};
+          // Streak calc for a habit — always counts back from the real current day.
+          const getStreak=(id)=>{let s=0;const d=new Date(RY,RM,RD);for(let i=0;i<400;i++){const k=dk(d);if((checks[k]||{})[id])s++;else break;d.setDate(d.getDate()-1);}return s;};
 
           const renderGridSection=(title,items,color,badge)=>{
             if(items.length===0)return null;
@@ -3702,10 +3780,10 @@ ${body}
               {/* Column headers */}
               <div style={{display:"flex",marginBottom:4}}>
                 <div style={{width:LABEL_W,flexShrink:0}}/>
-                {weekDays.map(d=>(<div key={d} style={{width:cellW,textAlign:"center"}}>
-                  <div style={{fontSize:10,color:d===todayDate?C.accent:C.textDim,fontFamily:FN.m,fontWeight:d===todayDate?800:400}}>{dayLabels[weekDays.indexOf(d)]}</div>
-                  <div style={{fontSize:13,color:d===todayDate?C.accent:C.textDim,fontFamily:FN.m,fontWeight:d===todayDate?800:500}}>{d}</div>
-                </div>))}
+                {colDates.map((cd,ci)=>{const isT=dk(cd)===RK;return(<div key={ci} style={{width:cellW,textAlign:"center"}}>
+                  <div style={{fontSize:10,color:isT?C.accent:C.textSec,fontFamily:FN.m,fontWeight:isT?800:600}}>{dayLabels[ci]}</div>
+                  <div style={{fontSize:13,color:isT?C.accent:C.text,fontFamily:FN.m,fontWeight:isT?800:500}}>{cd.getDate()}</div>
+                </div>);})}
                 <div style={{width:PCT_W,textAlign:"center",fontSize:10,color:C.textDim,fontFamily:FN.m,fontWeight:700}}>%</div>
                 <div style={{width:STREAK_W,textAlign:"center",fontSize:10,color:C.textDim,fontFamily:FN.m}}>🔥</div>
               </div>
@@ -3725,19 +3803,21 @@ ${body}
                     <span style={{fontSize:13.5,fontWeight:600,color:atRisk?C.red:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{t.text||t.dailyAction}</span>
                     {atRisk&&<span style={{fontSize:7,color:C.red,fontWeight:800}}>!</span>}
                   </div>
-                  {weekDays.map(d=>{
-                    const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+                  {colDates.map((cd,ci)=>{
+                    const k=dk(cd);
                     const done=(checks[k]||{})[id];
-                    const isToday=d===todayDate;
-                    const isPast=d<todayDate;
+                    const cdMid=new Date(cd.getFullYear(),cd.getMonth(),cd.getDate()).getTime();
+                    const isToday=k===RK;
+                    const isPast=cdMid<todayMid;
+                    const isFuture=cdMid>todayMid;
                     const missed=isPast&&!done;
                     const ch=Math.max(22,Math.min(40,cellW-6));const ck=Math.round(ch*0.45);
-                    return(<div key={d} onClick={()=>toggleCell(id,d)} style={{width:cellW,height:ch,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",borderRadius:5,margin:"0 1px",background:done?`${color}`:missed?`${C.red}15`:isToday?C.surfaceHi:"transparent",border:isToday&&!done?`1px solid ${C.accent}50`:"1px solid transparent",transition:"all 0.15s ease"}}>
+                    return(<div key={ci} onClick={()=>{if(!isFuture)toggleCell(id,cd);}} style={{width:cellW,height:ch,display:"flex",alignItems:"center",justifyContent:"center",cursor:isFuture?"default":"pointer",opacity:isFuture?0.4:1,borderRadius:5,margin:"0 1px",background:done?`${color}`:missed?`${C.red}15`:isToday?C.surfaceHi:"transparent",border:isToday&&!done?`1px solid ${C.accent}50`:"1px solid transparent",transition:"all 0.15s ease"}}>
                       {done&&<svg width={ck} height={ck} viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="#0B1120" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       {missed&&<div style={{width:4,height:1,background:C.red,borderRadius:1}}/>}
                     </div>);
                   })}
-                  {(()=>{const elapsed=weekDays.filter(d=>d<=todayDate);const doneC=elapsed.filter(d=>{const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;return(checks[k]||{})[id];}).length;const pct=elapsed.length?Math.round(doneC/elapsed.length*100):0;const pc=pct>=80?C.green:pct>=50?C.accent:C.red;return(
+                  {(()=>{const elapsed=colDates.filter(cd=>new Date(cd.getFullYear(),cd.getMonth(),cd.getDate()).getTime()<=todayMid);const doneC=elapsed.filter(cd=>(checks[dk(cd)]||{})[id]).length;const pct=elapsed.length?Math.round(doneC/elapsed.length*100):0;const pc=pct>=80?C.green:pct>=50?C.accent:C.red;return(
                     <div style={{width:PCT_W,textAlign:"center",fontSize:13,fontFamily:FN.m,fontWeight:800,color:pc}}>{elapsed.length?`${pct}%`:""}</div>
                   );})()}
                   <div style={{width:STREAK_W,textAlign:"center",fontSize:12,fontFamily:FN.m,fontWeight:700,color:streak>=7?C.green:streak>=3?C.accent:C.textDim}}>{streak>0?streak:""}</div>
@@ -3749,14 +3829,14 @@ ${body}
           // Demotion warnings
           const atRiskItems=aspirationProgress.filter(a=>a.graduated&&a.pct<50&&a.dayOfMonth>=14);
 
-          return(<div className="tab-content" style={{paddingBottom:140}}>
-            {/* Mode header */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-              <div>
-                <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em"}}>Structured Mode</div>
-                <div className="display" style={{fontSize:18,fontStyle:"italic",color:C.text}}>{gridExpanded?"Full Month":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].find((_,i)=>{const d=new Date(weekStart);d.setDate(d.getDate()+i);return d.getDate()===todayDate;})?`Week of ${weekStart.getDate()} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][mo]}`:"This Week"}</div>
-              </div>
-              <button onClick={()=>setGridExpanded(p=>!p)} style={{...btnG,fontSize:10,padding:"6px 12px"}}>{gridExpanded?"Week":"Month"}</button>
+          const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+          const atCurrent=gridExpanded?(y===RY&&mo===RM):(weekStartOf(anchor).getTime()===weekStartOf(now).getTime());
+          const periodLabel=gridExpanded?`${MONTHS[mo]} ${y}`:`${fd(colDates[0])} – ${fd(colDates[6])}`;
+          return(<div className="tab-content" data-swiperow {...makeSwipe(structCalTouch,structPrev,structNext)} style={{paddingBottom:140}}>
+            {/* Mode header — period + Week/Month controls now live in the sticky calendar strip above */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em"}}>Structured Mode</div>
+              <div className="display" style={{fontSize:18,fontStyle:"italic",color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{atCurrent?(gridExpanded?"This Month":"This Week"):periodLabel}</div>
             </div>
 
             {/* Demotion warnings */}
@@ -3773,10 +3853,10 @@ ${body}
 
             {/* ═══ ONE overall monthly completion % — across all habits, all elapsed days ═══ */}
             {(()=>{
-              const elapsed=weekDays.filter(d=>d<=todayDate);
+              const elapsed=colDates.filter(cd=>new Date(cd.getFullYear(),cd.getMonth(),cd.getDate()).getTime()<=todayMid);
               const allItems=[...morningItems,...nightItems,...generalItems];
               if(!elapsed.length||!allItems.length)return null;
-              let tot=0,cnt=0;allItems.forEach(t=>{const id=t.id||t.goalId;elapsed.forEach(d=>{const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;cnt++;if((checks[k]||{})[id])tot++;});});
+              let tot=0,cnt=0;allItems.forEach(t=>{const id=t.id||t.goalId;elapsed.forEach(cd=>{const k=dk(cd);cnt++;if((checks[k]||{})[id])tot++;});});
               const pct=cnt?Math.round(tot/cnt*100):0;const pc=pct>=80?C.green:pct>=50?C.accent:C.red;
               return(
                 <div style={{marginTop:18,padding:"18px 22px",borderRadius:14,background:C.surface,border:`1px solid ${C.hairline}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -5735,17 +5815,40 @@ ${body}
                   const latestDay=[...wHist].sort((a,b)=>pd(b.date)-pd(a.date))[0].date;
                   const selDay=progCalDay||latestDay;
                   const selWos=wByDate[selDay]||[];
-                  const days=[];for(let i=-41;i<=0;i++){const dt=new Date();dt.setDate(dt.getDate()+i);const k=dk(dt);days.push({key:k,wos:wByDate[k]||[],isToday:k===dk(now),dayNum:dt.getDate(),dayName:dt.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2)});}
+                  const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+                  const hAtCurrent=healthCalView==="month"?(healthAnchor.getFullYear()===now.getFullYear()&&healthAnchor.getMonth()===now.getMonth()):(weekStartOf(healthAnchor).getTime()===weekStartOf(now).getTime());
+                  const hWeek=weekOf(healthAnchor);
+                  const hLabel=healthCalView==="month"?healthAnchor.toLocaleDateString("en-US",{month:"long",year:"numeric"}):`${fd(hWeek[0])} – ${fd(hWeek[6])}`;
+                  const navBtn=(dis)=>({background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:8,width:28,height:28,color:dis?C.hairline:C.textSec,fontSize:15,lineHeight:1,cursor:dis?"default":"pointer",padding:0,flexShrink:0});
+                  const dayBox=(cd,variant)=>{const k=dk(cd);const wos=wByDate[k]||[];const has=wos.length>0;const clr=has?(spClr[wos[0].split]||C.accent):null;const isToday=k===dk(now);const isSel=selDay===k;const future=cd.getTime()>todayMid;const label=has?(wos.length>1?`${wos.length}×`:String(wos[0].split).slice(0,3).toUpperCase()):"";
+                    if(variant==="month")return(<button key={k} onClick={()=>{if(has&&!future)setProgCalDay(k);}} className={has?"press":""} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:8,opacity:future?0.35:1,background:isSel?(clr||C.accent):has?`${clr}22`:"transparent",border:isSel?"1px solid transparent":has?`1px solid ${clr}`:isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,cursor:(has&&!future)?"pointer":"default",padding:0}}>
+                      <span style={{fontFamily:FN.m,fontSize:12,fontWeight:isToday||isSel?800:600,color:isSel?C.btnText:isToday?C.accent:C.text,lineHeight:1}}>{cd.getDate()}</span>
+                      {has&&<span style={{width:4,height:4,borderRadius:"50%",background:isSel?C.btnText:clr,marginTop:3}}/>}
+                    </button>);
+                    return(<button key={k} onClick={()=>{if(has&&!future)setProgCalDay(k);}} className={has?"press":""} style={{flex:1,minWidth:0,textAlign:"center",padding:"8px 0",borderRadius:10,opacity:future?0.4:1,background:isSel?(clr||C.accent):C.surfaceDim,border:isSel?"1px solid transparent":has?`1px solid ${clr}`:isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,cursor:(has&&!future)?"pointer":"default"}}>
+                      <div style={{fontSize:9,fontWeight:700,color:isSel?C.btnText:C.textSec,textTransform:"uppercase",letterSpacing:"0.04em"}}>{DOW2[cd.getDay()]}</div>
+                      <div style={{fontFamily:FN.m,fontSize:18,fontWeight:800,color:isSel?C.btnText:isToday?C.accent:C.text,lineHeight:1.1,marginTop:2}}>{cd.getDate()}</div>
+                      <div style={{fontFamily:FN.m,fontSize:8,fontWeight:700,color:isSel?C.btnText:has?clr:"transparent",marginTop:3,whiteSpace:"nowrap",overflow:"hidden",minHeight:10}}>{label||"·"}</div>
+                    </button>);};
                   return(<div>
-                    <div ref={progCalRef} className="hide-scroll" style={{display:"flex",gap:6,overflowX:"auto",padding:"4px 0 12px"}}>
-                      {days.map((dy,i)=>{const has=dy.wos.length>0;const clr=has?(spClr[dy.wos[0].split]||C.accent):null;const isSel=selDay===dy.key&&has;const label=has?(dy.wos.length>1?`${dy.wos.length} WO`:String(dy.wos[0].split).slice(0,4).toUpperCase()):"";return(
-                        <button key={i} onClick={()=>has&&setProgCalDay(dy.key)} className={has?"press":""} style={{flex:"0 0 56px",textAlign:"center",padding:"10px 2px",borderRadius:12,background:isSel?(clr||C.accent):has?`${clr}22`:"transparent",border:isSel?`2px solid ${clr||C.accent}`:has?`1px solid ${clr}`:dy.isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,cursor:has?"pointer":"default",flexShrink:0}}>
-                          <div style={{fontSize:9,fontWeight:700,color:isSel?C.btnText:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>{dy.dayName}</div>
-                          <div style={{fontFamily:FN.m,fontSize:19,fontWeight:800,color:isSel?C.btnText:dy.isToday?C.accent:C.text,lineHeight:1.1,marginTop:3}}>{dy.dayNum}</div>
-                          <div style={{fontFamily:FN.m,fontSize:8,fontWeight:700,color:isSel?C.btnText:has?clr:"transparent",marginTop:4,whiteSpace:"nowrap",overflow:"hidden",minHeight:10}}>{label||"·"}</div>
-                        </button>
-                      );})}
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,gap:8}}>
+                      <span style={{fontSize:12,fontFamily:FN.m,fontWeight:700,color:C.textSec,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{hLabel}</span>
+                      <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
+                        <button className="press" onClick={healthPrev} title={healthCalView==="month"?"Previous month":"Previous week"} style={navBtn(false)}>‹</button>
+                        <button className="press" onClick={healthNext} disabled={hAtCurrent} title={healthCalView==="month"?"Next month":"Next week"} style={navBtn(hAtCurrent)}>›</button>
+                        <button className="press" onClick={()=>setHealthCalView(v=>v==="week"?"month":"week")} style={{...btnG,fontSize:10,padding:"6px 10px"}}>{healthCalView==="week"?"Month":"Week"}</button>
+                      </div>
                     </div>
+                    {healthCalView==="week"
+                      ?<div ref={progCalRef} data-swiperow {...makeSwipe(healthCalTouch,healthPrev,healthNext)} style={{display:"flex",gap:4,padding:"4px 0 12px",touchAction:"pan-y"}}>
+                        {hWeek.map(cd=>dayBox(cd,"week"))}
+                      </div>
+                      :<div ref={progCalRef} data-swiperow {...makeSwipe(healthCalTouch,healthPrev,healthNext)} style={{padding:"4px 0 12px",touchAction:"pan-y"}}>
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+                          {["S","M","T","W","T","F","S"].map((d,i)=><div key={"h"+i} style={{textAlign:"center",fontSize:9,fontWeight:700,color:C.textSec,padding:"2px 0"}}>{d}</div>)}
+                          {monthGridCells(healthAnchor.getFullYear(),healthAnchor.getMonth()).map((cd,i)=>cd?dayBox(cd,"month"):<div key={"e"+i}/>)}
+                        </div>
+                      </div>}
                     <div style={{...card,padding:"14px 16px"}}>
                       <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:selWos.length?12:0}}>{pd(selDay).toLocaleDateString("en-US",{weekday:"long"})}, {fd(selDay)}</div>
                       {selWos.length===0
