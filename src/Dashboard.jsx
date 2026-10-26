@@ -4,36 +4,46 @@ import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Cart
 /* ═══ TOKENS ═══ */
 // Two palettes: DARK (navy editorial) and LIGHT (warm paper editorial). Both keep the same
 // amber accent identity. Light mode uses warm paper background so Fraunces italic feels at home.
+// ═══ Apple-inspired design tokens. Semantic roles only — components never pick a theme. ═══
+// DARK = premium graphite. LIGHT = soft-neutral. Orange is the accent in BOTH modes; green/blue/red
+// carry success/info/negative meaning, never decoration.
+// ═══ Green-led identity. Emerald is PROGRESS's brand + primary action; the other Apple system
+// colors keep distinct semantic roles (blue=info/time, orange=focus, red=expense/negative,
+// purple=analytics, cyan=secondary). Vivid on dark, slightly deepened on light for contrast. ═══
 const DARK={
-  bg:"#131A2B",surface:"#1C2438",surfaceDim:"#161D30",surfaceHi:"#2A334A",
-  text:"#F8F5EC",textSec:"#D4DCE8",textDim:"#7D8699",
-  hairline:"rgba(248,245,236,0.10)",
-  accent:"#F59E0B",accentBright:"#FBBF24",accentSoft:"rgba(245,158,11,0.12)",accentMed:"rgba(245,158,11,0.22)",
-  green:"#34D399",greenSoft:"rgba(52,211,153,0.12)",greenMed:"rgba(52,211,153,0.20)",greenBright:"#34D399",
-  red:"#F87171",redSoft:"rgba(248,113,113,0.12)",
-  blue:"#F59E0B",blueLight:"#FBBF24",blueSoft:"rgba(245,158,11,0.12)",blueMed:"rgba(245,158,11,0.20)",
-  gold:"#F59E0B",goldBright:"#FBBF24",goldSoft:"rgba(245,158,11,0.12)",goldMed:"rgba(245,158,11,0.20)",
-  orange:"#F59E0B",orangeSoft:"rgba(245,158,11,0.12)",
-  purple:"#7D8699",purpleSoft:"rgba(125,134,153,0.12)",
-  btnText:"#0B1120", // text on accent buttons
-  shadow:"0 1px 0 rgba(255,255,255,0.03) inset",
-  modalShadow:"0 8px 24px rgba(0,0,0,0.4)",
+  bg:"#080B10",surface:"#141A23",surfaceDim:"#10141C",surfaceHi:"#1C2531",
+  text:"#F5F7FA",textSec:"#A2ADBC",textDim:"#758195",
+  hairline:"#293443",
+  accent:"#32D583",accentBright:"#5BE49B",accentSoft:"rgba(50,213,131,0.14)",accentMed:"rgba(50,213,131,0.24)",
+  accentGrad:"linear-gradient(135deg,#32D583 0%,#12B76A 100%)",
+  green:"#32D583",greenSoft:"rgba(50,213,131,0.14)",greenMed:"rgba(50,213,131,0.22)",greenBright:"#5BE49B",
+  red:"#FF453A",redSoft:"rgba(255,69,58,0.14)",
+  blue:"#0A84FF",blueLight:"#409CFF",blueSoft:"rgba(10,132,255,0.14)",blueMed:"rgba(10,132,255,0.22)",
+  gold:"#FFD479",goldBright:"#FFE3A6",goldSoft:"rgba(255,212,121,0.14)",goldMed:"rgba(255,212,121,0.22)",
+  orange:"#FF9F0A",orangeSoft:"rgba(255,159,10,0.14)",
+  purple:"#AF52DE",purpleSoft:"rgba(175,82,222,0.14)",
+  cyan:"#32ADE6",cyanSoft:"rgba(50,173,230,0.14)",
+  btnText:"#07140D", // near-black on vivid green
+  shadow:"none",
+  modalShadow:"0 14px 44px rgba(0,0,0,0.55)",
   mode:"dark"
 };
 const LIGHT={
-  bg:"#FBF9F5",surface:"#FFFFFF",surfaceDim:"#F3EFE6",surfaceHi:"#E9E3D6",
-  text:"#16203A",textSec:"#45506A",textDim:"#8C8A86",
-  hairline:"rgba(22,32,58,0.09)",
-  accent:"#0AA063",accentBright:"#12C57E",accentSoft:"rgba(16,185,129,0.13)",accentMed:"rgba(16,185,129,0.22)",
-  green:"#0AA063",greenSoft:"rgba(16,185,129,0.13)",greenMed:"rgba(16,185,129,0.22)",greenBright:"#12C57E",
-  red:"#E5484D",redSoft:"rgba(229,72,77,0.11)",
-  blue:"#E0820A",blueLight:"#F59E0B",blueSoft:"rgba(224,130,10,0.12)",blueMed:"rgba(224,130,10,0.22)",
-  gold:"#E0820A",goldBright:"#F0960C",goldSoft:"rgba(224,130,10,0.12)",goldMed:"rgba(224,130,10,0.22)",
-  orange:"#E0820A",orangeSoft:"rgba(224,130,10,0.12)",
-  purple:"#8C8A86",purpleSoft:"rgba(140,138,134,0.12)",
-  btnText:"#FFFFFF", // text on accent (green) buttons in light mode
-  shadow:"0 1px 3px rgba(22,32,58,0.07), 0 6px 18px rgba(22,32,58,0.05)",
-  modalShadow:"0 14px 44px rgba(22,32,58,0.16)",
+  bg:"#F3F5F8",surface:"#FFFFFF",surfaceDim:"#EEF1F5",surfaceHi:"#EAEDF2",
+  text:"#171B24",textSec:"#626D7D",textDim:"#8993A2",
+  hairline:"#E2E7EF",
+  accent:"#12B76A",accentBright:"#0E9E5A",accentSoft:"rgba(18,183,106,0.12)",accentMed:"rgba(18,183,106,0.20)",
+  accentGrad:"linear-gradient(135deg,#16C878 0%,#0E9E5A 100%)",
+  green:"#12B76A",greenSoft:"rgba(18,183,106,0.12)",greenMed:"rgba(18,183,106,0.20)",greenBright:"#17C06E",
+  red:"#E5342A",redSoft:"rgba(229,52,42,0.10)",
+  blue:"#0A6DD6",blueLight:"#2E86DE",blueSoft:"rgba(10,109,214,0.12)",blueMed:"rgba(10,109,214,0.20)",
+  gold:"#B07400",goldBright:"#C98A00",goldSoft:"rgba(176,116,0,0.12)",goldMed:"rgba(176,116,0,0.20)",
+  orange:"#D97A00",orangeSoft:"rgba(217,122,0,0.12)",
+  purple:"#9333C4",purpleSoft:"rgba(147,51,196,0.12)",
+  cyan:"#0C94C9",cyanSoft:"rgba(12,148,201,0.12)",
+  btnText:"#FFFFFF", // white on the deeper light-mode green
+  shadow:"0 1px 2px rgba(23,27,36,0.05), 0 6px 18px rgba(23,27,36,0.06)",
+  modalShadow:"0 16px 48px rgba(23,27,36,0.16)",
   mode:"light"
 };
 // `C` is the *active* palette. Mutable reference — updated by the component when theme toggles.
@@ -41,7 +51,11 @@ const LIGHT={
 // the component re-derives its own snapshot on each render.
 let C=DARK;
 let DIFF={easy:{pts:1,label:"Easy",color:C.green,bg:C.greenSoft},medium:{pts:3,label:"Med",color:C.blue,bg:C.blueSoft},hard:{pts:6,label:"Hard",color:C.orange,bg:C.orangeSoft}};
-const FN={h:"'Fraunces',serif",b:"'Inter',sans-serif",m:"'JetBrains Mono',monospace"};
+// SF Pro on Apple devices, Inter as the cross-platform fallback. One clean sans system — no serif,
+// no mono, no condensed. Numbers are made tabular globally (see CSS) so metrics align.
+const SANS="-apple-system,'SF Pro Text','Inter',system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const DISP="-apple-system,'SF Pro Display','Inter',system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const FN={h:DISP,b:SANS,m:SANS};
 // Smooth red→orange→yellow→green gradient by percent-to-goal (0=red, 100=green).
 const progressColor=(pct)=>{const p=Math.max(0,Math.min(100,pct||0));return `hsl(${Math.round((p/100)*130)},82%,45%)`;};
 let pC=p=>{const v=Math.max(0,Math.min(100,p||0));
@@ -94,13 +108,13 @@ const dk=d=>{const t=pd(d);return`${t.getFullYear()}-${String(t.getMonth()+1).pa
 const fd=d=>pd(d).toLocaleDateString("en-US",{month:"short",day:"numeric"});
 const uid=()=>`_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
 
-let card={background:C.surface,borderRadius:14,padding:20,border:`1px solid ${C.hairline}`,boxShadow:C.shadow};
-let lbl={fontFamily:FN.b,fontSize:11,fontWeight:600,color:C.textDim,marginBottom:14,textTransform:"uppercase",letterSpacing:"0.08em"};
-let inp={background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"11px 14px",color:C.text,fontSize:13,fontFamily:FN.b,fontWeight:500,outline:"none",width:"100%"};
-let numI={...inp,textAlign:"center",fontFamily:FN.m,fontWeight:600};
-let btnB={background:C.accent,border:"none",borderRadius:8,padding:"11px 20px",color:C.btnText,fontSize:12,fontFamily:FN.b,fontWeight:700,cursor:"pointer",transition:"all 0.15s ease",letterSpacing:"0.02em",textTransform:"uppercase"};
-let btnG={background:C.surfaceHi,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"9px 16px",color:C.textSec,fontSize:11,fontFamily:FN.b,fontWeight:600,cursor:"pointer",transition:"all 0.15s ease",textTransform:"uppercase",letterSpacing:"0.04em"};
-let pill=(on,clr)=>({background:on?(clr||C.accent):C.surfaceHi,border:`1px solid ${on?"transparent":C.hairline}`,borderRadius:6,padding:"6px 14px",color:on?C.btnText:C.textDim,fontSize:11,fontFamily:FN.b,fontWeight:700,cursor:"pointer",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",textTransform:"uppercase",letterSpacing:"0.04em"});
+let card={background:C.surface,borderRadius:16,padding:18,border:`1px solid ${C.hairline}`,boxShadow:C.shadow};
+let lbl={fontFamily:FN.b,fontSize:12,fontWeight:700,color:C.textDim,marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"};
+let inp={background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,padding:"12px 14px",color:C.text,fontSize:15,fontFamily:FN.b,fontWeight:500,outline:"none",width:"100%"};
+let numI={...inp,textAlign:"center",fontFamily:FN.m,fontWeight:700};
+let btnB={background:C.accentGrad||C.accent,border:"none",borderRadius:12,padding:"13px 22px",color:C.btnText,fontSize:14,fontFamily:FN.b,fontWeight:600,cursor:"pointer",transition:"all 0.15s ease",boxShadow:C.mode==="dark"?`0 2px 12px ${C.accent}33`:`0 2px 10px ${C.accent}2E`};
+let btnG={background:C.surfaceHi,border:`1px solid ${C.hairline}`,borderRadius:12,padding:"11px 18px",color:C.text,fontSize:13,fontFamily:FN.b,fontWeight:600,cursor:"pointer",transition:"all 0.15s ease"};
+let pill=(on,clr)=>({background:on?(clr||C.accent):"transparent",border:`1px solid ${on?"transparent":C.hairline}`,borderRadius:8,padding:"7px 15px",color:on?C.btnText:C.textDim,fontSize:12,fontFamily:FN.b,fontWeight:700,cursor:"pointer",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)"});
 
 let Tip=({active,payload,label:lb})=>{if(!active||!payload?.length)return null;return(<div style={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"8px 14px",fontSize:11,fontFamily:FN.m,boxShadow:C.modalShadow}}><div style={{color:C.textDim,marginBottom:3}}>{lb}</div>{payload.map((p,i)=>(<div key={i} style={{color:p.color||C.text,fontWeight:600}}>{p.name}: {typeof p.value==="number"?Math.round(p.value*10)/10:p.value}</div>))}</div>);};
 
@@ -136,13 +150,13 @@ function applyTheme(palette){
     return{fill:`hsla(${h},80%,50%,${a})`,border,ring,num,weight,perfect,h};
   };
   pctBorder=p=>{if(p<=0)return "transparent";const r=Math.round(248+(52-248)*(p/100));const g=Math.round(113+(211-113)*(p/100));const b=Math.round(113+(153-113)*(p/100));return `rgba(${r},${g},${b},0.55)`;};
-  card={background:C.surface,borderRadius:14,padding:20,border:`1px solid ${C.hairline}`,boxShadow:C.shadow};
-  lbl={fontFamily:FN.b,fontSize:11,fontWeight:600,color:C.textDim,marginBottom:14,textTransform:"uppercase",letterSpacing:"0.08em"};
-  inp={background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"11px 14px",color:C.text,fontSize:13,fontFamily:FN.b,fontWeight:500,outline:"none",width:"100%"};
-  numI={...inp,textAlign:"center",fontFamily:FN.m,fontWeight:600};
-  btnB={background:C.accent,border:"none",borderRadius:8,padding:"11px 20px",color:C.btnText,fontSize:12,fontFamily:FN.b,fontWeight:700,cursor:"pointer",transition:"all 0.15s ease",letterSpacing:"0.02em",textTransform:"uppercase"};
-  btnG={background:C.surfaceHi,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"9px 16px",color:C.textSec,fontSize:11,fontFamily:FN.b,fontWeight:600,cursor:"pointer",transition:"all 0.15s ease",textTransform:"uppercase",letterSpacing:"0.04em"};
-  pill=(on,clr)=>({background:on?(clr||C.accent):C.surfaceHi,border:`1px solid ${on?"transparent":C.hairline}`,borderRadius:6,padding:"6px 14px",color:on?C.btnText:C.textDim,fontSize:11,fontFamily:FN.b,fontWeight:700,cursor:"pointer",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",textTransform:"uppercase",letterSpacing:"0.04em"});
+  card={background:C.surface,borderRadius:16,padding:18,border:`1px solid ${C.hairline}`,boxShadow:C.shadow};
+  lbl={fontFamily:FN.b,fontSize:12,fontWeight:700,color:C.textDim,marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"};
+  inp={background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,padding:"12px 14px",color:C.text,fontSize:15,fontFamily:FN.b,fontWeight:500,outline:"none",width:"100%"};
+  numI={...inp,textAlign:"center",fontFamily:FN.m,fontWeight:700};
+  btnB={background:C.accentGrad||C.accent,border:"none",borderRadius:12,padding:"13px 22px",color:C.btnText,fontSize:14,fontFamily:FN.b,fontWeight:600,cursor:"pointer",transition:"all 0.15s ease",boxShadow:C.mode==="dark"?`0 2px 12px ${C.accent}33`:`0 2px 10px ${C.accent}2E`};
+  btnG={background:C.surfaceHi,border:`1px solid ${C.hairline}`,borderRadius:12,padding:"11px 18px",color:C.text,fontSize:13,fontFamily:FN.b,fontWeight:600,cursor:"pointer",transition:"all 0.15s ease"};
+  pill=(on,clr)=>({background:on?(clr||C.accent):"transparent",border:`1px solid ${on?"transparent":C.hairline}`,borderRadius:8,padding:"7px 15px",color:on?C.btnText:C.textDim,fontSize:12,fontFamily:FN.b,fontWeight:700,cursor:"pointer",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)"});
   Tip=({active,payload,label:lb})=>{if(!active||!payload?.length)return null;return(<div style={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"8px 14px",fontSize:11,fontFamily:FN.m,boxShadow:C.modalShadow}}><div style={{color:C.textDim,marginBottom:3}}>{lb}</div>{payload.map((p,i)=>(<div key={i} style={{color:p.color||C.text,fontWeight:600}}>{p.name}: {typeof p.value==="number"?Math.round(p.value*10)/10:p.value}</div>))}</div>);};
 }
 
@@ -266,8 +280,14 @@ const CSS=`
 .modal-box{animation:modalIn 0.3s cubic-bezier(0.25,0.46,0.45,0.94)}
 .card-enter{animation:scaleIn 0.2s cubic-bezier(0.25,0.46,0.45,0.94)}
 .banner-fade{animation:fadeTab 0.6s ease}
-.hero-num{font-family:${FN.m};font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.04em}
-.display{font-family:${FN.h};font-weight:500;letter-spacing:-0.02em;font-variation-settings:"opsz" 144,"SOFT" 50}
+.hero-num{font-family:${FN.m};font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+.display{font-family:${FN.h};font-weight:600;letter-spacing:-0.01em}
+body,input,button,textarea,select{font-family:${FN.b}}
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-variant-numeric:tabular-nums}
+input::placeholder,textarea::placeholder{color:var(--tdim);opacity:0.75}
+input:focus,textarea:focus,select:focus{border-color:var(--acc)!important;box-shadow:0 0 0 3px var(--acc-soft)}
+button{cursor:pointer}
+button:disabled{cursor:default}
 `;
 
 /* ═══ SEED DATA ═══ */
@@ -306,11 +326,11 @@ const defSplits={upper:["Bench Press","Lat Pull Down","Pec Dec","Mid Row","Trice
 // Splits that log distance + time instead of sets/weight/reps. A split is cardio if its key is here.
 const CARDIO_SPLIT_KEYS=["running","cardio","run"];
 const isCardioSplit=(key)=>CARDIO_SPLIT_KEYS.includes((key||"").toLowerCase());
-const spClr={upper:"#4A82D4",lower:"#2A9D5C",pull:"#E07A3A",push:"#D04545",legs:"#7B65B0"};
+const spClr={upper:"#0A84FF",lower:"#32D583",pull:"#FF9F0A",push:"#FF453A",legs:"#AF52DE"};
 /* ═══ HEALTH ═══ */
 const MACRO={calories:{label:"Calories",unit:"kcal",color:"#F59E0B"},protein:{label:"Protein",unit:"g",color:"#EF4444"},carbs:{label:"Carbs",unit:"g",color:"#3B82F6"},fat:{label:"Fat",unit:"g",color:"#A855F7"},water:{label:"Water",unit:"oz",color:"#06B6D4"}};
 // Distinct palette for per-exercise strength lines
-const EX_PALETTE=["#4A82D4","#2A9D5C","#E07A3A","#D04545","#7B65B0","#06B6D4","#F59E0B","#EC4899","#14B8A6","#8B5CF6","#84CC16","#F43F5E"];
+const EX_PALETTE=["#32D583","#0A84FF","#FF9F0A","#AF52DE","#32ADE6","#FF453A","#FFD60A","#FF2D55","#64D2FF","#BF5AF2","#30D158","#5E5CE6"];
 const defDietGoals={calories:2200,protein:160,carbs:250,fat:70,water:64,cupOz:8};
 // Circular progress ring (SVG). Center content passed as children.
 function Ring({value,goal,size=120,stroke=12,color,children}){
@@ -331,7 +351,7 @@ const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflec
 
 // ─── Budget categories (spec's taxonomy) ───
 const TX_CATEGORIES=["Food","Transportation","Housing","Utilities","Entertainment","Shopping","Healthcare","Travel","Investments","Subscriptions","Income","Transfers","Other"];
-const CAT_COLORS={Food:"#E8A33D",Transportation:"#5B9BD5",Housing:"#8B7FE8",Utilities:"#4FB0AE",Entertainment:"#E86B9A",Shopping:"#F2785C",Healthcare:"#E85B5B",Travel:"#38BDF8",Investments:"#34D399",Subscriptions:"#A78BFA",Income:"#22C55E",Transfers:"#94A3B8",Other:"#8C8A86"};
+const CAT_COLORS={Food:"#FF9F0A",Transportation:"#0A84FF",Housing:"#AF52DE",Utilities:"#32ADE6",Entertainment:"#FF2D55",Shopping:"#FF453A",Healthcare:"#FF375F",Travel:"#64D2FF",Investments:"#32D583",Subscriptions:"#BF5AF2",Income:"#30D158",Transfers:"#8E99A8",Other:"#98A2B3"};
 // Seed merchant keywords → category. Substring match on the lowercased description.
 const SEED_MERCHANTS={
   chipotle:"Food",mcdonald:"Food",starbucks:"Food",dunkin:"Food",subway:"Food",wendy:"Food","taco bell":"Food",chick:"Food",panera:"Food","five guys":"Food","whole foods":"Food",trader:"Food",kroger:"Food",safeway:"Food",aldi:"Food",publix:"Food",costco:"Food",restaurant:"Food",cafe:"Food",coffee:"Food",grocery:"Food",doordash:"Food",grubhub:"Food",ubereats:"Food","uber eats":"Food",
@@ -793,7 +813,7 @@ export default function Dashboard(){
   // the active palette before any child JSX reads them this render.
   applyTheme(theme==="light"?LIGHT:DARK);
   const[structuredMode,setStructuredMode]=useState(true); // default to structured (month grid) view
-  const[gridExpanded,setGridExpanded]=useState(true); // week vs full month — default to full month
+  const[gridExpanded,setGridExpanded]=useState(false); // week vs full month — default to Week
   const[vw,setVw]=useState(typeof window!=="undefined"?window.innerWidth:1200); // live viewport width (drives the habit grid sizing)
   const[showFullCal,setShowFullCal]=useState(false);
   const[showRecap,setShowRecap]=useState(false);
@@ -918,7 +938,15 @@ export default function Dashboard(){
   // ─── Budget: Financial Snapshot ───
   const[accounts,setAccounts]=useState({checking:"",savings:"",cash:"",investment:"",credit:""});
   const[subscriptions,setSubscriptions]=useState([]); // [{id,name,cost,billDay,category}]
-  const[budgetSub,setBudgetSub]=useState("current"); // current (dashboard) | overview (analytics)
+  const[budgetSub,setBudgetSub]=useState("current"); // legacy (single My Finances page now)
+  // My Finances: stock-chart style time ranges for the Net Worth, Debt and Cash Flow graphs.
+  const[nwRange,setNwRange]=useState("3M");
+  const[debtRange,setDebtRange]=useState("3M");
+  const[cfRange,setCfRange]=useState("3M");
+  // Pie-chart period filters: {mode:"month"|"range"|"all", monthKey, startKey, endKey} (YYYY-MM).
+  const[ieFilter,setIeFilter]=useState({mode:"month",monthKey:null,startKey:null,endKey:null});
+  const[scFilter,setScFilter]=useState({mode:"month",monthKey:null,startKey:null,endKey:null});
+  const[scCats,setScCats]=useState(null); // null = all categories; otherwise a Set of selected names
   const[finGoals,setFinGoals]=useState([]); // [{id,name,target,deadline,icon,createdOn}] — progress auto-tracked from tagged txns
   const[showFinGoal,setShowFinGoal]=useState(false);
   const[finGoalDraft,setFinGoalDraft]=useState({name:"",target:"",deadline:"",icon:"🎯"});
@@ -3271,7 +3299,7 @@ ${body}
         <div style={{width:8,height:8,borderRadius:"50%",background:on?C.accent:isNext?C.accent:C.surfaceHi,border:`1.5px solid ${C.accent}`,flexShrink:0}}/>
         {link.index<link.total-1&&<div style={{flex:1,width:2,background:C.accent,opacity:0.5}}/>}
       </div>}
-      <div onClick={()=>handleCheck(t)} style={{position:"relative",zIndex:2,width:big?22:20,height:big?22:20,borderRadius:4,flexShrink:0,border:`1.5px solid ${on?C.greenBright:C.textDim}`,background:on?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:big?13:11,fontWeight:800,cursor:"pointer",transition:"all 0.3s ease"}}>{on&&"✓"}</div>
+      <div onClick={()=>handleCheck(t)} style={{position:"relative",zIndex:2,width:big?24:22,height:big?24:22,borderRadius:7,flexShrink:0,border:on?"none":`2px solid ${C.textDim}`,background:on?`linear-gradient(135deg,${C.greenBright},${C.green})`:"transparent",boxShadow:on?`0 2px 8px ${C.green}55`:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s cubic-bezier(0.34,1.4,0.5,1)"}}>{on&&<svg width={big?15:13} height={big?15:13} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>}</div>
       {t.diff&&DIFF[t.diff]&&<div style={{position:"relative",zIndex:2,width:4,height:big?26:20,borderRadius:2,background:DIFF[t.diff].color,flexShrink:0,opacity:on?0.4:1}}/>}
       <span onClick={()=>handleCheck(t)} style={{position:"relative",zIndex:2,flex:1,fontSize:big?15:13,fontWeight:500,fontFamily:big?FN.h:FN.b,fontStyle:big?"italic":"normal",color:on?C.textDim:C.text,cursor:"pointer",transition:"color 0.4s ease"}}>{t.text}</span>
       {t.experimental&&(()=>{const st=habitStreakFor(t.id);return(<span style={{position:"relative",zIndex:2,display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}><span style={{fontSize:8.5,fontWeight:800,color:C.accent,background:`${C.accent}1F`,border:`1px solid ${C.accent}55`,borderRadius:5,padding:"2px 6px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.05em"}}>🧪 Test</span><span style={{fontSize:9.5,fontWeight:800,color:st>=1?"#E8A33D":C.textDim,fontFamily:FN.m}}>{st}/30</span></span>);})()}
@@ -3319,7 +3347,7 @@ ${body}
       </div>);
     }
     return(<div className={completing?"focus-complete":""} style={{display:"flex",alignItems:"center",gap:11,padding:"13px 4px",marginBottom:7,borderBottom:`1px solid ${C.hairline}`}}>
-      <div onClick={()=>!completing&&completeFocusTask(t)} style={{width:23,height:23,borderRadius:7,border:`1.5px solid ${completing?C.greenBright:C.textDim}`,background:completing?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:13,fontWeight:800,cursor:"pointer",transition:"all 0.2s ease",flexShrink:0}}>{completing&&"✓"}</div>
+      <div onClick={()=>!completing&&completeFocusTask(t)} style={{width:24,height:24,borderRadius:7,border:completing?"none":`2px solid ${C.textDim}`,background:completing?`linear-gradient(135deg,${C.greenBright},${C.green})`:"transparent",boxShadow:completing?`0 2px 8px ${C.green}55`:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s cubic-bezier(0.34,1.4,0.5,1)",flexShrink:0}}>{completing&&<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>}</div>
       {d&&<div style={{width:4,height:24,borderRadius:2,background:d.color,flexShrink:0,opacity:completing?0.4:1}}/>}
       <span onClick={()=>!completing&&completeFocusTask(t)} style={{flex:1,position:"relative",fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:completing?C.textDim:C.text,cursor:"pointer"}}>
         {t.text}
@@ -3350,7 +3378,7 @@ ${body}
 
   /* ═══ RENDER ═══ */
   return(
-    <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column",transition:"background 0.4s ease, color 0.4s ease"}}>
+    <div style={{"--acc":C.accent,"--acc-soft":C.accentSoft,"--tdim":C.textDim,background:C.bg,minHeight:"100vh",color:C.text,fontFamily:FN.b,display:"flex",flexDirection:"column",transition:"background 0.4s ease, color 0.4s ease"}}>
       <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet" />
       {/* #8/#9 — Carryover modal: choose how the remaining work is redistributed */}
       {carryPrompt&&(()=>{const c=carryPrompt;const nm=new Date(now.getFullYear(),now.getMonth()+1,1);
@@ -3515,7 +3543,7 @@ ${body}
           {/* left spacer balances the right button cluster so the wordmark stays centered & never overlaps */}
           <div style={{width:58,flexShrink:0,height:1}} aria-hidden="true" />
           <button className="press" onClick={()=>{setTab("today");setMenuTab(null);}} style={{flex:1,minWidth:0,background:"transparent",border:"none",cursor:"pointer",padding:0}}>
-            <span style={{display:"block",textAlign:"center",fontFamily:"'Space Grotesk',sans-serif",fontSize:27,fontWeight:700,letterSpacing:"0.18em",textIndent:"0.18em",textTransform:"uppercase",lineHeight:1.05,color:theme==="light"?"#0AA063":"#34E29B",whiteSpace:"nowrap"}}>Progress</span>
+            <span style={{display:"block",textAlign:"center",fontFamily:"'Space Grotesk',sans-serif",fontSize:27,fontWeight:700,letterSpacing:"0.18em",textIndent:"0.18em",textTransform:"uppercase",lineHeight:1.05,color:theme==="light"?"#12B76A":"#32D583",whiteSpace:"nowrap"}}>Progress</span>
           </button>
           <div style={{width:58,flexShrink:0,display:"flex",gap:6,justifyContent:"flex-end",alignItems:"flex-start"}}>
             <button className="press" onClick={()=>setStructuredMode(p=>!p)} style={{background:structuredMode?C.accentSoft:"transparent",border:structuredMode?`1px solid ${C.accentMed}`:"1px solid transparent",borderRadius:6,cursor:"pointer",padding:5,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s ease"}} title="Structured Mode"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="6" y="1" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="11" y="1" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="1" y="6" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="6" y="6" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="11" y="6" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="1" y="11" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="6" y="11" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/><rect x="11" y="11" width="4" height="4" rx="1" fill={structuredMode?C.accent:C.textDim}/></svg></button>
@@ -5452,18 +5480,19 @@ ${body}
             let streak=0;let probe=new Date();
             for(let i=0;i<104;i++){if(weeksWithWo.has(weekKey(probe)))streak++;else if(i>0)break;probe.setDate(probe.getDate()-7);}
             const sleepToday=sleepFor(now);
-            const scoreClr=sp.score>=70?"#22C55E":sp.score>=45?"#E8A33D":"#E85B5B";
-            const sleepClr=sleepToday==null?C.textDim:sleepToday>=80?"#22C55E":sleepToday>=60?"#E8A33D":"#E85B5B";
-            const SquareCard=({children,onClick})=>(
-              <div onClick={onClick} className={onClick?"press":""} style={{...card,padding:"13px 14px 14px",display:"flex",flexDirection:"column",cursor:onClick?"pointer":"default",overflow:"hidden"}}>{children}</div>
-            );
-            const CardLabel=({children})=>(<div style={{fontSize:12.5,color:C.textDim,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.04em",textAlign:"center",marginBottom:9,lineHeight:1.2}}>{children}</div>);
+            const scoreClr=sp.score>=70?C.green:sp.score>=45?C.accent:C.red;
+            const sleepClr=sleepToday==null?C.textDim:sleepToday>=80?C.green:sleepToday>=60?C.accent:C.red;
+            // NOTE: these are plain style objects, NOT components. Defining a component inside this
+            // render IIFE gives it a new identity on every keystroke, which remounts the card and makes
+            // the weight/sleep inputs lose focus after one character. Host <div>s reconcile instead.
+            const sqStyle={...card,padding:"13px 14px 14px",display:"flex",flexDirection:"column",overflow:"hidden"};
+            const lblStyle={fontSize:12.5,color:C.textDim,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.04em",textAlign:"center",marginBottom:9,lineHeight:1.2};
             return(<div>
               {/* ═══ FOUR SQUARE METRIC CARDS (2×2) ═══ */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
                 {/* Card 1 — Am I Getting Stronger? */}
-                <SquareCard>
-                  <CardLabel>Am I Getting Stronger?</CardLabel>
+                <div style={sqStyle}>
+                  <div style={lblStyle}>Am I Getting Stronger?</div>
                   {!sp.hasData
                     ?<div style={{display:"flex",flexDirection:"column",justifyContent:"center",flex:1,fontSize:12,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,lineHeight:1.4}}>Log a few workouts to see your strength trend.</div>
                     :<div style={{display:"flex",flexDirection:"column",justifyContent:"center",flex:1,alignItems:"center",textAlign:"center"}}>
@@ -5471,13 +5500,13 @@ ${body}
                       <div style={{fontSize:11,fontWeight:700,color:scoreClr,marginTop:6}}>{sp.score>=70?"Progressing":sp.score>=45?"Holding steady":"Stalling"}</div>
                       {sp.scoreParts&&<div style={{fontSize:9,color:C.textDim,fontFamily:FN.m,marginTop:6}}>1RM {sp.scoreParts.avgE1rmPct>=0?"+":""}{Math.round(sp.scoreParts.avgE1rmPct)}% · Vol {sp.scoreParts.avgVolPct>=0?"+":""}{Math.round(sp.scoreParts.avgVolPct)}%</div>}
                     </div>}
-                </SquareCard>
+                </div>
                 {/* Card 2 — Streak + Exercises this month */}
-                <SquareCard>
-                  <CardLabel>Streak · This Month</CardLabel>
+                <div style={sqStyle}>
+                  <div style={lblStyle}>Streak · This Month</div>
                   <div style={{display:"flex",flexDirection:"column",justifyContent:"center",flex:1,gap:12}}>
                     <div style={{textAlign:"center"}}>
-                      <div style={{fontSize:34,fontWeight:800,color:streak>0?"#E8A33D":C.textDim,fontFamily:FN.m,lineHeight:1}}>{streak}<span style={{fontSize:14}}>🔥</span></div>
+                      <div style={{fontSize:34,fontWeight:800,color:streak>0?C.accent:C.textDim,fontFamily:FN.m,lineHeight:1}}>{streak}<span style={{fontSize:14}}>🔥</span></div>
                       <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>Week Streak</div>
                     </div>
                     <div style={{borderTop:`1px solid ${C.hairline}`,paddingTop:10,textAlign:"center"}}>
@@ -5485,10 +5514,10 @@ ${body}
                       <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginTop:3}}>{woThisMonth.length} workout{woThisMonth.length!==1?"s":""}</div>
                     </div>
                   </div>
-                </SquareCard>
+                </div>
                 {/* Card 3 — Sleep Score */}
-                <div id="sleep-card" style={{display:"contents"}}><SquareCard>
-                  <CardLabel>Sleep Score</CardLabel>
+                <div id="sleep-card" style={{display:"contents"}}><div style={sqStyle}>
+                  <div style={lblStyle}>Sleep Score</div>
                   <div style={{display:"flex",flexDirection:"column",justifyContent:"center",flex:1,alignItems:"center"}}>
                     <div style={{fontSize:40,fontWeight:800,color:sleepClr,fontFamily:FN.m,lineHeight:1}}>{sleepToday==null?"—":sleepToday}</div>
                     <div style={{fontSize:9,color:C.textDim,marginTop:4,fontFamily:FN.m}}>{sleepStats.avg!=null?`7-day avg ${sleepStats.avg}`:"today"}</div>
@@ -5497,19 +5526,19 @@ ${body}
                       <button onClick={()=>{if(sleepDraft!==""){setSleepFor(now,sleepDraft);setSleepDraft("");}}} style={{...btnB,padding:"7px 12px",fontSize:11}}>Log</button>
                     </div>
                   </div>
-                </SquareCard></div>
+                </div></div>
                 {/* Card 4 — My Weight */}
-                <SquareCard>
-                  <CardLabel>My Weight</CardLabel>
+                <div style={sqStyle}>
+                  <div style={lblStyle}>My Weight</div>
                   <div style={{display:"flex",flexDirection:"column",justifyContent:"center",flex:1,alignItems:"center"}}>
                     <div style={{fontSize:34,fontWeight:800,color:C.text,fontFamily:FN.m,lineHeight:1}}>{curW==null?"—":curW}<span style={{fontSize:13,color:C.textDim}}> lb</span></div>
-                    {curW!=null&&wChange!==0&&<div style={{fontSize:10,fontWeight:700,color:wChange<0?"#22C55E":"#E8A33D",marginTop:4,fontFamily:FN.m}}>{wChange>0?"↑":"↓"} {Math.abs(wChange)} · 30d</div>}
+                    {curW!=null&&wChange!==0&&<div style={{fontSize:10,fontWeight:700,color:wChange<0?C.green:C.accent,marginTop:4,fontFamily:FN.m}}>{wChange>0?"↑":"↓"} {Math.abs(wChange)} · 30d</div>}
                     <div style={{display:"flex",gap:5,marginTop:10,width:"100%"}}>
                       <input type="number" step="0.1" inputMode="decimal" value={nBW} onChange={e=>setNBW(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const w=parseFloat(nBW);if(w){setBwLog(p=>[...p,{date:dk(now),weight:w}]);setNBW("");}}}} placeholder="Enter" style={{...inp,flex:1,fontFamily:FN.m,fontSize:12,padding:"7px 8px",textAlign:"center"}}/>
                       <button onClick={()=>{const w=parseFloat(nBW);if(w){setBwLog(p=>[...p,{date:dk(now),weight:w}]);setNBW("");}}} style={{...btnB,padding:"7px 12px",fontSize:11}}>Log</button>
                     </div>
                   </div>
-                </SquareCard>
+                </div>
               </div>
 
               {/* ═══ SEVEN WORKOUT SPLITS (sourced from My Workouts) — horizontal, scrollable ═══ */}
@@ -5652,86 +5681,73 @@ ${body}
           })()}
         </div>}
 
-        {/* ═══ BUDGET ═══ */}
+        {/* ═══ MY FINANCES ═══ */}
         {menuTab==="budget"&&<div className="tab-content">
-          {/* Sub-tabs: Current (dashboard) vs Financial Overview (analytics) */}
-          <div style={{display:"flex",gap:6,marginBottom:16}}>
-            {[{k:"current",l:"Current"},{k:"overview",l:"Financial Overview"}].map(t=>{const on=budgetSub===t.k;return(
-              <button key={t.k} onClick={()=>setBudgetSub(t.k)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:11.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.05em",transition:"all 0.2s ease"}}>{t.l}</button>
-            );})}
-          </div>
-
-          {budgetSub==="current"&&<>
-
-          {/* ═══ NET WORTH ▲ & DEBT ▼ — mirrored trend graphs derived from the ledger ═══ */}
           {(()=>{
-            const H=worthHistory;
-            const hasHist=H.length>=2;
-            const nwTrend=hasHist?H[H.length-1].worth-H[0].worth:0;
-            const debtTrend=hasHist?H[H.length-1].debt-H[0].debt:0;
-            const GRN="#22C55E", RED="#E85B5B";
-            const Spark=({data,keyName,color,up})=>{
-              if(!hasHist)return <div style={{height:60,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:C.textDim,fontStyle:"italic",fontFamily:FN.h}}>Add transactions to build history</div>;
-              return(<ResponsiveContainer width="100%" height={60}>
-                <LineChart data={data} margin={{top:6,right:2,left:2,bottom:0}}>
-                  <defs><linearGradient id={`g_${keyName}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={0.35}/><stop offset="100%" stopColor={color} stopOpacity={0}/></linearGradient></defs>
-                  <Tooltip content={<Tip />} cursor={{stroke:color,strokeWidth:1,strokeDasharray:"3 3"}}/>
-                  <Line type="monotone" dataKey={keyName} stroke={color} strokeWidth={2.5} dot={false} isAnimationActive={false}/>
-                </LineChart>
-              </ResponsiveContainer>);
-            };
-            return(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-              {/* Net worth — color shifts red→amber→green by where you sit in YOUR range */}
-              <div style={{...card,padding:"12px 12px 6px",background:`linear-gradient(160deg, ${netWorthColor}18, ${netWorthColor}04)`,border:`1px solid ${netWorthColor}44`}}>
-                <div style={{fontSize:9,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Net Worth</div>
-                <div style={{fontSize:20,fontWeight:800,color:netWorthColor,fontFamily:FN.m,lineHeight:1.1}}>${netWorth.toFixed(2)}</div>
-                {hasHist&&<div style={{fontSize:9.5,fontFamily:FN.m,color:nwTrend>=0?GRN:RED,marginBottom:2}}>{nwTrend>=0?"▲":"▼"} ${Math.abs(nwTrend).toFixed(0)}</div>}
-                <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",margin:"4px 0 2px"}}><div style={{height:"100%",width:`${Math.round(nwRangePct*100)}%`,background:netWorthColor,borderRadius:2,transition:"width 0.5s ease,background 0.5s ease"}}/></div>
-                <Spark data={H} keyName="worth" color={netWorthColor} up/>
-              </div>
-              {/* Debt — color shifts red→amber→green as you pay down toward target */}
-              <div style={{...card,padding:"12px 12px 6px",background:`linear-gradient(160deg, ${debtColor}18, ${debtColor}04)`,border:`1px solid ${debtColor}44`}}>
-                <div style={{fontSize:9,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Debt</div>
-                <div style={{fontSize:20,fontWeight:800,color:debtColor,fontFamily:FN.m,lineHeight:1.1}}>${debt.toFixed(2)}</div>
-                {hasHist&&<div style={{fontSize:9.5,fontFamily:FN.m,color:debtTrend<=0?GRN:RED,marginBottom:2}}>{debtTrend<=0?"▼":"▲"} ${Math.abs(debtTrend).toFixed(0)}</div>}
-                <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",margin:"4px 0 2px"}}><div style={{height:"100%",width:`${Math.round(debtRangePct*100)}%`,background:debtColor,borderRadius:2,transition:"width 0.5s ease,background 0.5s ease"}}/></div>
-                <Spark data={H} keyName="debt" color={debtColor}/>
-              </div>
-            </div>);
-          })()}
-
-          {/* ═══ What the graphs are telling you — the decision layer ═══ */}
-          {worthAnalytics&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-            {[{a:worthAnalytics.nw,label:"Net Worth",lowerBetter:false},{a:worthAnalytics.debt,label:"Debt",lowerBetter:true}].map(({a,label,lowerBetter})=>{
-              const good=lowerBetter?a.perMonth<=0:a.perMonth>=0;
-              const GRN="#22C55E",RED="#E85B5B";
-              return(
-              <div key={label} style={{...card,padding:"11px 12px",marginBottom:0}}>
-                <div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:7}}>{label} · trend</div>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                    <span style={{fontSize:10,color:C.textDim}}>Avg / month</span>
-                    <span style={{fontSize:12,fontWeight:800,fontFamily:FN.m,color:good?GRN:RED}}>{a.perMonth>=0?"+":"−"}${Math.abs(a.perMonth).toLocaleString()}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                    <span style={{fontSize:10,color:C.textDim}}>30-day avg</span>
-                    <span style={{fontSize:11,fontWeight:700,fontFamily:FN.m,color:C.text}}>${a.ma30.toLocaleString()}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                    <span style={{fontSize:10,color:C.textDim}}>vs last month</span>
-                    <span style={{fontSize:11,fontWeight:700,fontFamily:FN.m,color:(lowerBetter?a.pctImp<=0:a.pctImp>=0)?GRN:RED}}>{a.pctImp>=0?"+":""}{a.pctImp}%</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",paddingTop:6,borderTop:`1px solid ${C.hairline}`}}>
-                    <span style={{fontSize:10,color:C.textDim}}>Target {a.etaText==="Target reached"?"":"by"}</span>
-                    <span style={{fontSize:11,fontWeight:800,fontFamily:FN.m,color:a.etaText==="Target reached"?GRN:a.etaText.includes("Not")?RED:C.accent}}>{a.etaText}</span>
-                  </div>
+            const GRN=C.green,RED=C.red;
+            const RANGES=["1W","1M","3M","6M","1Y","All"];
+            const rngBtn=on=>({flex:1,padding:"6px 0",borderRadius:8,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:10,fontWeight:800,fontFamily:FN.b,cursor:"pointer"});
+            const rangeBar=(cur,set)=>(<div style={{display:"flex",gap:4,marginTop:8}}>{RANGES.map(r=>(<button key={r} onClick={()=>set(r)} style={rngBtn(cur===r)}>{r}</button>))}</div>);
+            const curMonthKey=`${bY}-${String(bM+1).padStart(2,"0")}`;
+            const rangeCutoff=code=>{if(code==="all"||code==="All")return null;const map={"1W":7,"1M":30,"3M":90,"6M":180,"1Y":365};const d=new Date();d.setDate(d.getDate()-(map[code]||90));return dk(d);};
+            const graphData=code=>{const cut=rangeCutoff(code);if(!cut)return worthHistory;const idx=worthHistory.findIndex(pt=>pt.date>=cut);if(idx<=0)return worthHistory;return worthHistory.slice(Math.max(0,idx-1));};
+            const nwData=graphData(nwRange),debtData=graphData(debtRange);
+            const nwTrendR=nwData.length?nwData[nwData.length-1].worth-nwData[0].worth:0;
+            const debtTrendR=debtData.length?debtData[debtData.length-1].debt-debtData[0].debt:0;
+            const effFilter=f=>({mode:f.mode,monthKey:f.monthKey||curMonthKey,startKey:f.startKey||curMonthKey,endKey:f.endKey||curMonthKey});
+            const periodPred=f=>{const e=effFilter(f);return s=>{if(e.mode==="all")return true;const k=s.slice(0,7);if(e.mode==="month")return k===e.monthKey;return k>=e.startKey&&k<=e.endKey;};};
+            const filterControls=(f,set)=>{const e=effFilter(f);return(<div style={{marginBottom:8}}>
+              <div style={{display:"flex",gap:3,marginBottom:5}}>{[["month","Month"],["range","Range"],["all","All"]].map(([k,l])=>{const on=f.mode===k;return(<button key={k} onClick={()=>set(p=>({...p,mode:k,monthKey:p.monthKey||curMonthKey,startKey:p.startKey||curMonthKey,endKey:p.endKey||curMonthKey}))} style={{flex:1,padding:"4px 0",borderRadius:6,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:9,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{l}</button>);})}</div>
+              {f.mode==="month"&&<input type="month" value={e.monthKey} onChange={ev=>set(p=>({...p,monthKey:ev.target.value}))} style={{...inp,padding:"5px 8px",fontSize:10,width:"100%",boxSizing:"border-box"}}/>}
+              {f.mode==="range"&&<div style={{display:"flex",gap:4,alignItems:"center"}}><input type="month" value={e.startKey} onChange={ev=>set(p=>({...p,startKey:ev.target.value}))} style={{...inp,padding:"5px 5px",fontSize:9,flex:1,boxSizing:"border-box"}}/><span style={{fontSize:9,color:C.textDim}}>→</span><input type="month" value={e.endKey} onChange={ev=>set(p=>({...p,endKey:ev.target.value}))} style={{...inp,padding:"5px 5px",fontSize:9,flex:1,boxSizing:"border-box"}}/></div>}
+            </div>);};
+            // Income vs Expenses
+            const iePred=periodPred(ieFilter);let ieInc=0,ieExp=0;allTx.forEach(t=>{if(t.type==="transfer"||!iePred(t.date))return;if(t.type==="in")ieInc+=t.amount;else ieExp+=t.amount;});
+            const ieData=[{name:"Income",value:Math.round(ieInc*100)/100,color:GRN},{name:"Expenses",value:Math.round(ieExp*100)/100,color:RED}].filter(d=>d.value>0);
+            // Spending by Category
+            const scPred=periodPred(scFilter);const scm={};allTx.forEach(t=>{if(t.type!=="out"||!scPred(t.date))return;const c=t.category||"Other";scm[c]=(scm[c]||0)+t.amount;});
+            const scAll=Object.entries(scm).map(([name,value])=>({name,value:Math.round(value*100)/100,color:CAT_COLORS[name]||CAT_COLORS.Other})).sort((a,b)=>b.value-a.value);
+            const scData=scCats?scAll.filter(c=>scCats.has(c.name)):scAll;
+            const toggleCat=name=>setScCats(prev=>{const base=prev?new Set(prev):new Set(scAll.map(c=>c.name));if(base.has(name))base.delete(name);else base.add(name);return base.size===scAll.length?null:base;});
+            const scTot=scData.reduce((a,x)=>a+x.value,0);
+            // Cash Flow Trend (daily net over range)
+            const cfCut=rangeCutoff(cfRange);const cfByDay={};allTx.forEach(t=>{if(t.type==="transfer")return;if(cfCut&&t.date<cfCut)return;cfByDay[t.date]=(cfByDay[t.date]||0)+(t.type==="in"?t.amount:-t.amount);});
+            const cfData=Object.keys(cfByDay).sort().map(d=>({date:d,label:fd(d),net:Math.round(cfByDay[d]*100)/100}));
+            return(<>
+              {/* ═══ NET WORTH graph (stock-chart style, time-range selectable) ═══ */}
+              <div style={{...card,padding:"14px 16px",marginBottom:10,background:`linear-gradient(160deg, ${netWorthColor}14, ${netWorthColor}03)`,border:`1px solid ${netWorthColor}44`}}>
+                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:3}}>
+                  <span style={{fontSize:10,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em"}}>Net Worth</span>
+                  <span style={{fontSize:9.5,fontFamily:FN.m,color:nwTrendR>=0?GRN:RED}}>{nwTrendR>=0?"▲":"▼"} ${Math.abs(nwTrendR).toFixed(0)} · {nwRange}</span>
                 </div>
-              </div>);
-            })}
-          </div>}
+                <div style={{fontSize:24,fontWeight:800,color:netWorthColor,fontFamily:FN.m,lineHeight:1.1,marginBottom:8}}>${netWorth.toFixed(2)}</div>
+                {nwData.length>=2?<ResponsiveContainer width="100%" height={130}><LineChart data={nwData} margin={{top:6,right:6,left:-12,bottom:0}}>
+                  <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" vertical={false}/>
+                  <XAxis dataKey="date" tickFormatter={fd} tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false} minTickGap={28}/>
+                  <YAxis tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false} width={40}/>
+                  <Tooltip content={<Tip />} cursor={{stroke:netWorthColor,strokeDasharray:"3 3"}}/>
+                  <Line type="monotone" dataKey="worth" stroke={netWorthColor} strokeWidth={2.5} dot={false} isAnimationActive={false}/>
+                </LineChart></ResponsiveContainer>:<div style={{height:130,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textDim,fontStyle:"italic",fontFamily:FN.h}}>Not enough history in this range yet.</div>}
+                {rangeBar(nwRange,setNwRange)}
+              </div>
+              {/* ═══ DEBT graph ═══ */}
+              <div style={{...card,padding:"14px 16px",marginBottom:12,background:`linear-gradient(160deg, ${debtColor}14, ${debtColor}03)`,border:`1px solid ${debtColor}44`}}>
+                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:3}}>
+                  <span style={{fontSize:10,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em"}}>Debt</span>
+                  <span style={{fontSize:9.5,fontFamily:FN.m,color:debtTrendR<=0?GRN:RED}}>{debtTrendR<=0?"▼":"▲"} ${Math.abs(debtTrendR).toFixed(0)} · {debtRange}</span>
+                </div>
+                <div style={{fontSize:24,fontWeight:800,color:debtColor,fontFamily:FN.m,lineHeight:1.1,marginBottom:8}}>${debt.toFixed(2)}</div>
+                {debtData.length>=2?<ResponsiveContainer width="100%" height={130}><LineChart data={debtData} margin={{top:6,right:6,left:-12,bottom:0}}>
+                  <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" vertical={false}/>
+                  <XAxis dataKey="date" tickFormatter={fd} tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false} minTickGap={28}/>
+                  <YAxis tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false} width={40}/>
+                  <Tooltip content={<Tip />} cursor={{stroke:debtColor,strokeDasharray:"3 3"}}/>
+                  <Line type="monotone" dataKey="debt" stroke={debtColor} strokeWidth={2.5} dot={false} isAnimationActive={false}/>
+                </LineChart></ResponsiveContainer>:<div style={{height:130,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textDim,fontStyle:"italic",fontFamily:FN.h}}>Not enough history in this range yet.</div>}
+                {rangeBar(debtRange,setDebtRange)}
+              </div>
 
-          {/* ═══ ACCOUNT GRID (2×2 — every balance is derived from the ledger below, never typed in directly) ═══ */}
+              {/* ═══ ACCOUNT GRID (2×2 — every balance is derived from the ledger below, never typed in directly) ═══ */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
             {ACCT_META.map(a=>{
               const bal=acctNow[a.key],trend=bal-acct30Ago[a.key],trendGood=a.key==="credit"?trend<=0:trend>=0;
@@ -5743,258 +5759,28 @@ ${body}
             })}
           </div>
 
-
-          {/* ═══ CASH FLOW — income / expenses / net, this month vs last ═══ */}
-          {(()=>{const cf=cashFlow;const GRN="#22C55E",RED="#E85B5B";
-            const Delta=({pct,goodWhenUp})=>{const good=goodWhenUp?pct>=0:pct<=0;return(
-              <span style={{fontSize:9,fontFamily:FN.m,fontWeight:700,color:pct===0?C.textDim:good?GRN:RED}}>{pct>=0?"▲":"▼"} {Math.abs(pct)}%</span>);};
-            const rows=[["Income",cf.cur.inc,cf.prev.inc,GRN,cf.incPct,true],["Expenses",cf.cur.exp,cf.prev.exp,RED,cf.expPct,false],["Net Cash Flow",cf.cur.net,cf.prev.net,cf.cur.net>=0?GRN:RED,cf.netPct,true]];
-            return(
-            <div style={{...card,marginBottom:14}}>
-              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:12}}>
-                <span style={{...lbl,margin:0}}>Cash Flow</span>
-                <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{new Date(bY,bM,1).toLocaleDateString("en-US",{month:"long"})} vs prev</span>
-              </div>
-              {/* How much of your income you actually keep — proportional split */}
-              {cf.cur.inc>0&&(()=>{
-                const spentPct=Math.min(100,Math.round(cf.cur.exp/cf.cur.inc*100));
-                const keptPct=Math.max(0,100-spentPct);
-                return(<div style={{marginBottom:14}}>
-                  <div style={{display:"flex",height:26,borderRadius:8,overflow:"hidden",border:`1px solid ${C.hairline}`}}>
-                    <div style={{width:`${spentPct}%`,background:RED,display:"flex",alignItems:"center",justifyContent:"center",minWidth:spentPct>12?"auto":0}}>{spentPct>=14&&<span style={{fontSize:9,fontWeight:800,color:"#fff",fontFamily:FN.m}}>{spentPct}%</span>}</div>
-                    <div style={{width:`${keptPct}%`,background:GRN,display:"flex",alignItems:"center",justifyContent:"center"}}>{keptPct>=14&&<span style={{fontSize:9,fontWeight:800,color:"#fff",fontFamily:FN.m}}>{keptPct}%</span>}</div>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginTop:5}}>
-                    <span style={{fontSize:9.5,color:RED,fontWeight:700}}>Spent ${cf.cur.exp.toFixed(0)}</span>
-                    <span style={{fontSize:9.5,color:GRN,fontWeight:700}}>Kept ${(cf.cur.inc-cf.cur.exp).toFixed(0)} of ${cf.cur.inc.toFixed(0)}</span>
-                  </div>
-                </div>);
-              })()}
-              {rows.map(([label,cur,prev,color,pct,goodUp],i)=>(
-                <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 0",borderTop:i>0?`1px solid ${C.hairline}`:"none"}}>
-                  <div style={{minWidth:0}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.text}}>{label}</div>
-                    <div style={{fontSize:9,color:C.textDim,fontFamily:FN.m,marginTop:1}}>prev ${Math.abs(prev).toFixed(0)}</div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:16,fontWeight:800,color,fontFamily:FN.m,lineHeight:1}}>{cur<0?"−":""}${Math.abs(cur).toFixed(2)}</div>
-                    <div style={{marginTop:2}}><Delta pct={pct} goodWhenUp={goodUp}/></div>
-                  </div>
+              {/* ═══ TWO PIES — Income vs Expenses · Spending by Category ═══ */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+                <div style={{...card,padding:"12px 12px"}}>
+                  <div style={{...lbl,marginBottom:8,fontSize:10}}>Income vs Expenses</div>
+                  {filterControls(ieFilter,setIeFilter)}
+                  {ieData.length?<><ResponsiveContainer width="100%" height={118}><PieChart><Pie data={ieData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={2} dataKey="value" stroke="none">{ieData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<Tip />}/></PieChart></ResponsiveContainer>
+                  <div style={{marginTop:4}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}><span style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:C.text}}><span style={{width:8,height:8,borderRadius:2,background:GRN}}/>Income</span><span style={{fontSize:10,fontWeight:700,fontFamily:FN.m,color:GRN}}>${ieInc.toFixed(0)}</span></div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}><span style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:C.text}}><span style={{width:8,height:8,borderRadius:2,background:RED}}/>Expenses</span><span style={{fontSize:10,fontWeight:700,fontFamily:FN.m,color:RED}}>${ieExp.toFixed(0)}</span></div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:4,borderTop:`1px solid ${C.hairline}`}}><span style={{fontSize:10,fontWeight:700,color:C.textDim}}>Net</span><span style={{fontSize:11,fontWeight:800,fontFamily:FN.m,color:(ieInc-ieExp)>=0?GRN:RED}}>{(ieInc-ieExp)>=0?"+":"−"}${Math.abs(ieInc-ieExp).toFixed(0)}</span></div>
+                  </div></>:<div style={{height:118,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,textAlign:"center"}}>No income or expenses in this period.</div>}
                 </div>
-              ))}
-            </div>)})()}
-
-
-
-
-          </>}
-
-          {budgetSub==="overview"&&<>
-
-          {/* ═══ FINANCIAL GOALS — progress auto-tracked from tagged transactions ═══ */}
-          <div style={{...card,marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:finGoalProgress.length?12:0}}>
-              <span style={{...lbl,margin:0}}>Financial Goals</span>
-              <button onClick={()=>setShowFinGoal(true)} className="press" style={{background:C.accent,color:C.btnText,border:"none",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:800,cursor:"pointer"}}>+ Goal</button>
-            </div>
-            {finGoalProgress.length===0?<div style={{fontSize:11,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,padding:"6px 0"}}>Add a goal — emergency fund, house, car — then tag transactions to it to watch it fill.</div>:
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              {finGoalProgress.map(g=>{
-                const clr=g.done?"#22C55E":g.pace?(g.pace.onTrack?"#22C55E":"#E8A33D"):C.accent;
-                return(
-                <SwipeRow key={g.id} onDelete={()=>removeFinGoal(g.id)} bg={C.surface} padY={0}>
-                  <div>
-                    <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:7}}>
-                      <span style={{fontSize:18}}>{g.icon}</span>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:700,color:C.text}}>{g.name}</div>
-                        <div style={{fontSize:9.5,color:C.textDim,fontFamily:FN.m}}>${g.saved.toLocaleString()} of ${g.target.toLocaleString()}{g.eta&&!g.done?` · ~${g.eta}`:""}{g.done?" · reached 🎉":""}</div>
-                      </div>
-                      <span style={{fontSize:15,fontWeight:800,color:clr,fontFamily:FN.m}}>{g.pct}%</span>
-                    </div>
-                    <div style={{height:7,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${g.pct}%`,background:clr,borderRadius:4,transition:"width 0.5s ease"}}/></div>
-                    {g.pace&&!g.done&&<div style={{fontSize:9,color:g.pace.onTrack?"#22C55E":"#E8A33D",fontFamily:FN.m,marginTop:5}}>{g.pace.onTrack?`On track — saving $${g.monthlyRate}/mo`:`Need $${g.pace.need}/mo to hit deadline${g.monthlyRate>0?` (now $${g.monthlyRate}/mo)`:""}`}</div>}
-                  </div>
-                </SwipeRow>);
-              })}
-            </div>}
-          </div>
-          {/* ═══ MONTHLY INSIGHTS — auto-generated ═══ */}
-          {monthInsights.length>0&&<div style={{...card,marginBottom:14}}>
-            <div style={{...lbl,marginBottom:10}}>Insights · {new Date(bY,bM,1).toLocaleDateString("en-US",{month:"long"})}</div>
-            {monthInsights.map((ins,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"flex-start",gap:9,padding:"7px 0",borderTop:i>0?`1px solid ${C.hairline}`:"none"}}>
-                <span style={{width:6,height:6,borderRadius:"50%",background:ins.good?"#22C55E":"#E8A33D",marginTop:5,flexShrink:0}}/>
-                <span style={{fontSize:11.5,color:C.text,lineHeight:1.45}}>{ins.txt}</span>
-              </div>
-            ))}
-          </div>}
-
-          {/* ═══ BUDGET VS ACTUAL — per-category limits ═══ */}
-          <div style={{...card,marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:budgetVsActual.length?12:0}}>
-              <span style={{...lbl,margin:0}}>Budget vs Actual</span>
-              <button onClick={()=>setShowBudgetEdit(true)} className="press" style={{background:C.surfaceDim,color:C.text,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,cursor:"pointer"}}>Set limits</button>
-            </div>
-            {budgetVsActual.length===0?<div style={{fontSize:11,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,padding:"6px 0"}}>Set a monthly limit per category to track spending against your plan.</div>:
-            <div style={{display:"flex",flexDirection:"column",gap:11}}>
-              {budgetVsActual.map(b=>{const clr=b.over?"#E85B5B":b.pct>=80?"#E8A33D":"#22C55E";return(
-                <div key={b.cat}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
-                    <span style={{fontSize:11,fontWeight:700,color:C.text}}>{b.cat}</span>
-                    <span style={{fontSize:10,fontFamily:FN.m,color:clr,fontWeight:700}}>${b.actual.toFixed(0)} / ${b.budget.toFixed(0)}{b.over?` · $${(b.actual-b.budget).toFixed(0)} over`:` · ${100-b.pct}% left`}</span>
-                  </div>
-                  <div style={{height:6,background:C.surfaceDim,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,b.pct)}%`,background:clr,borderRadius:3,transition:"width 0.4s ease"}}/></div>
+                <div style={{...card,padding:"12px 12px"}}>
+                  <div style={{...lbl,marginBottom:8,fontSize:10}}>Spending by Category</div>
+                  {filterControls(scFilter,setScFilter)}
+                  {scData.length?<ResponsiveContainer width="100%" height={118}><PieChart><Pie data={scData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={2} dataKey="value" stroke="none">{scData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<Tip />}/></PieChart></ResponsiveContainer>:<div style={{height:118,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,textAlign:"center"}}>No spending in this period.</div>}
+                  {scData.length>0&&<div style={{marginTop:4}}>{scData.slice(0,5).map(c=>{const pct=scTot>0?Math.round(c.value/scTot*100):0;return(<div key={c.name} style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><span style={{width:7,height:7,borderRadius:2,background:c.color,flexShrink:0}}/><span style={{fontSize:9.5,color:C.text,flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name}</span><span style={{fontSize:9.5,fontWeight:700,fontFamily:FN.m,color:C.text}}>${c.value.toFixed(0)}</span><span style={{fontSize:8,color:C.textDim,fontFamily:FN.m,width:24,textAlign:"right"}}>{pct}%</span></div>);})}</div>}
+                  {scAll.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:8,paddingTop:8,borderTop:`1px solid ${C.hairline}`}}>{scAll.map(c=>{const active=!scCats||scCats.has(c.name);return(<button key={c.name} onClick={()=>toggleCat(c.name)} style={{display:"flex",alignItems:"center",gap:4,padding:"3px 7px",borderRadius:12,border:`1px solid ${active?c.color:C.hairline}`,background:active?`${c.color}22`:"transparent",color:active?C.text:C.textDim,fontSize:9,fontWeight:700,fontFamily:FN.b,cursor:"pointer",opacity:active?1:0.55}}><span style={{width:6,height:6,borderRadius:2,background:c.color}}/>{c.name}</button>);})}</div>}
                 </div>
-              );})}
-            </div>}
-          </div>
-
-          {/* ═══ SPENDING BY CATEGORY ═══ */}
-          {spendByCategory.length>0&&<div style={{...card,marginBottom:14}}>
-            <div style={{...lbl,marginBottom:12}}>Spending by Category · {new Date(bY,bM,1).toLocaleDateString("en-US",{month:"short"})}</div>
-            <div style={{display:"flex",alignItems:"center",gap:16}}>
-              <ResponsiveContainer width={130} height={130}>
-                <PieChart><Pie data={spendByCategory} cx="50%" cy="50%" innerRadius={40} outerRadius={62} paddingAngle={2} dataKey="value" stroke="none">
-                  {spendByCategory.map((e,i)=><Cell key={i} fill={e.color}/>)}
-                </Pie><Tooltip content={<Tip />}/></PieChart>
-              </ResponsiveContainer>
-              <div style={{flex:1,minWidth:0}}>
-                {spendByCategory.slice(0,6).map(c=>{const tot=spendByCategory.reduce((a,x)=>a+x.value,0);const pct=tot>0?Math.round(c.value/tot*100):0;return(
-                  <div key={c.name} style={{display:"flex",alignItems:"center",gap:7,marginBottom:6}}>
-                    <span style={{width:8,height:8,borderRadius:2,background:c.color,flexShrink:0}}/>
-                    <span style={{fontSize:10,color:C.text,flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name}</span>
-                    <span style={{fontSize:10,fontWeight:700,color:C.text,fontFamily:FN.m}}>${c.value.toFixed(0)}</span>
-                    <span style={{fontSize:8,color:C.textDim,fontFamily:FN.m,width:26,textAlign:"right"}}>{pct}%</span>
-                  </div>
-                );})}
               </div>
-            </div>
-          </div>}
 
-          {/* ═══ INCOME VS EXPENSES (6 mo) + SAVINGS RATE ═══ */}
-          <div style={{...card,marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:12}}>
-              <span style={{...lbl,margin:0}}>Income vs Expenses</span>
-              <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>Savings rate <b style={{color:savingsRate>=0?"#22C55E":"#E85B5B"}}>{savingsRate}%</b></span>
-            </div>
-            <ResponsiveContainer width="100%" height={150}>
-              <BarChart data={spendByMonth} margin={{top:4,right:4,left:-18,bottom:0}}>
-                <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" vertical={false}/>
-                <XAxis dataKey="label" tick={{fontSize:9,fill:C.textDim}} axisLine={false} tickLine={false}/>
-                <YAxis tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false}/>
-                <Tooltip content={<Tip />} cursor={{fill:C.surfaceDim}}/>
-                <Bar dataKey="income" fill="#22C55E" radius={[3,3,0,0]}/>
-                <Bar dataKey="expenses" fill="#E85B5B" radius={[3,3,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* ═══ CASH FLOW TREND (net, 6 mo) ═══ */}
-          <div style={{...card,marginBottom:14}}>
-            <div style={{...lbl,marginBottom:12}}>Cash Flow Trend</div>
-            <ResponsiveContainer width="100%" height={120}>
-              <LineChart data={spendByMonth} margin={{top:6,right:6,left:-18,bottom:0}}>
-                <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" vertical={false}/>
-                <XAxis dataKey="label" tick={{fontSize:9,fill:C.textDim}} axisLine={false} tickLine={false}/>
-                <YAxis tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false}/>
-                <ReferenceLine y={0} stroke={C.textDim} strokeDasharray="3 3"/>
-                <Tooltip content={<Tip />}/>
-                <Line type="monotone" dataKey="net" stroke={C.accent} strokeWidth={2.5} dot={{r:2,fill:C.accent}}/>
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* ═══ SPENDING BY WEEK (4 wk) ═══ */}
-          <div style={{...card,marginBottom:14}}>
-            <div style={{...lbl,marginBottom:12}}>Spending by Week</div>
-            <ResponsiveContainer width="100%" height={110}>
-              <BarChart data={spendByWeek} margin={{top:4,right:4,left:-18,bottom:0}}>
-                <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" vertical={false}/>
-                <XAxis dataKey="label" tick={{fontSize:9,fill:C.textDim}} axisLine={false} tickLine={false}/>
-                <YAxis tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false}/>
-                <Tooltip content={<Tip />} cursor={{fill:C.surfaceDim}}/>
-                <Bar dataKey="expenses" fill="#F2785C" radius={[3,3,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* ═══ SUBSCRIPTION CENTER — auto-detected recurring payments ═══ */}
-          {recurringDetected.length>0&&<div style={{...card,marginBottom:14}}>
-            <div style={{...lbl,marginBottom:4}}>Detected Recurring</div>
-            <div style={{fontSize:10,color:C.textDim,marginBottom:12,lineHeight:1.4}}>Found automatically from your transaction history.</div>
-            {/* Alerts first */}
-            {recurringDetected.filter(r=>r.priceIncrease>0||r.unused).map(r=>(
-              <div key={r.name+"-alert"} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"7px 9px",marginBottom:6,borderRadius:8,background:r.priceIncrease>0?"#E85B5B14":"#E8A33D14",border:`1px solid ${r.priceIncrease>0?"#E85B5B44":"#E8A33D44"}`}}>
-                <span style={{fontSize:11,marginTop:1}}>{r.priceIncrease>0?"📈":"💤"}</span>
-                <span style={{fontSize:10.5,color:C.text,lineHeight:1.4}}>{r.priceIncrease>0?<>{r.name} increased {r.priceIncrease}% — now ${r.avgAmt.toFixed(2)}/{r.cadence.replace("ly","")}.</>:<>You haven't paid {r.name} in {r.daysSinceLast} days — still using it?</>}</span>
-              </div>
-            ))}
-            <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:recurringDetected.some(r=>r.priceIncrease>0||r.unused)?8:0}}>
-              {recurringDetected.map(r=>(
-                <div key={r.name} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 0",borderTop:`1px solid ${C.hairline}`}}>
-                  <span style={{width:8,height:8,borderRadius:2,background:CAT_COLORS[r.category]||CAT_COLORS.Other,flexShrink:0}}/>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:700,color:C.text}}>{r.name}</div>
-                    <div style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>{r.cadence} · next ~{fd(r.nextDate)}</div>
-                  </div>
-                  <span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:FN.m}}>${r.avgAmt.toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-            {(()=>{const mo=recurringDetected.filter(r=>r.cadence==="monthly").reduce((a,r)=>a+r.avgAmt,0);return mo>0?(
-              <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${C.hairline}`,display:"flex",justifyContent:"space-between"}}>
-                <span style={{fontSize:10,color:C.textDim,fontWeight:600}}>Monthly recurring total</span>
-                <span style={{fontSize:13,fontWeight:800,color:C.accent,fontFamily:FN.m}}>${mo.toFixed(2)}/mo</span>
-              </div>
-            ):null;})()}
-          </div>}
-
-          {/* ═══ Subscriptions ═══ */}
-          <div style={{...card,marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em"}}>Subscriptions</div>
-              {!addSub&&<button onClick={()=>setAddSub(true)} style={{...btnG,padding:"4px 10px",fontSize:10}}>+ Add</button>}
-            </div>
-            {subscriptions.length===0&&!addSub&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",padding:"6px 0 10px"}}>No subscriptions tracked yet.</div>}
-            {subscriptions.map(s=>(
-              <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",marginBottom:5,borderRadius:10,background:C.surfaceDim}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:600,color:C.text}}>{s.name}{s.category&&<span style={{fontSize:9,color:C.textDim,background:C.surfaceHi,borderRadius:4,padding:"1px 6px",marginLeft:6,fontWeight:600}}>{s.category}</span>}</div>
-                  <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>Bills on the {s.billDay}{["th","st","nd","rd"][(parseInt(s.billDay)%10>3||[11,12,13].includes(parseInt(s.billDay)%100))?0:parseInt(s.billDay)%10]}</div>
-                </div>
-                <span style={{fontSize:13,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(s.cost)||0).toFixed(2)}</span>
-                <button onClick={()=>removeSubscription(s.id)} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:15}}>×</button>
-              </div>
-            ))}
-            {addSub&&<div style={{background:C.surfaceDim,borderRadius:12,padding:12,marginTop:6,border:`1px solid ${C.hairline}`}}>
-              <input value={subForm.name} onChange={e=>setSubForm(p=>({...p,name:e.target.value}))} placeholder="Name (e.g. Netflix)" style={{...inp,marginBottom:8}} autoFocus />
-              <div style={{display:"flex",gap:8,marginBottom:8}}>
-                <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Monthly $</div><input type="number" step="0.01" value={subForm.cost} onChange={e=>setSubForm(p=>({...p,cost:e.target.value}))} placeholder="0.00" style={{...inp,textAlign:"center",fontFamily:FN.m}} /></div>
-                <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Billing Date</div><button onClick={()=>setSubDayOpen(o=>!o)} style={{...inp,width:"100%",textAlign:"center",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,color:subForm.billDay?C.text:C.textDim}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={subForm.billDay?C.accent:C.textDim} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>{subForm.billDay?(()=>{const n=parseInt(subForm.billDay);const s=["th","st","nd","rd"],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);})():"Pick day"}</button></div>
-              </div>
-              {subDayOpen&&<div style={{background:C.surfaceHi,borderRadius:10,padding:10,marginBottom:8}}>
-                <div style={{fontSize:9,color:C.textDim,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700}}>Bills on this day each month</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>{Array.from({length:31}).map((_,i)=>{const d=i+1;const sel=String(subForm.billDay)===String(d);return(<button key={d} onClick={()=>{setSubForm(p=>({...p,billDay:String(d)}));setSubDayOpen(false);}} style={{aspectRatio:"1",borderRadius:7,border:`1px solid ${sel?C.accent:C.hairline}`,background:sel?C.accent:"transparent",color:sel?C.btnText:C.text,fontSize:12,fontWeight:sel?800:500,cursor:"pointer",fontFamily:FN.m,transition:"all 0.15s ease"}}>{d}</button>);})}</div>
-              </div>}
-              <input value={subForm.category} onChange={e=>setSubForm(p=>({...p,category:e.target.value}))} placeholder="Category (optional)" style={{...inp,marginBottom:10}} />
-              <div style={{display:"flex",gap:8}}><button onClick={addSubscription} style={{...btnB,flex:1}}>Add</button><button onClick={()=>{setAddSub(false);setSubForm({name:"",cost:"",billDay:"",category:""});}} style={btnG}>Cancel</button></div>
-            </div>}
-            {upcomingBills.length>0&&<div style={{marginTop:18}}>
-              <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Upcoming Bills</div>
-              {upcomingBills.slice(0,4).map(b=>(
-                <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0"}}>
-                  <div style={{width:34,textAlign:"center"}}><div style={{fontSize:9,color:C.accent,fontWeight:700,fontFamily:FN.m}}>{b.daysUntil===0?"NOW":`${b.daysUntil}d`}</div></div>
-                  <span style={{flex:1,fontSize:12,fontWeight:600,color:C.text}}>{b.name}</span>
-                  <span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(b.cost)||0).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>}
-          </div>
-
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>{[{l:"Income",v:`$${bTot.i.toFixed(2)}`,c:C.green},{l:"Expenses",v:`$${bTot.o.toFixed(2)}`,c:C.red},{l:"Net",v:`${bTot.net>=0?"+":""}$${bTot.net.toFixed(2)}`,c:bTot.net>=0?C.green:C.red}].map((s,i)=>(<div key={i} style={{...card,padding:12}}><div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>{s.l}</div><div style={{fontSize:14,fontWeight:700,color:s.c}}>{s.v}</div></div>))}</div>
-
-          {/* ═══ Cash In / Cash Out / Transfer ledger calendar ═══ */}
+              {/* ═══ Cash In / Cash Out / Transfer ledger calendar ═══ */}
           <div style={card}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}><button onClick={()=>setBMonth(new Date(bY,bM-1,1))} style={btnG}>‹</button><span style={{fontSize:14,fontWeight:700}}>{bMonth.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span><button onClick={()=>setBMonth(new Date(bY,bM+1,1))} style={btnG}>›</button></div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>{["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,color:C.textDim,fontWeight:600}}>{d}</div>)}</div>
@@ -6065,7 +5851,111 @@ ${body}
               </div>
             </div>}
           </div>
-          </>}
+
+              {/* ═══ CASH FLOW TREND (daily net, time-range selectable) ═══ */}
+              <div style={{...card,marginBottom:14,marginTop:12}}>
+                <div style={{...lbl,marginBottom:10}}>Cash Flow Trend</div>
+                {cfData.length>=2?<ResponsiveContainer width="100%" height={130}><LineChart data={cfData} margin={{top:6,right:6,left:-12,bottom:0}}>
+                  <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" vertical={false}/>
+                  <XAxis dataKey="label" tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false} minTickGap={28}/>
+                  <YAxis tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false} width={40}/>
+                  <ReferenceLine y={0} stroke={C.textDim} strokeDasharray="3 3"/>
+                  <Tooltip content={<Tip />}/>
+                  <Line type="monotone" dataKey="net" stroke={C.accent} strokeWidth={2.5} dot={false} isAnimationActive={false}/>
+                </LineChart></ResponsiveContainer>:<div style={{height:130,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textDim,fontStyle:"italic",fontFamily:FN.h}}>Not enough activity in this range yet.</div>}
+                {rangeBar(cfRange,setCfRange)}
+              </div>
+
+              {/* ═══ FINANCIAL GOALS — progress auto-tracked from tagged transactions ═══ */}
+          <div style={{...card,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:finGoalProgress.length?12:0}}>
+              <span style={{...lbl,margin:0}}>Financial Goals</span>
+              <button onClick={()=>setShowFinGoal(true)} className="press" style={{background:C.accent,color:C.btnText,border:"none",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:800,cursor:"pointer"}}>+ Goal</button>
+            </div>
+            {finGoalProgress.length===0?<div style={{fontSize:11,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,padding:"6px 0"}}>Add a goal — emergency fund, house, car — then tag transactions to it to watch it fill.</div>:
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {finGoalProgress.map(g=>{
+                const clr=g.done?"#22C55E":g.pace?(g.pace.onTrack?"#22C55E":"#E8A33D"):C.accent;
+                return(
+                <SwipeRow key={g.id} onDelete={()=>removeFinGoal(g.id)} bg={C.surface} padY={0}>
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:7}}>
+                      <span style={{fontSize:18}}>{g.icon}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:C.text}}>{g.name}</div>
+                        <div style={{fontSize:9.5,color:C.textDim,fontFamily:FN.m}}>${g.saved.toLocaleString()} of ${g.target.toLocaleString()}{g.eta&&!g.done?` · ~${g.eta}`:""}{g.done?" · reached 🎉":""}</div>
+                      </div>
+                      <span style={{fontSize:15,fontWeight:800,color:clr,fontFamily:FN.m}}>{g.pct}%</span>
+                    </div>
+                    <div style={{height:7,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${g.pct}%`,background:clr,borderRadius:4,transition:"width 0.5s ease"}}/></div>
+                    {g.pace&&!g.done&&<div style={{fontSize:9,color:g.pace.onTrack?"#22C55E":"#E8A33D",fontFamily:FN.m,marginTop:5}}>{g.pace.onTrack?`On track — saving $${g.monthlyRate}/mo`:`Need $${g.pace.need}/mo to hit deadline${g.monthlyRate>0?` (now $${g.monthlyRate}/mo)`:""}`}</div>}
+                  </div>
+                </SwipeRow>);
+              })}
+            </div>}
+          </div>
+              {/* ═══ BUDGET VS ACTUAL — per-category limits ═══ */}
+          <div style={{...card,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:budgetVsActual.length?12:0}}>
+              <span style={{...lbl,margin:0}}>Budget vs Actual</span>
+              <button onClick={()=>setShowBudgetEdit(true)} className="press" style={{background:C.surfaceDim,color:C.text,border:`1px solid ${C.hairline}`,borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,cursor:"pointer"}}>Set limits</button>
+            </div>
+            {budgetVsActual.length===0?<div style={{fontSize:11,color:C.textDim,fontStyle:"italic",fontFamily:FN.h,padding:"6px 0"}}>Set a monthly limit per category to track spending against your plan.</div>:
+            <div style={{display:"flex",flexDirection:"column",gap:11}}>
+              {budgetVsActual.map(b=>{const clr=b.over?"#E85B5B":b.pct>=80?"#E8A33D":"#22C55E";return(
+                <div key={b.cat}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+                    <span style={{fontSize:11,fontWeight:700,color:C.text}}>{b.cat}</span>
+                    <span style={{fontSize:10,fontFamily:FN.m,color:clr,fontWeight:700}}>${b.actual.toFixed(0)} / ${b.budget.toFixed(0)}{b.over?` · $${(b.actual-b.budget).toFixed(0)} over`:` · ${100-b.pct}% left`}</span>
+                  </div>
+                  <div style={{height:6,background:C.surfaceDim,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,b.pct)}%`,background:clr,borderRadius:3,transition:"width 0.4s ease"}}/></div>
+                </div>
+              );})}
+            </div>}
+          </div>
+              {/* ═══ Subscriptions ═══ */}
+          <div style={{...card,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em"}}>Subscriptions</div>
+              {!addSub&&<button onClick={()=>setAddSub(true)} style={{...btnG,padding:"4px 10px",fontSize:10}}>+ Add</button>}
+            </div>
+            {subscriptions.length===0&&!addSub&&<div style={{fontSize:11,color:C.textDim,fontFamily:FN.h,fontStyle:"italic",padding:"6px 0 10px"}}>No subscriptions tracked yet.</div>}
+            {subscriptions.map(s=>(
+              <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",marginBottom:5,borderRadius:10,background:C.surfaceDim}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:C.text}}>{s.name}{s.category&&<span style={{fontSize:9,color:C.textDim,background:C.surfaceHi,borderRadius:4,padding:"1px 6px",marginLeft:6,fontWeight:600}}>{s.category}</span>}</div>
+                  <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:1}}>Bills on the {s.billDay}{["th","st","nd","rd"][(parseInt(s.billDay)%10>3||[11,12,13].includes(parseInt(s.billDay)%100))?0:parseInt(s.billDay)%10]}</div>
+                </div>
+                <span style={{fontSize:13,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(s.cost)||0).toFixed(2)}</span>
+                <button onClick={()=>removeSubscription(s.id)} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:15}}>×</button>
+              </div>
+            ))}
+            {addSub&&<div style={{background:C.surfaceDim,borderRadius:12,padding:12,marginTop:6,border:`1px solid ${C.hairline}`}}>
+              <input value={subForm.name} onChange={e=>setSubForm(p=>({...p,name:e.target.value}))} placeholder="Name (e.g. Netflix)" style={{...inp,marginBottom:8}} autoFocus />
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Monthly $</div><input type="number" step="0.01" value={subForm.cost} onChange={e=>setSubForm(p=>({...p,cost:e.target.value}))} placeholder="0.00" style={{...inp,textAlign:"center",fontFamily:FN.m}} /></div>
+                <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,marginBottom:3,textTransform:"uppercase"}}>Billing Date</div><button onClick={()=>setSubDayOpen(o=>!o)} style={{...inp,width:"100%",textAlign:"center",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,color:subForm.billDay?C.text:C.textDim}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={subForm.billDay?C.accent:C.textDim} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>{subForm.billDay?(()=>{const n=parseInt(subForm.billDay);const s=["th","st","nd","rd"],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);})():"Pick day"}</button></div>
+              </div>
+              {subDayOpen&&<div style={{background:C.surfaceHi,borderRadius:10,padding:10,marginBottom:8}}>
+                <div style={{fontSize:9,color:C.textDim,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700}}>Bills on this day each month</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>{Array.from({length:31}).map((_,i)=>{const d=i+1;const sel=String(subForm.billDay)===String(d);return(<button key={d} onClick={()=>{setSubForm(p=>({...p,billDay:String(d)}));setSubDayOpen(false);}} style={{aspectRatio:"1",borderRadius:7,border:`1px solid ${sel?C.accent:C.hairline}`,background:sel?C.accent:"transparent",color:sel?C.btnText:C.text,fontSize:12,fontWeight:sel?800:500,cursor:"pointer",fontFamily:FN.m,transition:"all 0.15s ease"}}>{d}</button>);})}</div>
+              </div>}
+              <input value={subForm.category} onChange={e=>setSubForm(p=>({...p,category:e.target.value}))} placeholder="Category (optional)" style={{...inp,marginBottom:10}} />
+              <div style={{display:"flex",gap:8}}><button onClick={addSubscription} style={{...btnB,flex:1}}>Add</button><button onClick={()=>{setAddSub(false);setSubForm({name:"",cost:"",billDay:"",category:""});}} style={btnG}>Cancel</button></div>
+            </div>}
+            {upcomingBills.length>0&&<div style={{marginTop:18}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Upcoming Bills</div>
+              {upcomingBills.slice(0,4).map(b=>(
+                <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0"}}>
+                  <div style={{width:34,textAlign:"center"}}><div style={{fontSize:9,color:C.accent,fontWeight:700,fontFamily:FN.m}}>{b.daysUntil===0?"NOW":`${b.daysUntil}d`}</div></div>
+                  <span style={{flex:1,fontSize:12,fontWeight:600,color:C.text}}>{b.name}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:FN.m}}>${(parseFloat(b.cost)||0).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>}
+          </div>
+            </>);
+          })()}
         </div>}
 
       </div>
@@ -6096,8 +5986,8 @@ ${body}
 
       <div className="footer-nav" style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 6px",gap:2}}>
         {mainTabs.map(t=>{const on=curPage===t.k;return(
-          <button key={t.k} onClick={()=>goPage(t.k)} className="press" style={{flex:1,minWidth:0,border:"none",borderRadius:10,padding:"8px 0",cursor:"pointer",textAlign:"center",background:"transparent",color:on?C.accent:C.textDim,fontSize:9,fontFamily:FN.b,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.02em",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-            <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>{t.i}</span>
+          <button key={t.k} onClick={()=>goPage(t.k)} className="press" style={{flex:1,minWidth:0,border:"none",borderRadius:12,padding:"7px 0 6px",cursor:"pointer",textAlign:"center",background:on?C.accentSoft:"transparent",color:on?C.accent:C.textDim,fontSize:9.5,fontFamily:FN.b,fontWeight:on?800:600,textTransform:"uppercase",letterSpacing:"0.03em",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+            <span style={{display:"flex",alignItems:"center",justifyContent:"center",transform:on?"translateY(-1px)":"none",transition:"transform 0.2s ease"}}>{t.i}</span>
             <span style={{whiteSpace:"nowrap"}}>{t.l}</span>
           </button>
         );})}
