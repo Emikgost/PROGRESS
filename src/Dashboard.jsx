@@ -340,7 +340,7 @@ const defSplits={upper:["Bench Press","Lat Pull Down","Pec Dec","Mid Row","Trice
 // Splits that log distance + time instead of sets/weight/reps. A split is cardio if its key is here.
 const CARDIO_SPLIT_KEYS=["running","cardio","run"];
 const isCardioSplit=(key)=>CARDIO_SPLIT_KEYS.includes((key||"").toLowerCase());
-const spClr={upper:"#0A84FF",lower:"#32D583",pull:"#FF9F0A",push:"#FF453A",legs:"#AF52DE"};
+const SPLIT_DEFAULTS={upper:"#0A84FF",lower:"#32D583",pull:"#FF9F0A",push:"#FF453A",legs:"#AF52DE"};
 /* ═══ HEALTH ═══ */
 const MACRO={calories:{label:"Calories",unit:"kcal",color:"#F59E0B"},protein:{label:"Protein",unit:"g",color:"#EF4444"},carbs:{label:"Carbs",unit:"g",color:"#3B82F6"},fat:{label:"Fat",unit:"g",color:"#A855F7"},water:{label:"Water",unit:"oz",color:"#06B6D4"}};
 // Distinct palette for per-exercise strength lines
@@ -362,7 +362,8 @@ const seedBW=[{date:"2025-10-01",weight:72.5},{date:"2026-01-01",weight:74.5},{d
 const seedTx={"2026-03-01":[{id:"t14",type:"out",amount:26.5,desc:"Sunday"}],"2026-03-06":[{id:"t16",type:"in",amount:30,desc:"Income"}]};
 const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000,focusTransferHour:22,
   nwMin:0,nwTarget:1000,debtMax:1000,debtTarget:0,planDay:0,
-  quickActions:["focus","workout","weight","journal"]}; // configurable + bar shortcut ids, in order
+  quickActions:["focus","workout","weight","journal"], // configurable + bar shortcut ids, in order
+  reviewTemplates:[]}; // saved Stat Review decks
 const QA_DEFAULT=["focus","workout","weight","journal"]; // fallback when none saved
 
 // ─── Budget categories (spec's taxonomy) ───
@@ -634,6 +635,192 @@ function VideoRecorderModal({open,onClose,onSave,dateLabel}){
   </div>);
 }
 
+/* ═══ STAT REVIEW RECORDER ═══ builds a live "pitch deck" of chosen stats and composites each
+   slide + a camera picture-in-picture into one recorded video (canvas.captureStream + mic). ═══ */
+const CF="-apple-system,'SF Pro Display','SF Pro Text',Inter,system-ui,sans-serif";
+const REVIEW_WINDOWS=[{k:"week",label:"This Week",full:"This Week",n:7,word:"week"},{k:"month",label:"Month",full:"This Month",n:30,word:"month"},{k:"quarter",label:"Quarter",full:"This Quarter",n:90,word:"quarter"},{k:"year",label:"Year",full:"This Year",n:365,word:"year"}];
+function rrect(ctx,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function clipText(ctx,t,maxW){t=String(t==null?"":t);if(ctx.measureText(t).width<=maxW)return t;while(t.length>1&&ctx.measureText(t+"…").width>maxW)t=t.slice(0,-1);return t+"…";}
+function wrapLines(ctx,t,maxW,maxLines){const words=String(t||"").split(/\s+/);const lines=[];let cur="";for(const w of words){const test=cur?cur+" "+w:w;if(ctx.measureText(test).width>maxW&&cur){lines.push(cur);cur=w;if(lines.length>=maxLines-1)break;}else cur=test;}if(cur&&lines.length<maxLines)lines.push(clipText(ctx,cur+(words.length>lines.join(" ").split(/\s+/).length?"…":""),maxW));return lines.slice(0,maxLines);}
+function drawBars(ctx,x,y,w,h,series,accent){const n=series.length;const gap=Math.min(18,w*0.02);const bw=(w-gap*(n-1))/n;const max=Math.max(1,...series.map(s=>s.value||0));series.forEach((s,i)=>{const bh=Math.max(2,(Math.max(0,s.value||0)/max)*(h-70));const bx=x+i*(bw+gap);const by=y+(h-70)-bh;const col=s.color||`hsl(${ladderHue(typeof s.value==="number"&&max<=100?s.value:(s.value/max)*100)},80%,52%)`;ctx.fillStyle=col;rrect(ctx,bx,by,bw,bh,Math.min(10,bw/2));ctx.fill();ctx.fillStyle=C.textSec;ctx.font="600 20px "+CF;ctx.textAlign="center";ctx.fillText(clipText(ctx,s.label,bw+gap),bx+bw/2,y+h-30);if(n<=10){ctx.fillStyle=C.text;ctx.font="700 22px "+CF;ctx.fillText(`${Math.round(s.value||0)}${s.suffix||""}`,bx+bw/2,by-12);}});ctx.textAlign="left";}
+function drawSpark(ctx,x,y,w,h,series,accent){const vals=series.map(s=>s.value||0);const max=Math.max(1,...vals),min=Math.min(0,...vals);const span=max-min||1;const px=i=>x+(i/(series.length-1||1))*w;const py=v=>y+h-((v-min)/span)*h;ctx.beginPath();series.forEach((s,i)=>{const X=px(i),Y=py(s.value||0);i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});const grad=ctx.createLinearGradient(0,y,0,y+h);grad.addColorStop(0,accent+"55");grad.addColorStop(1,accent+"00");ctx.lineTo(px(series.length-1),y+h);ctx.lineTo(px(0),y+h);ctx.closePath();ctx.fillStyle=grad;ctx.fill();ctx.beginPath();series.forEach((s,i)=>{const X=px(i),Y=py(s.value||0);i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.strokeStyle=accent;ctx.lineWidth=5;ctx.lineJoin="round";ctx.stroke();const last=series[series.length-1];if(last){ctx.fillStyle=accent;ctx.beginPath();ctx.arc(px(series.length-1),py(last.value||0),9,0,7);ctx.fill();}}
+function drawReviewSlide(ctx,W,H,slide,info){
+  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,C.bg);g.addColorStop(1,C.surfaceDim||C.bg);ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const PAD=56;ctx.textBaseline="alphabetic";ctx.textAlign="left";
+  ctx.fillStyle=C.textDim;ctx.font="700 22px "+CF;ctx.fillText(String(info.periodLabel||"REVIEW").toUpperCase(),PAD,80);
+  ctx.textAlign="right";ctx.fillStyle=C.textDim;ctx.font="700 22px "+CF;ctx.fillText(`${info.idx+1} / ${info.total}`,W-PAD,80);ctx.textAlign="left";
+  if(!slide){ctx.fillStyle=C.textSec;ctx.font="700 40px "+CF;ctx.fillText("No slides selected",PAD,240);return;}
+  const acc=slide.accent||C.accent;
+  ctx.fillStyle=C.text;ctx.font="800 50px "+CF;const tl=wrapLines(ctx,slide.title,W-PAD*2,2);tl.forEach((ln,i)=>ctx.fillText(ln,PAD,160+i*56));
+  let y=160+tl.length*56+6;
+  if(slide.subtitle){ctx.fillStyle=C.textSec;ctx.font="500 26px "+CF;ctx.fillText(clipText(ctx,slide.subtitle,W-PAD*2),PAD,y);y+=10;}
+  const bodyTop=y+40,bodyH=720;
+  if(slide.kind==="metric"){
+    const val=`${slide.prefix||""}${slide.metric}${slide.unit||""}`;
+    ctx.fillStyle=acc;ctx.font="800 150px "+CF;ctx.fillText(clipText(ctx,val,W-PAD*2),PAD,bodyTop+150);
+    let sy=bodyTop+210;
+    if(slide.delta!=null&&slide.delta!==""){ctx.fillStyle=slide.delta>=0?C.green:C.red;ctx.font="700 30px "+CF;ctx.fillText(`${slide.delta>=0?"▲":"▼"} ${Math.abs(slide.delta)}${slide.deltaUnit||slide.unit||""} vs last ${slide.periodWord||"period"}`,PAD,sy);sy+=20;}
+    if(slide.series&&slide.series.length>1)drawSpark(ctx,PAD,sy+20,W-PAD*2,320,slide.series,acc);
+  }else if(slide.kind==="chart"){
+    if(!slide.series||!slide.series.length){ctx.fillStyle=C.textSec;ctx.font="500 30px "+CF;ctx.fillText("No data logged in this period.",PAD,bodyTop+60);}
+    else{if(slide.metric!=null){ctx.fillStyle=C.text;ctx.font="800 72px "+CF;ctx.fillText(`${slide.prefix||""}${slide.metric}${slide.unit||""}`,PAD,bodyTop+56);if(slide.metricLabel){ctx.fillStyle=C.textSec;ctx.font="500 24px "+CF;ctx.fillText(slide.metricLabel,PAD,bodyTop+92);}}
+      const cTop=slide.metric!=null?bodyTop+130:bodyTop;
+      if(slide.series.length<=12)drawBars(ctx,PAD,cTop,W-PAD*2,bodyH-(cTop-bodyTop)-20,slide.series,acc);
+      else drawSpark(ctx,PAD,cTop,W-PAD*2,bodyH-(cTop-bodyTop)-60,slide.series,acc);}
+  }else if(slide.kind==="list"){
+    const list=(slide.list||[]).slice(0,7);
+    if(!list.length){ctx.fillStyle=C.textSec;ctx.font="500 30px "+CF;ctx.fillText("Nothing here yet for this period.",PAD,bodyTop+60);}
+    const rowH=Math.min(96,(bodyH)/Math.max(1,list.length));let ly=bodyTop;
+    list.forEach(it=>{ctx.fillStyle=C.surface;rrect(ctx,PAD,ly,W-PAD*2,rowH-16,18);ctx.fill();const pc=it.color||(typeof it.value==="number"?`hsl(${ladderHue(it.value)},80%,55%)`:acc);
+      ctx.fillStyle=C.text;ctx.font="600 30px "+CF;ctx.fillText(clipText(ctx,it.label,W-PAD*2-220),PAD+28,ly+(rowH-16)/2+11);
+      ctx.textAlign="right";ctx.fillStyle=pc;ctx.font="800 38px "+CF;ctx.fillText(`${it.value}${it.unit||""}`,W-PAD-28,ly+(rowH-16)/2+13);ctx.textAlign="left";ly+=rowH;});
+  }
+  if(slide.prompt){const pw=W-PAD*2-320,py=H-250;ctx.globalAlpha=0.13;ctx.fillStyle=acc;rrect(ctx,PAD,py,pw,170,22);ctx.fill();ctx.globalAlpha=1;
+    ctx.fillStyle=acc;ctx.font="700 19px "+CF;ctx.fillText("REFLECT",PAD+28,py+40);
+    ctx.fillStyle=C.text;ctx.font="500 27px "+CF;wrapLines(ctx,slide.prompt,pw-56,3).forEach((ln,i)=>ctx.fillText(ln,PAD+28,py+78+i*34));}
+}
+function ReviewRecorderModal({open,onClose,onSave,buildCatalog,windows,templates,onSaveTemplate}){
+  const [phase,setPhase]=useState("pick"); // pick | ready | recording | review
+  const [period,setPeriod]=useState("week");
+  const [picked,setPicked]=useState([]); // ordered slide specs
+  const [elapsed,setElapsed]=useState(0);
+  const [idx,setIdx]=useState(0);
+  const [err,setErr]=useState(null);
+  const [blob,setBlob]=useState(null);
+  const [previewUrl,setPreviewUrl]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [tplName,setTplName]=useState("");
+  const [showTpl,setShowTpl]=useState(false);
+  const camStreamRef=useRef(null), camVideoRef=useRef(null), canvasRef=useRef(null), recRef=useRef(null), chunksRef=useRef([]), startRef=useRef(0), rafRef=useRef(0);
+  const slidesRef=useRef([]), idxRef=useRef(0), phaseRef=useRef("pick"), periodLabelRef=useRef("");
+  const catalog=open?buildCatalog(period):{suggestions:[],groups:[]};
+  const periodLabel=windows.find(w=>w.k===period)?.full||"";
+  useEffect(()=>{slidesRef.current=picked;},[picked]);
+  useEffect(()=>{idxRef.current=idx;},[idx]);
+  useEffect(()=>{phaseRef.current=phase;},[phase]);
+  useEffect(()=>{periodLabelRef.current=periodLabel;},[periodLabel]);
+  // Reset whenever opened.
+  useEffect(()=>{if(!open)return;setPhase("pick");setPicked([]);setElapsed(0);setIdx(0);setErr(null);setBlob(null);setPreviewUrl(null);setSaving(false);setPeriod("week");setShowTpl(false);setTplName("");},[open]);
+  // Acquire camera once we leave the picker; tear down on close.
+  useEffect(()=>{
+    if(!open||(phase!=="ready"&&phase!=="recording"))return;
+    if(camStreamRef.current)return;let active=true;
+    (async()=>{try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:true});if(!active){s.getTracks().forEach(t=>t.stop());return;}camStreamRef.current=s;if(camVideoRef.current){camVideoRef.current.srcObject=s;camVideoRef.current.muted=true;camVideoRef.current.play().catch(()=>{});}}catch(e){setErr("Camera/mic unavailable — check permissions.");}})();
+    return()=>{active=false;};
+  },[open,phase]);
+  // Full teardown when the modal closes.
+  useEffect(()=>{if(open)return;if(camStreamRef.current){camStreamRef.current.getTracks().forEach(t=>t.stop());camStreamRef.current=null;}if(rafRef.current)cancelAnimationFrame(rafRef.current);},[open]);
+  // Draw loop runs during ready + recording.
+  useEffect(()=>{
+    if(phase!=="ready"&&phase!=="recording")return;
+    const loop=()=>{const canvas=canvasRef.current;if(canvas){const ctx=canvas.getContext("2d");const W=canvas.width,H=canvas.height;drawReviewSlide(ctx,W,H,slidesRef.current[idxRef.current],{idx:idxRef.current,total:slidesRef.current.length,periodLabel:periodLabelRef.current});
+      const v=camVideoRef.current;if(v&&v.readyState>=2&&v.videoWidth){const pw=300,ph=400,px=W-pw-44,py=H-ph-44;ctx.save();rrect(ctx,px,py,pw,ph,28);ctx.clip();ctx.translate(px+pw,py);ctx.scale(-1,1);const vr=v.videoWidth/v.videoHeight,br=pw/ph;let dw,dh,dx,dy;if(vr>br){dh=ph;dw=ph*vr;dx=-(dw-pw)/2;dy=0;}else{dw=pw;dh=pw/vr;dx=0;dy=-(dh-ph)/2;}ctx.drawImage(v,dx,dy,dw,dh);ctx.restore();ctx.strokeStyle=C.accent;ctx.lineWidth=4;rrect(ctx,px,py,pw,ph,28);ctx.stroke();}
+      if(phaseRef.current==="recording"){ctx.fillStyle="#F87171";ctx.beginPath();ctx.arc(44+12,120,11,0,7);ctx.fill();ctx.fillStyle=C.text;ctx.font="700 26px "+CF;ctx.fillText(fmtDur(Date.now()-startRef.current),44+34,129);}}
+      rafRef.current=requestAnimationFrame(loop);};
+    rafRef.current=requestAnimationFrame(loop);
+    return()=>{if(rafRef.current)cancelAnimationFrame(rafRef.current);};
+  },[phase]);
+  // Elapsed timer.
+  useEffect(()=>{if(phase!=="recording")return;const id=setInterval(()=>setElapsed(Date.now()-startRef.current),200);return()=>clearInterval(id);},[phase]);
+  // Keyboard slide advance.
+  useEffect(()=>{if(phase!=="ready"&&phase!=="recording")return;const h=e=>{if(e.key==="ArrowRight")setIdx(i=>Math.min(slidesRef.current.length-1,i+1));else if(e.key==="ArrowLeft")setIdx(i=>Math.max(0,i-1));};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[phase]);
+  if(!open)return null;
+
+  const toggle=spec=>setPicked(p=>p.find(x=>x.key===spec.key)?p.filter(x=>x.key!==spec.key):[...p,spec]);
+  const isPicked=k=>picked.some(x=>x.key===k);
+  const goReady=()=>{if(!picked.length)return;setIdx(0);setErr(null);setPhase("ready");};
+  const startRec=()=>{
+    const canvas=canvasRef.current,cam=camStreamRef.current;if(!canvas){setErr("Canvas not ready.");return;}if(!cam){setErr("Camera/mic unavailable — check permissions.");return;}
+    let cs;try{cs=canvas.captureStream(30);}catch(e){setErr("This browser can't record composited video. Try Chrome or Safari.");return;}
+    const mixed=new MediaStream();cs.getVideoTracks().forEach(t=>mixed.addTrack(t));cam.getAudioTracks().forEach(t=>mixed.addTrack(t));
+    let mime="video/webm";if(window.MediaRecorder){if(MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus"))mime="video/webm;codecs=vp9,opus";else if(MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus"))mime="video/webm;codecs=vp8,opus";else if(MediaRecorder.isTypeSupported("video/mp4"))mime="video/mp4";}
+    try{const rec=new MediaRecorder(mixed,{mimeType:mime});chunksRef.current=[];rec.ondataavailable=e=>{if(e.data&&e.data.size>0)chunksRef.current.push(e.data);};rec.onstop=()=>{const b=new Blob(chunksRef.current,{type:mime});setBlob(b);setPreviewUrl(URL.createObjectURL(b));setPhase("review");};recRef.current=rec;startRef.current=Date.now();rec.start();setPhase("recording");}catch(e){setErr("Recording isn't supported here. Try another browser.");}
+  };
+  const stopRec=()=>{if(recRef.current&&recRef.current.state!=="inactive")recRef.current.stop();};
+  const retake=()=>{if(previewUrl)URL.revokeObjectURL(previewUrl);setBlob(null);setPreviewUrl(null);setElapsed(0);setIdx(0);setPhase("ready");};
+  const save=async()=>{if(!blob)return;setSaving(true);await onSave(blob,elapsed,{kind:"review",period,slides:picked.map(s=>({title:s.title,key:s.key}))});if(previewUrl)URL.revokeObjectURL(previewUrl);onClose();};
+  const download=()=>{if(!previewUrl)return;const a=document.createElement("a");a.href=previewUrl;a.download=`review-${period}-${new Date().toISOString().slice(0,10)}.webm`;a.click();};
+  const saveTpl=()=>{const nm=tplName.trim();if(!nm||!picked.length)return;onSaveTemplate({id:uid(),name:nm,period,keys:picked.map(s=>s.key)});setTplName("");setShowTpl(false);};
+  const loadTpl=t=>{const cat=buildCatalog(t.period||period);const all=[...cat.suggestions,...cat.groups.flatMap(g=>g.slides)];const map={};all.forEach(s=>{map[s.key]=s;});if(t.period)setPeriod(t.period);setPicked(t.keys.map(k=>map[k]).filter(Boolean));};
+
+  const overlay={position:"fixed",inset:0,zIndex:260,display:"flex",alignItems:"center",justifyContent:"center"};
+  const sheet={position:"relative",background:C.bg,borderRadius:24,width:"94%",maxWidth:460,maxHeight:"92vh",display:"flex",flexDirection:"column",border:`1px solid ${C.hairline}`,overflow:"hidden"};
+  const chip=(on,clr)=>({display:"inline-flex",alignItems:"center",gap:6,padding:"8px 13px",borderRadius:20,border:`1px solid ${on?(clr||C.accent):C.hairline}`,background:on?(clr||C.accent):"transparent",color:on?C.btnText:C.text,fontSize:12.5,fontWeight:600,cursor:"pointer",fontFamily:FN.b});
+
+  return(<div style={overlay} onClick={phase==="recording"?undefined:onClose}>
+    <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(8px)"}}/>
+    <div className="modal-box" onClick={e=>e.stopPropagation()} style={sheet}>
+      {phase==="pick"&&<>
+        <div style={{padding:"18px 20px 10px",flexShrink:0}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>Stat Review</div>
+          <div className="display" style={{fontSize:21,fontStyle:"italic",color:C.text,marginBottom:12}}>What do you want to talk about?</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{windows.map(w=>(<button key={w.k} onClick={()=>setPeriod(w.k)} style={chip(period===w.k)}>{w.label}</button>))}</div>
+        </div>
+        <div className="hide-scroll" style={{overflowY:"auto",padding:"4px 20px 12px",flex:1}}>
+          {templates&&templates.length>0&&<div style={{marginBottom:14}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:7}}>Saved decks</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{templates.map(t=>(<button key={t.id} onClick={()=>loadTpl(t)} style={{...chip(false),borderStyle:"dashed"}}>↺ {t.name}</button>))}</div>
+          </div>}
+          {catalog.suggestions.length>0&&<div style={{marginBottom:16}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Suggested starting points</div>
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>{catalog.suggestions.map(s=>(
+              <button key={s.key} onClick={()=>toggle(s)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",borderRadius:12,border:`1px solid ${isPicked(s.key)?C.accent:C.hairline}`,background:isPicked(s.key)?C.accentSoft||(C.accent+"18"):C.surface,cursor:"pointer",textAlign:"left"}}>
+                <span style={{width:22,height:22,borderRadius:6,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:isPicked(s.key)?C.accent:C.surfaceDim,color:isPicked(s.key)?C.btnText:C.textDim,fontSize:13,fontWeight:800}}>{isPicked(s.key)?"✓":"+"}</span>
+                <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13.5,fontWeight:600,color:C.text}}>{s.title}</span>{s.subtitle&&<span style={{display:"block",fontSize:11,color:C.textDim}}>{s.subtitle}</span>}</span>
+              </button>
+            ))}</div>
+          </div>}
+          {catalog.groups.map(grp=>(
+            <div key={grp.domain} style={{marginBottom:16}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{grp.domain}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:7}}>{grp.slides.map(s=>(
+                <button key={s.key} onClick={()=>toggle(s)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",borderRadius:12,border:`1px solid ${isPicked(s.key)?C.accent:C.hairline}`,background:isPicked(s.key)?C.accentSoft||(C.accent+"18"):C.surface,cursor:"pointer",textAlign:"left"}}>
+                  <span style={{width:22,height:22,borderRadius:6,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:isPicked(s.key)?C.accent:C.surfaceDim,color:isPicked(s.key)?C.btnText:C.textDim,fontSize:13,fontWeight:800}}>{isPicked(s.key)?"✓":"+"}</span>
+                  <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13.5,fontWeight:600,color:C.text}}>{s.title}</span>{s.cluster&&<span style={{display:"inline-block",marginTop:2,fontSize:9,fontWeight:700,color:C.accent,background:C.accent+"1A",borderRadius:4,padding:"1px 6px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Cluster</span>}</span>
+                </button>
+              ))}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{padding:"12px 20px",borderTop:`1px solid ${C.hairline}`,flexShrink:0}}>
+          {showTpl
+            ?<div style={{display:"flex",gap:6,marginBottom:10}}><input value={tplName} onChange={e=>setTplName(e.target.value)} placeholder="Deck name (e.g. Weekly Review)" style={{...inp,flex:1,padding:"9px 12px",fontSize:13}}/><button onClick={saveTpl} disabled={!tplName.trim()||!picked.length} style={{...btnG,opacity:tplName.trim()&&picked.length?1:0.4}}>Save</button></div>
+            :<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:12,color:C.textDim}}>{picked.length} slide{picked.length===1?"":"s"} selected</span>{picked.length>0&&<button onClick={()=>setShowTpl(true)} style={{background:"transparent",border:"none",color:C.accent,fontSize:12,fontWeight:600,cursor:"pointer"}}>Save as deck</button>}</div>}
+          <button onClick={goReady} disabled={!picked.length} style={{...btnB,width:"100%",opacity:picked.length?1:0.4,cursor:picked.length?"pointer":"default"}}>Build deck →</button>
+          <button onClick={onClose} style={{display:"block",margin:"8px auto 0",background:"transparent",border:"none",color:C.textDim,fontSize:12,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </>}
+      {(phase==="ready"||phase==="recording")&&<div style={{padding:16}}>
+        {err&&<div style={{padding:"10px 12px",marginBottom:10,borderRadius:10,background:C.red+"18",color:C.red,fontSize:12.5}}>{err}</div>}
+        <video ref={camVideoRef} playsInline muted style={{display:"none"}}/>
+        <div style={{position:"relative",borderRadius:16,overflow:"hidden",background:"#000",marginBottom:12}}>
+          <canvas ref={canvasRef} width={720} height={1280} style={{width:"100%",display:"block",aspectRatio:"9/16"}}/>
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:12}}>
+          <button onClick={()=>setIdx(i=>Math.max(0,i-1))} disabled={idx===0} style={{...btnG,padding:"10px 16px",opacity:idx===0?0.4:1}}>‹ Prev</button>
+          <span style={{fontSize:12,fontWeight:700,color:C.textSec,fontFamily:FN.m}}>{idx+1} / {picked.length}</span>
+          <button onClick={()=>setIdx(i=>Math.min(picked.length-1,i+1))} disabled={idx>=picked.length-1} style={{...btnG,padding:"10px 16px",opacity:idx>=picked.length-1?0.4:1}}>Next ›</button>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+          {phase==="ready"&&<button onClick={startRec} style={{display:"flex",alignItems:"center",gap:8,background:"#F87171",border:"none",borderRadius:30,padding:"13px 28px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em"}}><span style={{width:12,height:12,borderRadius:"50%",background:"#fff"}}/>Record</button>}
+          {phase==="recording"&&<button onClick={stopRec} style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceHi,border:`1px solid ${C.hairline}`,borderRadius:30,padding:"13px 28px",color:C.text,fontSize:13,fontWeight:700,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em"}}><span style={{width:11,height:11,borderRadius:2,background:"#F87171"}}/>Stop</button>}
+        </div>
+        {phase==="ready"&&<button onClick={()=>setPhase("pick")} style={{display:"block",margin:"12px auto 0",background:"transparent",border:"none",color:C.textDim,fontSize:12,cursor:"pointer"}}>← Edit deck</button>}
+      </div>}
+      {phase==="review"&&<div style={{padding:16}}>
+        <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Review · {fmtDur(elapsed)}</div>
+        <div style={{borderRadius:16,overflow:"hidden",background:"#000",marginBottom:12}}>{previewUrl&&<video src={previewUrl} controls playsInline style={{width:"100%",display:"block",background:"#000"}}/>}</div>
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <button onClick={retake} style={{...btnG,flex:1}}>Retake</button>
+          <button onClick={download} style={{...btnG,flex:1}}>↓ Export</button>
+        </div>
+        <button onClick={save} disabled={saving} style={{...btnB,width:"100%",opacity:saving?0.6:1}}>{saving?"Saving…":"Save to Journal"}</button>
+        <button onClick={onClose} style={{display:"block",margin:"10px auto 0",background:"transparent",border:"none",color:C.textDim,fontSize:12,cursor:"pointer"}}>Discard</button>
+      </div>}
+    </div>
+  </div>);
+}
+
 /* ═══ BUDGET LEDGER HELPERS ═══ */
 const ACCT_META=[
   {key:"checking",label:"Debit Card",icon:"💳"},
@@ -825,6 +1012,12 @@ export default function Dashboard(){
   // Theme: "dark" | "light". Persisted in settings (loaded below). Kept in component state so
   // React re-renders on swap; applyTheme() runs as a side-effect to rebind module helpers.
   const[theme,setTheme]=useState("dark");
+  // Each split gets its own vibrant color, assigned by its position in the ordered list (so every split is visually distinct).
+  const splitColorMap=useMemo(()=>{
+    const pal=[C.green,C.blue,C.orange,C.purple,C.cyan,C.red,C.gold,"#FF375F","#5E5CE6","#30D0C6","#A3E635","#FF7AB6"];
+    const m={};orderedSplitKeys.forEach((k,i)=>{m[k]=pal[i%pal.length];});return m;
+  },[orderedSplitKeys,theme]);
+  const spClr=name=>splitColorMap[name]||C.accent;
   // Apply theme synchronously so module-level helpers (C, card, btnB, pill, DIFF, etc.) reflect
   // the active palette before any child JSX reads them this render.
   applyTheme(theme==="light"?LIGHT:DARK);
@@ -954,6 +1147,7 @@ export default function Dashboard(){
   const[vjSel,setVjSel]=useState(null); // selected day number
   const[vjUrls,setVjUrls]=useState({}); // id -> object URL (rebuilt from IndexedDB)
   const[showVjRecorder,setShowVjRecorder]=useState(false);
+  const[showStatReview,setShowStatReview]=useState(false); // Stat Review recorder modal
   const vjFileRef=useRef(null);
   // ─── Budget: Financial Snapshot ───
   const[accounts,setAccounts]=useState({checking:"",savings:"",cash:"",investment:"",credit:""});
@@ -2876,6 +3070,60 @@ ${body}
   const debtRangePct=bDebtMax<=bDebtTarget?1:Math.max(0,Math.min(1,(bDebtMax-debt)/(bDebtMax-bDebtTarget)));
   const netWorthColor=gradColor(nwRangePct);
   const debtColor=gradColor(debtRangePct);
+
+  /* ─── Stat Review: build the catalog of topics (clusters + specifics) for a time window ─── */
+  const buildReviewCatalog=(period)=>{
+    const W=REVIEW_WINDOWS.find(w=>w.k===period)||REVIEW_WINDOWS[0];const N=W.n;
+    const days=[];for(let i=N-1;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);days.push(d);}
+    const keys=days.map(dk);const inRange=k=>keys.includes(k);
+    const shortLbl=d=>N<=10?DOW2[d.getDay()]:`${d.getMonth()+1}/${d.getDate()}`;
+    const sample=arr=>{if(arr.length<=24)return arr;const step=Math.ceil(arr.length/24);return arr.filter((_,i)=>i%step===0||i===arr.length-1);};
+    const groups=[],suggestions=[];
+    // Habits
+    const habSeries=days.map(d=>({label:shortLbl(d),value:dayHabitPct(dk(d))}));
+    const habVals=habSeries.map(s=>s.value);const habAvg=Math.round(habVals.reduce((a,b)=>a+b,0)/(habVals.length||1));
+    const perfectDays=habVals.filter(v=>v>=100).length;
+    groups.push({domain:"Habits",slides:[
+      {key:"habits-all",title:"Habit Completion",subtitle:W.full,cluster:true,kind:"chart",series:sample(habSeries),metric:habAvg,unit:"%",metricLabel:"average completion",accent:C.accent,prompt:`What drove your completion this ${W.word}? Which habit needs tightening?`},
+      {key:"habits-perfect",title:"Perfect Days",subtitle:`${perfectDays} of ${N} days at 100%`,kind:"metric",metric:perfectDays,unit:` / ${N}`,accent:C.green,prompt:"What made your perfect days work, and how do you repeat them?"}]});
+    // Goals
+    const goals=(aspirationProgress||[]).map(a=>({label:a.dailyAction||a.text||"Goal",value:Math.round(a.pct||0),unit:"%"}));
+    if(goals.length)groups.push({domain:"Goals",slides:[{key:"goals-all",title:"Goals Progress",subtitle:`${goals.length} active`,cluster:true,kind:"list",list:goals,accent:C.accent,prompt:"Which goal is ahead, which is slipping, and what's the next action?"}]});
+    // Workouts
+    const wr=(wHist||[]).filter(w=>inRange(w.date));
+    const bySplit={};wr.forEach(w=>{bySplit[w.split]=(bySplit[w.split]||0)+1;});
+    const splitSeries=Object.entries(bySplit).map(([k,v])=>({label:String(k).slice(0,4).toUpperCase(),value:v,color:spClr(k)||C.accent}));
+    const vol=wr.reduce((a,w)=>a+(w.exercises||[]).reduce((x,e)=>x+(e.sets||[]).reduce((s,st)=>s+(st.w||0)*(st.r||0),0),0),0);
+    groups.push({domain:"Workouts",slides:[
+      {key:"workouts-all",title:"Workouts",subtitle:W.full,cluster:true,kind:"chart",series:splitSeries,metric:wr.length,unit:" sessions",metricLabel:"by split",accent:spClr("lower")||C.accent,prompt:"Did your training hit the split balance you wanted?"},
+      {key:"workouts-vol",title:"Training Volume",subtitle:W.full,kind:"metric",metric:vol>=1000?`${(vol/1000).toFixed(1)}k`:vol,unit:" lbs",accent:spClr("push")||C.accent,prompt:"Is your volume trending where you want it?"}]});
+    // Sleep
+    const sleepSeries=days.map(d=>({label:shortLbl(d),value:(typeof sleepLog[dk(d)]==="number"?sleepLog[dk(d)]:null)})).filter(s=>s.value!=null);
+    if(sleepSeries.length){const sAvg=Math.round(sleepSeries.reduce((a,s)=>a+s.value,0)/sleepSeries.length);
+      groups.push({domain:"Sleep",slides:[{key:"sleep-score",title:"Sleep Score",subtitle:W.full,kind:"metric",metric:sAvg,metricLabel:"average",series:sample(sleepSeries),accent:C.blue||"#60A5FA",prompt:"How did sleep track with your energy and completion?"}]});}
+    // Nutrition
+    if(dietEnabled){const calDays=days.map(d=>(diet[dk(d)]||{}).calories||0).filter(c=>c>0);
+      if(calDays.length){const avgCal=Math.round(calDays.reduce((a,b)=>a+b,0)/calDays.length);
+        groups.push({domain:"Nutrition",slides:[{key:"nutrition-cal",title:"Calories",subtitle:W.full,kind:"metric",metric:avgCal,unit:" kcal",metricLabel:`avg · goal ${dietGoals.calories||0}`,delta:dietGoals.calories?avgCal-dietGoals.calories:null,deltaUnit:" kcal",periodWord:W.word,accent:C.orange||"#FF9F0A",prompt:`Were you fueling for your goals this ${W.word}?`}]});}}
+    // Finances
+    const wh=(worthHistory||[]).filter(pt=>inRange(pt.date));
+    if(wh.length)groups.push({domain:"Finances",slides:[
+      {key:"net-worth",title:"Net Worth",subtitle:W.full,kind:"metric",metric:Math.round(netWorth),prefix:"$",series:sample(wh.map(pt=>({label:"",value:pt.worth}))),accent:C.green,prompt:`What moved your net worth, and what's the plan next ${W.word}?`},
+      ...(debt>0?[{key:"debt",title:"Debt",subtitle:W.full,kind:"metric",metric:Math.round(debt),prefix:"$",series:sample(wh.map(pt=>({label:"",value:pt.debt||0}))),accent:C.red,prompt:"Is your debt trending down the way you want?"}]:[])]});
+    // Suggested starter deck
+    const byKey={};groups.forEach(g=>g.slides.forEach(s=>{byKey[s.key]=s;}));
+    ["habits-all","goals-all","workouts-all","sleep-score","net-worth"].forEach(k=>{if(byKey[k])suggestions.push(byKey[k]);});
+    return{suggestions,groups};
+  };
+  // Save a review recording into the journal timeline (reuses the video-journal IndexedDB store).
+  const reviewAdd=async(blob,duration,meta)=>{
+    const sel=vjSel!=null?vjSel:now.getDate();const key=vjDK(sel);const id=uid();
+    try{await vjPut(id,blob);}catch(e){setSaveError("Couldn't save review — storage may be full");return;}
+    const url=URL.createObjectURL(blob);setVjUrls(p=>({...p,[id]:url}));
+    setVideoJournal(p=>({...p,[key]:[...(p[key]||[]),{id,time:new Date().toISOString(),duration:duration||0,note:"",mime:blob.type||"video/webm",...(meta||{})}]}));
+  };
+  const reviewTemplates=settings.reviewTemplates||[];
+  const addReviewTemplate=t=>setSettings(p=>({...p,reviewTemplates:[...(p.reviewTemplates||[]),t].slice(-12)}));
   // ── Analytical read on the trends: what's actually happening + when you'll hit target ──
   const worthAnalytics=useMemo(()=>{
     const H=worthHistory;if(H.length<2)return null;
@@ -3627,6 +3875,7 @@ ${body}
 
       <ProofModal open={!!proofTask} onClose={()=>setProofTask(null)} name={proofTask?.text||""} onDone={img=>{if(proofTask)proofDone(proofTask,img);}} />
       <VideoRecorderModal open={showVjRecorder} onClose={()=>setShowVjRecorder(false)} onSave={vjAdd} dateLabel={vjSel!=null?new Date(vjY,vjM,vjSel).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"}):""} />
+      <ReviewRecorderModal open={showStatReview} onClose={()=>setShowStatReview(false)} onSave={reviewAdd} buildCatalog={buildReviewCatalog} windows={REVIEW_WINDOWS} templates={reviewTemplates} onSaveTemplate={addReviewTemplate} />
 
       {/* ═══ STICKY HEADER ═══ */}
       <div className="app-header" style={{position:"sticky",top:0,zIndex:100,background:C.surface,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",paddingBottom:8}}>
@@ -4136,6 +4385,7 @@ ${body}
                   <div style={{display:"flex",gap:6}}>
                     <button className="press" onClick={()=>setJrnlEditor({title:"",body:"",ts:dayTs})} style={{display:"flex",alignItems:"center",gap:5,background:C.gold||"#F5B301",border:"none",borderRadius:8,padding:"8px 12px",color:"#3A2E00",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3A2E00" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Write</button>
                     <button className="press" onClick={()=>setShowVjRecorder(true)} style={{display:"flex",alignItems:"center",gap:6,background:C.accent,border:"none",borderRadius:8,padding:"8px 12px",color:C.btnText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em"}}><span style={{width:9,height:9,borderRadius:"50%",background:C.btnText}}/>Record</button>
+                    <button className="press" onClick={()=>setShowStatReview(true)} title="Record a stat review" style={{display:"flex",alignItems:"center",gap:6,background:C.surfaceHi,border:`1px solid ${C.accent}`,borderRadius:8,padding:"8px 12px",color:C.accent,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.03em"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>Review</button>
                     <button className="press" onClick={()=>vjFileRef.current?.click()} style={{...btnG,padding:"8px 12px",fontSize:11}}>↑ Upload</button>
                   </div>
                 </div>
@@ -4155,6 +4405,7 @@ ${body}
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                       <span style={{fontSize:10,color:C.textDim,fontFamily:FN.m}}>{new Date(en.time).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}{en.duration?` · ${fmtDur(en.duration)}`:""}</span>
+                      {en.kind==="review"&&<span style={{fontSize:8.5,fontWeight:800,color:C.accent,background:C.accent+"1A",borderRadius:4,padding:"2px 7px",textTransform:"uppercase",letterSpacing:"0.04em",fontFamily:FN.m}}>📊 Review{en.slides?` · ${en.slides.length}`:""}</span>}
                       <button onClick={()=>vjRemove(key,en.id)} style={{marginLeft:"auto",background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:FN.b,display:"flex",alignItems:"center",gap:4}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.red} strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>Delete</button>
                     </div>
                     <input value={en.note||""} onChange={e=>vjSetNote(key,en.id,e.target.value)} placeholder="Add a note or caption…" style={{...inp,padding:"9px 12px",fontSize:12}} />
@@ -5013,7 +5264,7 @@ ${body}
               const vol=strengthW.reduce((a,w)=>a+(w.exercises||[]).reduce((x,e)=>x+e.sets.reduce((y,s)=>y+(s.w||0)*(s.r||0),0),0),0);
               const durMs=todayW.reduce((a,w)=>a+(w.duration||0),0);
               const splitNames=todayW.map(w=>w.split);
-              const clr=spClr[todayW[0].split]||C.accent;
+              const clr=spClr(todayW[0].split)||C.accent;
               const stats=[];
               if(strengthW.length){stats.push({l:"Exercises",v:exCount});stats.push({l:"Sets",v:setCount});stats.push({l:"Volume",v:vol>=1000?`${(vol/1000).toFixed(1)}k`:vol});}
               if(cardioW.length){const totDist=cardioW.reduce((a,w)=>a+(w.distance||0),0);stats.push({l:"Distance",v:`${Math.round(totDist*10)/10} ${cardioW[0].distUnit||"mi"}`});}
@@ -5039,8 +5290,8 @@ ${body}
             })()}
             {orderedSplitKeys.length>1&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}><button onClick={()=>setSplitReorder(m=>!m)} style={{background:splitReorder?C.accent:"transparent",border:`1px solid ${splitReorder?C.accent:C.hairline}`,color:splitReorder?C.btnText:C.textDim,borderRadius:8,padding:"6px 13px",fontSize:10,fontWeight:700,fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.06em",cursor:"pointer"}}>{splitReorder?"Done":"⇅ Reorder"}</button></div>}
             {splitReorder
-              ?<DragReorderList items={orderedSplitKeys.map(k=>({id:k}))} onReorder={ids=>setSplitOrder(ids)} renderContent={it=>{const clr=spClr[it.id]||C.accent;const mset=musclesForSplit(splits[it.id]||[]);return(<><div style={{flexShrink:0}}><MuscleBody muscles={mset} accent={clr} base={C.surfaceHi} skin={C.textDim} size={34} gap={3}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.04em"}}>{it.id}</div><div style={{fontSize:10,color:C.textDim}}>{isCardioSplit(it.id)?"Distance & time":`${(splits[it.id]||[]).length} exercises`}</div></div></>);}} />
-              :<div style={{display:"flex",flexDirection:"column",gap:8}}>{orderedSplitKeys.map(key=>{const exL=splits[key]||[];const clr=spClr[key]||C.accent;const mset=musclesForSplit(exL);return(
+              ?<DragReorderList items={orderedSplitKeys.map(k=>({id:k}))} onReorder={ids=>setSplitOrder(ids)} renderContent={it=>{const clr=spClr(it.id)||C.accent;const mset=musclesForSplit(splits[it.id]||[]);return(<><div style={{flexShrink:0}}><MuscleBody muscles={mset} accent={clr} base={C.surfaceHi} skin={C.textDim} size={34} gap={3}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.04em"}}>{it.id}</div><div style={{fontSize:10,color:C.textDim}}>{isCardioSplit(it.id)?"Distance & time":`${(splits[it.id]||[]).length} exercises`}</div></div></>);}} />
+              :<div style={{display:"flex",flexDirection:"column",gap:8}}>{orderedSplitKeys.map(key=>{const exL=splits[key]||[];const clr=spClr(key)||C.accent;const mset=musclesForSplit(exL);return(
               <div key={key} style={{...card,padding:"14px 16px"}}>
                 <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:11}}>
                   <button className="press" onClick={()=>setGSplit(key)} style={{background:"transparent",border:"none",cursor:"pointer",padding:0,flexShrink:0}}><MuscleBody muscles={mset} accent={clr} base={C.surfaceHi} skin={C.textDim} size={62} gap={5}/></button>
@@ -5057,7 +5308,7 @@ ${body}
               </div>);})}</div>}
             {!addSplit?<button onClick={()=>setAddSplit(true)} style={{...btnB,width:"100%",marginTop:12,fontSize:12}}>+ Add Split</button>:<div style={{...card,marginTop:12}}><input value={nSpName} onChange={e=>setNSpName(e.target.value)} placeholder="Split name (e.g. push)" style={{...inp,marginBottom:8}} /><input value={nSpEx} onChange={e=>setNSpEx(e.target.value)} placeholder="Exercises (comma separated)" style={{...inp,marginBottom:10}} /><div style={{display:"flex",gap:8}}><button onClick={()=>{if(!nSpName.trim())return;const nk=nSpName.trim().toLowerCase();setSplits(p=>({...p,[nk]:nSpEx.split(",").map(e=>e.trim()).filter(Boolean)}));setSplitOrder(o=>o.includes(nk)?o:[...o,nk]);setNSpName("");setNSpEx("");setAddSplit(false);}} style={{...btnB,flex:1}}>Add</button><button onClick={()=>setAddSplit(false)} style={btnG}>Cancel</button></div></div>}
           </div>}
-          {gView==="workouts"&&gSplit&&isCardioSplit(gSplit)&&(()=>{const clr=spClr[gSplit]||"#3B82F6";
+          {gView==="workouts"&&gSplit&&isCardioSplit(gSplit)&&(()=>{const clr=spClr(gSplit)||"#3B82F6";
             const dist=parseFloat(cardioLog.distance)||0;const totalMin=(parseInt(cardioLog.timeMin)||0)+(parseInt(cardioLog.timeSec)||0)/60;
             const recent=wHist.filter(w=>w.type==="cardio").slice().reverse().slice(0,6);
             const canSave=dist>0||totalMin>0;
@@ -5122,7 +5373,7 @@ ${body}
             </div>}
           </div>);})()}
 
-          {gView==="workouts"&&gSplit&&!isCardioSplit(gSplit)&&curWkState&&(()=>{const clr=spClr[gSplit]||C.blue;const splitMuscles=musclesForSplit(curWkState.exercises.map(e=>e.name));return(<div>
+          {gView==="workouts"&&gSplit&&!isCardioSplit(gSplit)&&curWkState&&(()=>{const clr=spClr(gSplit)||C.blue;const splitMuscles=musclesForSplit(curWkState.exercises.map(e=>e.name));return(<div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
               <button onClick={()=>{setGSplit(null);setRenameSplitVal(null);}} style={btnG}>←</button>
               {renameSplitVal!==null
@@ -5720,7 +5971,7 @@ ${body}
               {/* ═══ SEVEN WORKOUT SPLITS (sourced from My Workouts) — horizontal, scrollable ═══ */}
               <div style={{...lbl,marginBottom:10}}>Progress by Split</div>
               <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:progSplit?16:20}} className="hide-scroll">
-                {orderedSplitKeys.map(key=>{const clr=spClr[key]||C.accent;const on=progSplit===key;const exCount=(splits[key]||[]).length;return(
+                {orderedSplitKeys.map(key=>{const clr=spClr(key)||C.accent;const on=progSplit===key;const exCount=(splits[key]||[]).length;return(
                   <button key={key} onClick={()=>{setProgSplit(on?null:key);setSplitGraphEx([]);}} style={{flexShrink:0,minWidth:96,padding:"12px 14px",borderRadius:12,border:`1.5px solid ${on?clr:C.hairline}`,background:on?`${clr}1A`:"transparent",cursor:"pointer",textAlign:"left",transition:"all 0.15s ease"}}>
                     <div style={{fontSize:12.5,fontWeight:800,color:clr,textTransform:"uppercase",letterSpacing:"0.03em"}}>{key}</div>
                     <div style={{fontSize:9,color:C.textDim,marginTop:3,fontFamily:FN.m}}>{isCardioSplit(key)?"cardio":`${exCount} ex`}</div>
@@ -5731,7 +5982,7 @@ ${body}
               {/* ═══ PER-SPLIT ANALYTICS ═══ */}
               {progSplit&&!isCardioSplit(progSplit)&&(()=>{
                 const exNames=splits[progSplit]||[];
-                const clr=spClr[progSplit]||C.accent;
+                const clr=spClr(progSplit)||C.accent;
                 const shown=splitGraphEx.length?splitGraphEx:exNames.filter(n=>(splitExerciseSeries[n]||[]).length>0).slice(0,2);
                 const rangeDays=splitGraphRange==="all"?99999:parseInt(splitGraphRange);
                 const cutT=Date.now()-rangeDays*864e5;
@@ -5820,7 +6071,7 @@ ${body}
                   const hWeek=weekOf(healthAnchor);
                   const hLabel=healthCalView==="month"?healthAnchor.toLocaleDateString("en-US",{month:"long",year:"numeric"}):`${fd(hWeek[0])} – ${fd(hWeek[6])}`;
                   const navBtn=(dis)=>({background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:8,width:28,height:28,color:dis?C.hairline:C.textSec,fontSize:15,lineHeight:1,cursor:dis?"default":"pointer",padding:0,flexShrink:0});
-                  const dayBox=(cd,variant)=>{const k=dk(cd);const wos=wByDate[k]||[];const has=wos.length>0;const clr=has?(spClr[wos[0].split]||C.accent):null;const isToday=k===dk(now);const isSel=selDay===k;const future=cd.getTime()>todayMid;const label=has?(wos.length>1?`${wos.length}×`:String(wos[0].split).slice(0,3).toUpperCase()):"";
+                  const dayBox=(cd,variant)=>{const k=dk(cd);const wos=wByDate[k]||[];const has=wos.length>0;const clr=has?(spClr(wos[0].split)||C.accent):null;const isToday=k===dk(now);const isSel=selDay===k;const future=cd.getTime()>todayMid;const label=has?(wos.length>1?`${wos.length}×`:String(wos[0].split).slice(0,3).toUpperCase()):"";
                     if(variant==="month")return(<button key={k} onClick={()=>{if(has&&!future)setProgCalDay(k);}} className={has?"press":""} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:8,opacity:future?0.35:1,background:isSel?(clr||C.accent):has?`${clr}22`:"transparent",border:isSel?"1px solid transparent":has?`1px solid ${clr}`:isToday?`1px solid ${C.accent}`:`1px solid ${C.hairline}`,cursor:(has&&!future)?"pointer":"default",padding:0}}>
                       <span style={{fontFamily:FN.m,fontSize:12,fontWeight:isToday||isSel?800:600,color:isSel?C.btnText:isToday?C.accent:C.text,lineHeight:1}}>{cd.getDate()}</span>
                       {has&&<span style={{width:4,height:4,borderRadius:"50%",background:isSel?C.btnText:clr,marginTop:3}}/>}
@@ -5853,7 +6104,7 @@ ${body}
                       <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:selWos.length?12:0}}>{pd(selDay).toLocaleDateString("en-US",{weekday:"long"})}, {fd(selDay)}</div>
                       {selWos.length===0
                         ?<div style={{fontSize:12.5,color:C.textDim,fontStyle:"italic",fontFamily:FN.h}}>No workout this day.</div>
-                        :selWos.map((w,wi)=>{const clr=spClr[w.split]||C.accent;const exCount=(w.exercises||[]).length;const setCount=(w.exercises||[]).reduce((a,e)=>a+(e.sets||[]).length,0);const vol=(w.exercises||[]).reduce((a,e)=>a+(e.sets||[]).reduce((x,s)=>x+(s.w||0)*(s.r||0),0),0);return(
+                        :selWos.map((w,wi)=>{const clr=spClr(w.split)||C.accent;const exCount=(w.exercises||[]).length;const setCount=(w.exercises||[]).reduce((a,e)=>a+(e.sets||[]).length,0);const vol=(w.exercises||[]).reduce((a,e)=>a+(e.sets||[]).reduce((x,s)=>x+(s.w||0)*(s.r||0),0),0);return(
                           <div key={wi} style={{marginTop:wi?16:0,paddingTop:wi?14:0,borderTop:wi?`1px solid ${C.hairline}`:"none"}}>
                             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:(w.type!=="cardio"&&(w.exercises||[]).length)?8:0}}>
                               <div style={{width:34,height:34,borderRadius:9,background:`${clr}1A`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{w.type==="cardio"?<span style={{fontSize:16}}>🏃</span>:<DumbbellIcon size={16} color={clr}/>}</div>
