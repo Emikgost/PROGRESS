@@ -363,7 +363,8 @@ const seedTx={"2026-03-01":[{id:"t14",type:"out",amount:26.5,desc:"Sunday"}],"20
 const defSettings={morningStart:5,morningEnd:12,nightStart:18,nightEnd:23,reflectHour:21,reviewDay:0,netWorthGoal:1000,debtWarningThreshold:1000,focusTransferHour:22,
   nwMin:0,nwTarget:1000,debtMax:1000,debtTarget:0,planDay:0,
   quickActions:["focus","workout","weight","journal"], // configurable + bar shortcut ids, in order
-  reviewTemplates:[]}; // saved Stat Review decks
+  reviewTemplates:[], // saved Stat Review decks
+  splitRatio:0.64}; // Today split-screen: grid share of width on wide screens
 const QA_DEFAULT=["focus","workout","weight","journal"]; // fallback when none saved
 
 // ─── Budget categories (spec's taxonomy) ───
@@ -691,6 +692,7 @@ function ReviewRecorderModal({open,onClose,onSave,buildCatalog,windows,templates
   const [saving,setSaving]=useState(false);
   const [tplName,setTplName]=useState("");
   const [showTpl,setShowTpl]=useState(false);
+  const [openCats,setOpenCats]=useState({}); // which category sections are expanded in the picker
   const camStreamRef=useRef(null), camVideoRef=useRef(null), canvasRef=useRef(null), recRef=useRef(null), chunksRef=useRef([]), startRef=useRef(0), rafRef=useRef(0);
   const slidesRef=useRef([]), idxRef=useRef(0), phaseRef=useRef("pick"), periodLabelRef=useRef("");
   const catalog=open?buildCatalog(period):{suggestions:[],groups:[]};
@@ -742,6 +744,19 @@ function ReviewRecorderModal({open,onClose,onSave,buildCatalog,windows,templates
   const download=()=>{if(!previewUrl)return;const a=document.createElement("a");a.href=previewUrl;a.download=`review-${period}-${new Date().toISOString().slice(0,10)}.webm`;a.click();};
   const saveTpl=()=>{const nm=tplName.trim();if(!nm||!picked.length)return;onSaveTemplate({id:uid(),name:nm,period,keys:picked.map(s=>s.key)});setTplName("");setShowTpl(false);};
   const loadTpl=t=>{const cat=buildCatalog(t.period||period);const all=[...cat.suggestions,...cat.groups.flatMap(g=>g.slides)];const map={};all.forEach(s=>{map[s.key]=s;});if(t.period)setPeriod(t.period);setPicked(t.keys.map(k=>map[k]).filter(Boolean));};
+  // Flat lookup of every available slide + one-tap "quick decks" (themed bundles) so starting a review is a single tap.
+  const slideByKey={};catalog.groups.forEach(g=>g.slides.forEach(s=>{slideByKey[s.key]=s;}));
+  const setDeck=keys=>setPicked(keys.map(k=>slideByKey[k]).filter(Boolean));
+  const deckFor=keys=>keys.filter(k=>slideByKey[k]);
+  const QUICK_DECKS=[
+    {name:"Weekly Check-in",icon:"🗓️",keys:deckFor(["habits-all","goals-all","habits-perfect"])},
+    {name:"Training & Body",icon:"💪",keys:deckFor(["workouts-all","workouts-vol","sleep-score"])},
+    {name:"Money",icon:"💰",keys:deckFor(["net-worth","debt"])},
+    {name:"Full Review",icon:"✨",keys:catalog.groups.flatMap(g=>g.slides.filter(s=>s.cluster||["habits-perfect","sleep-score","net-worth"].includes(s.key)).map(s=>s.key))},
+  ].filter(d=>d.keys.length>=1);
+  const CAT_ICON={Habits:"🎯",Goals:"🏁",Workouts:"🏋️",Sleep:"😴",Nutrition:"🍎",Finances:"💵"};
+  const toggleCat=d=>setOpenCats(p=>({...p,[d]:!p[d]}));
+  const deckActive=keys=>keys.length>0&&keys.every(k=>isPicked(k))&&picked.length===keys.length;
 
   const overlay={position:"fixed",inset:0,zIndex:260,display:"flex",alignItems:"center",justifyContent:"center"};
   const sheet={position:"relative",background:C.bg,borderRadius:24,width:"94%",maxWidth:460,maxHeight:"92vh",display:"flex",flexDirection:"column",border:`1px solid ${C.hairline}`,overflow:"hidden"};
@@ -757,30 +772,42 @@ function ReviewRecorderModal({open,onClose,onSave,buildCatalog,windows,templates
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{windows.map(w=>(<button key={w.k} onClick={()=>setPeriod(w.k)} style={chip(period===w.k)}>{w.label}</button>))}</div>
         </div>
         <div className="hide-scroll" style={{overflowY:"auto",padding:"4px 20px 12px",flex:1}}>
-          {templates&&templates.length>0&&<div style={{marginBottom:14}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:7}}>Saved decks</div>
+          {/* QUICK DECKS — one tap loads a themed set, so you can start a review instantly */}
+          {QUICK_DECKS.length>0&&<div style={{marginBottom:18}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Quick decks · one tap to start</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{QUICK_DECKS.map(d=>{const on=deckActive(d.keys);return(
+              <button key={d.name} onClick={()=>setDeck(d.keys)} style={{display:"flex",alignItems:"center",gap:9,padding:"12px 12px",borderRadius:12,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accentSoft||(C.accent+"18"):C.surface,cursor:"pointer",textAlign:"left"}}>
+                <span style={{fontSize:18,flexShrink:0}}>{d.icon}</span>
+                <span style={{minWidth:0}}><span style={{display:"block",fontSize:12.5,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</span><span style={{display:"block",fontSize:10,color:C.textDim}}>{d.keys.length} slide{d.keys.length===1?"":"s"}</span></span>
+              </button>
+            );})}</div>
+          </div>}
+          {/* SAVED DECKS */}
+          {templates&&templates.length>0&&<div style={{marginBottom:18}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:7}}>Your saved decks</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{templates.map(t=>(<button key={t.id} onClick={()=>loadTpl(t)} style={{...chip(false),borderStyle:"dashed"}}>↺ {t.name}</button>))}</div>
           </div>}
-          {catalog.suggestions.length>0&&<div style={{marginBottom:16}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Suggested starting points</div>
-            <div style={{display:"flex",flexDirection:"column",gap:7}}>{catalog.suggestions.map(s=>(
-              <button key={s.key} onClick={()=>toggle(s)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",borderRadius:12,border:`1px solid ${isPicked(s.key)?C.accent:C.hairline}`,background:isPicked(s.key)?C.accentSoft||(C.accent+"18"):C.surface,cursor:"pointer",textAlign:"left"}}>
-                <span style={{width:22,height:22,borderRadius:6,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:isPicked(s.key)?C.accent:C.surfaceDim,color:isPicked(s.key)?C.btnText:C.textDim,fontSize:13,fontWeight:800}}>{isPicked(s.key)?"✓":"+"}</span>
-                <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13.5,fontWeight:600,color:C.text}}>{s.title}</span>{s.subtitle&&<span style={{display:"block",fontSize:11,color:C.textDim}}>{s.subtitle}</span>}</span>
+          {/* BROWSE BY AREA — collapsible categories, each option says what you'll talk about */}
+          <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Or build your own · by area</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>{catalog.groups.map(grp=>{const open2=!!openCats[grp.domain];const sel=grp.slides.filter(s=>isPicked(s.key)).length;return(
+            <div key={grp.domain} style={{border:`1px solid ${C.hairline}`,borderRadius:12,overflow:"hidden",background:C.surface}}>
+              <button onClick={()=>toggleCat(grp.domain)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left"}}>
+                <span style={{fontSize:17,flexShrink:0}}>{CAT_ICON[grp.domain]||"•"}</span>
+                <span style={{flex:1,fontSize:13.5,fontWeight:700,color:C.text}}>{grp.domain}</span>
+                {sel>0&&<span style={{fontSize:10,fontWeight:800,color:C.btnText,background:C.accent,borderRadius:10,padding:"2px 8px"}}>{sel}</span>}
+                <span style={{fontSize:12,color:C.textDim,transform:open2?"rotate(90deg)":"none",transition:"transform 0.2s ease"}}>›</span>
               </button>
-            ))}</div>
-          </div>}
-          {catalog.groups.map(grp=>(
-            <div key={grp.domain} style={{marginBottom:16}}>
-              <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{grp.domain}</div>
-              <div style={{display:"flex",flexDirection:"column",gap:7}}>{grp.slides.map(s=>(
-                <button key={s.key} onClick={()=>toggle(s)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",borderRadius:12,border:`1px solid ${isPicked(s.key)?C.accent:C.hairline}`,background:isPicked(s.key)?C.accentSoft||(C.accent+"18"):C.surface,cursor:"pointer",textAlign:"left"}}>
-                  <span style={{width:22,height:22,borderRadius:6,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:isPicked(s.key)?C.accent:C.surfaceDim,color:isPicked(s.key)?C.btnText:C.textDim,fontSize:13,fontWeight:800}}>{isPicked(s.key)?"✓":"+"}</span>
-                  <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13.5,fontWeight:600,color:C.text}}>{s.title}</span>{s.cluster&&<span style={{display:"inline-block",marginTop:2,fontSize:9,fontWeight:700,color:C.accent,background:C.accent+"1A",borderRadius:4,padding:"1px 6px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Cluster</span>}</span>
+              {open2&&<div style={{padding:"0 10px 10px",display:"flex",flexDirection:"column",gap:7}}>{grp.slides.map(s=>(
+                <button key={s.key} onClick={()=>toggle(s)} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"11px 12px",borderRadius:10,border:`1px solid ${isPicked(s.key)?C.accent:C.hairline}`,background:isPicked(s.key)?C.accentSoft||(C.accent+"18"):C.surfaceDim,cursor:"pointer",textAlign:"left"}}>
+                  <span style={{width:22,height:22,borderRadius:6,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:isPicked(s.key)?C.accent:C.surface,color:isPicked(s.key)?C.btnText:C.textDim,fontSize:13,fontWeight:800,marginTop:1}}>{isPicked(s.key)?"✓":"+"}</span>
+                  <span style={{flex:1,minWidth:0}}>
+                    <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:13,fontWeight:600,color:C.text}}>{s.title}</span>{s.cluster&&<span style={{fontSize:8.5,fontWeight:700,color:C.accent,background:C.accent+"1A",borderRadius:4,padding:"1px 5px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Cluster</span>}</span>
+                    {s.prompt&&<span style={{display:"block",fontSize:11,color:C.textDim,lineHeight:1.4,marginTop:3}}>{s.prompt}</span>}
+                  </span>
                 </button>
-              ))}</div>
+              ))}</div>}
             </div>
-          ))}
+          );})}</div>
         </div>
         <div style={{padding:"12px 20px",borderTop:`1px solid ${C.hairline}`,flexShrink:0}}>
           {showTpl
@@ -3340,6 +3367,14 @@ ${body}
   const structNext=()=>setStructAnchor(a=>{const d=shiftAnchor(a,gridExpanded?"month":"week",1);return pastCurrent(d,gridExpanded?"month":"week")?a:d;});
   const healthPrev=()=>setHealthAnchor(a=>shiftAnchor(a,healthCalView,-1));
   const healthNext=()=>setHealthAnchor(a=>{const d=shiftAnchor(a,healthCalView,1);return pastCurrent(d,healthCalView)?a:d;});
+  // Today split-screen: draggable divider ratio (grid share). Live state for smooth drag; persisted to settings on release.
+  const[splitRatio,setSplitRatio]=useState(0.64);
+  const splitRowRef=useRef(null), splitDragRef=useRef(false), splitRafRef=useRef(0);
+  const splitTo=clientX=>{const el=splitRowRef.current;if(!el)return;const r=el.getBoundingClientRect();let ratio=(clientX-r.left)/r.width;setSplitRatio(Math.max(0.42,Math.min(0.82,ratio)));};
+  const splitDown=e=>{splitDragRef.current=true;try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}e.preventDefault();};
+  const splitMove=e=>{if(!splitDragRef.current)return;const x=e.clientX;if(splitRafRef.current)cancelAnimationFrame(splitRafRef.current);splitRafRef.current=requestAnimationFrame(()=>splitTo(x));};
+  const splitUp=()=>{if(!splitDragRef.current)return;splitDragRef.current=false;setSettings(p=>({...p,splitRatio}));};
+  useEffect(()=>{if(hydrated&&typeof settings.splitRatio==="number")setSplitRatio(settings.splitRatio);},[hydrated]);
   // Keep the structured month scroll-strip positioned on today (current month) or the start (past months).
   useEffect(()=>{if(structuredMode&&gridExpanded&&structMonthStripRef.current){const el=structMonthStripRef.current;const inMonth=structAnchor.getFullYear()===now.getFullYear()&&structAnchor.getMonth()===now.getMonth();el.scrollLeft=inMonth?Math.max(0,(now.getDate()-1)*48-el.clientWidth/2+24):0;}},[structAnchor,gridExpanded,structuredMode]);
 
@@ -4000,10 +4035,21 @@ ${body}
             ?Array.from({length:daysInMonth},(_,i)=>new Date(y,mo,i+1))
             :weekOf(anchor);
           const dayLabels=colDates.map(d=>["S","M","T","W","T","F","S"][d.getDay()]);
-          // Fill the available width: label + %(60) + streak(40) + side padding reserved, rest split across the day columns.
-          const LABEL_W=gridExpanded?140:100, PCT_W=60, STREAK_W=40;
-          const avail=vw-LABEL_W-PCT_W-STREAK_W-110;
-          const cellW=gridExpanded?Math.max(28,Math.floor(avail/colDates.length)):Math.floor((vw-200)/7);
+          // ── Split-screen geometry ── on a wide screen the grid sits in a left column (splitRatio of
+          // the width) with Focus/Monthly on the right; on a phone it stacks full-width. The grid sizes
+          // itself from its OWN column width (gridW), so every cell/label scales proportionally as the
+          // divider moves — not just shrinking independently.
+          const contentW=Math.max(320,vw-40);
+          const wide=vw>=900;
+          const DIV_W=18;
+          const leftW=wide?Math.round((contentW-DIV_W)*splitRatio):contentW;
+          const gridW=Math.max(260,leftW-6);
+          // Proportional columns: label + %/streak scale with the grid width; the rest goes to day cells.
+          const LABEL_W=Math.round(gridExpanded?Math.max(92,Math.min(150,gridW*0.26)):Math.max(84,Math.min(128,gridW*0.3)));
+          const PCT_W=Math.round(Math.max(40,Math.min(60,gridW*0.12)));
+          const STREAK_W=Math.round(Math.max(26,Math.min(40,gridW*0.08)));
+          const avail=gridW-LABEL_W-PCT_W-STREAK_W-16;
+          const cellW=Math.max(gridExpanded?22:28,Math.floor(avail/colDates.length));
           const morningItems=activeTodos(dk(now)).filter(t=>t.grp==="morning");
           const nightItems=activeTodos(dk(now)).filter(t=>t.grp==="night");
           const generalItems=activeTodos(dk(now)).filter(t=>t.grp==="general");
@@ -4081,7 +4127,7 @@ ${body}
           const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
           const atCurrent=gridExpanded?(y===RY&&mo===RM):(weekStartOf(anchor).getTime()===weekStartOf(now).getTime());
           const periodLabel=gridExpanded?`${MONTHS[mo]} ${y}`:`${fd(colDates[0])} – ${fd(colDates[6])}`;
-          return(<div className="tab-content" data-swiperow {...makeSwipe(structCalTouch,structPrev,structNext)} style={{paddingBottom:140}}>
+          const gridBlock=(<>
             {/* Mode header — period + Week/Month controls now live in the sticky calendar strip above */}
             <div style={{marginBottom:14}}>
               <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em"}}>Structured Mode</div>
@@ -4118,8 +4164,9 @@ ${body}
               );
             })()}
 
-            {/* ═══ FOCUS — daily tasks (addable) + goals, mirroring agenda mode ═══ */}
-            <div style={{marginTop:24,paddingTop:20,borderTop:`1px solid ${C.hairline}`}}>
+          </>);
+          {/* ═══ FOCUS — daily tasks (addable) + goals + daily summary — the right-hand productivity column ═══ */}
+          const focusBlock=(<div>
               <div style={{fontSize:12,fontWeight:700,color:"#60A5FA",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Focus · Today</div>
               <div style={{display:"flex",gap:8,marginBottom:12}}>
                 <input data-focusquick value={focusQuick} onChange={e=>setFocusQuick(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&focusQuick.trim()){addFocus({id:uid(),text:focusQuick.trim(),diff:"easy"});setFocusQuick("");}}} placeholder="Add a focus task for today…" style={{...inp,flex:1}}/>
@@ -4165,10 +4212,40 @@ ${body}
                   </div>
                 );})}
               </div>}
+              {/* Daily Completion Summary — quick read on today's focus + goal progress */}
+              {(()=>{const fT=focusTasks.length,fD=focusTasks.filter(t=>dc[t.id]).length;const gl=[...weeklyFocusGoals,...monthlyFocusGoals];const gAvg=gl.length?Math.round(gl.reduce((a,g)=>{const p=aspirationProgress.find(x=>x.id===g.id);return a+(p?p.pct:0);},0)/gl.length):0;const fPct=fT?Math.round(fD/fT*100):0;return(
+                <div style={{marginTop:20,padding:"14px 16px",borderRadius:14,background:C.surface,border:`1px solid ${C.hairline}`}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Today's Progress</div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:gl.length?12:0}}>
+                    <span style={{fontSize:12,color:C.text,flex:1}}>Focus tasks</span>
+                    <div style={{flex:2,height:7,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${fPct}%`,background:fPct>=100?C.greenBright:C.accent,borderRadius:4,transition:"width 0.4s ease"}}/></div>
+                    <span style={{fontSize:12,fontFamily:FN.m,fontWeight:800,color:fPct>=100?C.green:C.text,width:44,textAlign:"right"}}>{fD}/{fT}</span>
+                  </div>
+                  {gl.length>0&&<div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:12,color:C.text,flex:1}}>Goals pace</span>
+                    <div style={{flex:2,height:7,background:C.surfaceDim,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${gAvg}%`,background:gAvg>=80?C.green:gAvg>=50?C.accent:C.red,borderRadius:4,transition:"width 0.4s ease"}}/></div>
+                    <span style={{fontSize:12,fontFamily:FN.m,fontWeight:800,color:C.text,width:44,textAlign:"right"}}>{gAvg}%</span>
+                  </div>}
+                </div>
+              );})()}
+            </div>);
+          // ── Layout: wide screens split [grid | divider | focus]; phones stack with Focus pulled to the top so it's immediately visible ──
+          const divider=(<div onPointerDown={splitDown} onPointerMove={splitMove} onPointerUp={splitUp} onPointerCancel={splitUp} title="Drag to resize" style={{width:DIV_W,flexShrink:0,alignSelf:"stretch",display:"flex",alignItems:"center",justifyContent:"center",cursor:"col-resize",touchAction:"none"}}>
+            <div style={{width:4,borderRadius:3,height:60,background:C.hairline}}/>
+          </div>);
+          if(wide)return(<div className="tab-content" style={{paddingBottom:140}}>
+            <div ref={splitRowRef} style={{display:"flex",alignItems:"flex-start"}}>
+              <div data-swiperow {...makeSwipe(structCalTouch,structPrev,structNext)} style={{width:leftW,flexShrink:0,minWidth:0}}>{gridBlock}</div>
+              {divider}
+              <div style={{flex:1,minWidth:0}}>{focusBlock}</div>
             </div>
           </div>);
+          return(<div className="tab-content" style={{paddingBottom:140}}>
+            <div style={{marginBottom:22}}>{focusBlock}</div>
+            <div data-swiperow {...makeSwipe(structCalTouch,structPrev,structNext)} style={{paddingTop:20,borderTop:`1px solid ${C.hairline}`}}>{gridBlock}</div>
+          </div>);
         })()}
-        
+
         {/* ═══ TODAY — Flow Mode (default card-based view) ═══ */}
         {tab==="today"&&!structuredMode&&(()=>{
           const mPct=morningT.length>0?Math.round(morningT.filter(t=>dc[t.id]).length/morningT.length*100):0;
@@ -4521,13 +4598,13 @@ ${body}
               <div style={{...lbl,margin:0}}>Focus tasks completed</div>
             </div>
             {(()=>{const hasAny=focusCountSeries.some(p=>p.count!=null&&p.count>0);if(!hasAny)return(<div style={{height:150,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.textDim,fontStyle:"italic",fontFamily:FN.h}}>No completed focus tasks in this range yet.</div>);
-              return(<ResponsiveContainer width="100%" height={160}><BarChart data={focusCountSeries} margin={{top:6,right:6,left:-18,bottom:0}}>
+              return(<ResponsiveContainer width="100%" height={160}><LineChart data={focusCountSeries} margin={{top:6,right:8,left:-18,bottom:0}}>
                 <CartesianGrid stroke={C.hairline} strokeDasharray="2 5" vertical={false}/>
                 <XAxis dataKey="label" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} minTickGap={24}/>
                 <YAxis allowDecimals={false} tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} width={26}/>
                 <Tooltip content={<Tip />}/>
-                <Bar dataKey="count" fill={C.blue} radius={[3,3,0,0]} name="completed" isAnimationActive={false}/>
-              </BarChart></ResponsiveContainer>);})()}
+                <Line type="monotone" dataKey="count" stroke={C.blue} strokeWidth={2.5} dot={{r:2.5,fill:C.blue,strokeWidth:0}} activeDot={{r:4}} name="completed" isAnimationActive={false}/>
+              </LineChart></ResponsiveContainer>);})()}
             <div style={{display:"flex",gap:4,marginTop:10,flexWrap:"wrap"}}>{[["today","Today"],["week","Week"],["month","Month"],["3M","3M"],["year","Year"],["all","All"]].map(([k,l])=>{const on=anGoalRange===k;return(<button key={k} onClick={()=>setAnGoalRange(k)} style={{flex:"1 0 14%",padding:"7px 0",borderRadius:8,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:10.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{l}</button>);})}</div>
           </div>
           {/* Long-term goals timeline — stored dates only; active goals extend to today, clearly marked */}
@@ -5180,65 +5257,64 @@ ${body}
         </Overlay>
 
         {/* ═══ GOAL CREATION MODAL — multi-step flow ═══ */}
-        <Overlay open={showGoalCreator} onClose={resetGc} title={gcOverride?"Add Established Habit":gcStep===0?"New Goal":gcStep===1?"Goal Type":"Details"}>
-          {/* Step 0: Name */}
-          {gcStep===0&&<div>
+        <Overlay open={showGoalCreator} onClose={resetGc} title={gcOverride?"Add Established Habit":"New Goal"}>
+          {/* ── Established-habit shortcut (unchanged) ── */}
+          {gcOverride&&<div>
             <div style={{fontSize:12,color:C.textDim,marginBottom:12}}>What are you working toward?</div>
-            <input value={gcName} onChange={e=>setGcName(e.target.value)} placeholder={gcOverride?"e.g. Brush teeth, Morning stretch":"e.g. Study for IO exam, Learn Spanish"} style={{...inp,marginBottom:14,fontSize:15,fontFamily:FN.h,fontStyle:"italic"}} autoFocus/>
-            {gcOverride&&<div>
-              <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>How often should you do this?</div>
-              <input type="number" value={gcTarget} onChange={e=>setGcTarget(e.target.value)} placeholder="Days per month (e.g. 28)" style={{...inp,marginBottom:10}}/>
-              <input value={gcAction} onChange={e=>setGcAction(e.target.value)} placeholder="Daily action (e.g. Morning stretch 10 min)" style={{...inp,marginBottom:14}}/>
-              <button onClick={submitGoal} disabled={!gcName.trim()} style={{...btnB,width:"100%",opacity:gcName.trim()?1:0.4}}>Add as Habit</button>
-            </div>}
-            {!gcOverride&&<button onClick={()=>{if(gcName.trim())setGcStep(1);}} disabled={!gcName.trim()} style={{...btnB,width:"100%",opacity:gcName.trim()?1:0.4}}>Next</button>}
+            <input value={gcName} onChange={e=>setGcName(e.target.value)} placeholder="e.g. Brush teeth, Morning stretch" style={{...inp,marginBottom:14,fontSize:15,fontFamily:FN.h,fontStyle:"italic"}} autoFocus/>
+            <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>How often should you do this?</div>
+            <input type="number" value={gcTarget} onChange={e=>setGcTarget(e.target.value)} placeholder="Days per month (e.g. 28)" style={{...inp,marginBottom:10}}/>
+            <input value={gcAction} onChange={e=>setGcAction(e.target.value)} placeholder="Daily action (e.g. Morning stretch 10 min)" style={{...inp,marginBottom:14}}/>
+            <button onClick={submitGoal} disabled={!gcName.trim()} style={{...btnB,width:"100%",opacity:gcName.trim()?1:0.4}}>Add as Habit</button>
           </div>}
-          {/* Step 1: Type selection */}
-          {gcStep===1&&<div>
-            <div style={{fontSize:12,color:C.textDim,marginBottom:14}}>What kind of goal is "{gcName}"?</div>
+          {/* ── Flexible single-page goal creation: name, pick a type (switchable anytime), fill details inline ── */}
+          {!gcOverride&&<div>
+            <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>What are you working toward?</div>
+            <input value={gcName} onChange={e=>setGcName(e.target.value)} placeholder="e.g. Study for IO exam, Learn Spanish" style={{...inp,marginBottom:18,fontSize:15,fontFamily:FN.h,fontStyle:"italic"}} autoFocus/>
+            <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Goal type <span style={{textTransform:"none",fontWeight:500,color:C.textDim,opacity:0.7}}>· switch anytime, your details are kept</span></div>
             {[
-              {k:"measurable",icon:"📐",title:"Measurable",desc:"Has a deadline and estimated hours. Study for an exam, complete a project.",ex:"Study 50 hours by May 15"},
-              {k:"outcome",icon:"🎯",title:"Outcome",desc:"A result you want to achieve, broken into actionable steps.",ex:"Get an offer from Morgan Stanley"},
-              {k:"habit",icon:"🔄",title:"Habit-Building",desc:"Test a new daily habit. Added to your daily habits now; graduates to permanent after a 30-day streak.",ex:"Read daily, stretch every morning"},
-            ].map(t=>(<button key={t.k} onClick={()=>{setGcType(t.k);setGcStep(2);}} className="press" style={{display:"block",width:"100%",textAlign:"left",padding:"16px 18px",marginBottom:8,borderRadius:12,background:C.surfaceDim,border:`1px solid ${C.hairline}`,cursor:"pointer",transition:"all 0.2s ease"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}><span style={{fontSize:18}}>{t.icon}</span><span style={{fontSize:14,fontWeight:700,color:C.text}}>{t.title}</span></div>
-              <div style={{fontSize:11,color:C.textDim,marginBottom:4}}>{t.desc}</div>
-              <div style={{fontSize:10,color:C.accent,fontFamily:FN.m,fontStyle:"italic"}}>e.g. "{t.ex}"</div>
-            </button>))}
-            <button onClick={()=>setGcStep(0)} style={{...btnG,width:"100%",marginTop:4}}>Back</button>
-          </div>}
-          {/* Step 2: Type-specific details */}
-          {gcStep===2&&<div>
-            {gcType==="measurable"&&<div>
-              <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>When is the deadline?</div>
-              <input type="date" value={gcDeadline} onChange={e=>setGcDeadline(e.target.value)} style={{...inp,marginBottom:12}}/>
-              <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>How many total hours do you estimate?</div>
-              <input type="number" value={gcHours} onChange={e=>setGcHours(e.target.value)} placeholder="e.g. 50" style={{...inp,marginBottom:14}}/>
-              {gcDeadline&&gcHours&&(()=>{const wks=Math.max(1,Math.ceil((new Date(gcDeadline)-now)/(7*24*60*60*1000)));const perWk=Math.round(parseInt(gcHours)/wks*10)/10;return(<div style={{...card,padding:12,marginBottom:14,background:C.accentSoft,border:`1px solid ${C.accentMed}`}}>
-                <div style={{fontSize:11,fontFamily:FN.m,color:C.text}}>≈ <strong>{perWk} hrs/week</strong> across {wks} weeks → <strong>~{Math.round(perWk/7*60)} min/day</strong></div>
-              </div>);})()}
+              {k:"measurable",icon:"📐",title:"Measurable",desc:"A deadline and estimated hours. Study for an exam, finish a project.",ex:"Study 50 hours by May 15"},
+              {k:"outcome",icon:"🎯",title:"Outcome",desc:"A result you want, broken into actionable steps.",ex:"Get an offer from Morgan Stanley"},
+              {k:"habit",icon:"🔄",title:"Habit-Building",desc:"Test a new daily habit now; graduates to permanent after a 30-day streak.",ex:"Read daily, stretch every morning"},
+            ].map(t=>{const on=gcType===t.k;return(<button key={t.k} onClick={()=>setGcType(t.k)} className="press" style={{display:"flex",gap:11,width:"100%",textAlign:"left",padding:"14px 16px",marginBottom:8,borderRadius:12,background:on?(C.accentSoft||C.accent+"18"):C.surfaceDim,border:`1px solid ${on?C.accent:C.hairline}`,cursor:"pointer",transition:"all 0.18s ease"}}>
+              <span style={{width:24,height:24,borderRadius:7,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:on?C.accent:"transparent",fontSize:on?13:17,fontWeight:800,color:on?C.btnText:C.text}}>{on?"✓":t.icon}</span>
+              <span style={{flex:1,minWidth:0}}>
+                <span style={{display:"block",fontSize:14,fontWeight:700,color:C.text,marginBottom:3}}>{t.title}</span>
+                <span style={{display:"block",fontSize:11,color:C.textDim,lineHeight:1.4,marginBottom:3}}>{t.desc}</span>
+                <span style={{display:"block",fontSize:10,color:C.accent,fontFamily:FN.m,fontStyle:"italic"}}>e.g. "{t.ex}"</span>
+              </span>
+            </button>);})}
+            {/* Inline, type-specific details — appear under the picker and change as you switch types */}
+            {gcType&&<div style={{marginTop:6,paddingTop:16,borderTop:`1px solid ${C.hairline}`}}>
+              {gcType==="measurable"&&<div>
+                <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>When is the deadline?</div>
+                <input type="date" value={gcDeadline} onChange={e=>setGcDeadline(e.target.value)} style={{...inp,marginBottom:12}}/>
+                <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>How many total hours do you estimate?</div>
+                <input type="number" value={gcHours} onChange={e=>setGcHours(e.target.value)} placeholder="e.g. 50" style={{...inp,marginBottom:14}}/>
+                {gcDeadline&&gcHours&&(()=>{const wks=Math.max(1,Math.ceil((new Date(gcDeadline)-now)/(7*24*60*60*1000)));const perWk=Math.round(parseInt(gcHours)/wks*10)/10;return(<div style={{...card,padding:12,marginBottom:14,background:C.accentSoft,border:`1px solid ${C.accentMed}`}}>
+                  <div style={{fontSize:11,fontFamily:FN.m,color:C.text}}>≈ <strong>{perWk} hrs/week</strong> across {wks} weeks → <strong>~{Math.round(perWk/7*60)} min/day</strong></div>
+                </div>);})()}
+              </div>}
+              {gcType==="outcome"&&<div>
+                <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>Break it into 2-4 actionable steps:</div>
+                {gcSteps.map((s,i)=>(<input key={i} value={s} onChange={e=>{const n=[...gcSteps];n[i]=e.target.value;setGcSteps(n);}} placeholder={`Step ${i+1}...`} style={{...inp,marginBottom:8}}/>))}
+                {gcSteps.length<20&&<button onClick={()=>setGcSteps(p=>[...p,""])} style={{...btnG,width:"100%",fontSize:10,marginBottom:8}}>+ Add step</button>}
+                {gcSteps.length>=20&&<div style={{fontSize:10,color:C.textDim,textAlign:"center",fontStyle:"italic",marginBottom:8}}>Maximum 20 steps</div>}
+              </div>}
+              {gcType==="habit"&&<div>
+                <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>This becomes a <strong style={{color:C.text}}>daily</strong> habit. When will you do it?</div>
+                <div style={{display:"flex",gap:8,marginBottom:16}}>
+                  {[{k:"morning",l:"☀️ Morning"},{k:"night",l:"🌙 Evening"}].map(s=>{const on=gcSlot===s.k;return(<button key={s.k} onClick={()=>setGcSlot(s.k)} style={{flex:1,padding:"13px 0",borderRadius:12,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:13,fontWeight:800,fontFamily:FN.b,cursor:"pointer",transition:"all 0.2s ease"}}>{s.l}</button>);})}
+                </div>
+                <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Daily action (optional — defaults to the title):</div>
+                <input value={gcAction} onChange={e=>setGcAction(e.target.value)} placeholder="e.g. Read 30 min, Study Spanish 20 min" style={{...inp,marginBottom:14}}/>
+                <div style={{padding:"12px 14px",background:C.accentSoft,borderRadius:10,border:`1px solid ${C.accentMed}`,marginBottom:4}}>
+                  <div style={{fontSize:11,color:C.text,fontFamily:FN.m,lineHeight:1.55}}>It's added to your daily habits right away, marked <strong>Testing</strong>. Keep a <strong>30-day streak</strong> and it graduates into a permanent habit automatically.</div>
+                </div>
+              </div>}
             </div>}
-            {gcType==="outcome"&&<div>
-              <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>Break it into 2-4 actionable steps:</div>
-              {gcSteps.map((s,i)=>(<input key={i} value={s} onChange={e=>{const n=[...gcSteps];n[i]=e.target.value;setGcSteps(n);}} placeholder={`Step ${i+1}...`} style={{...inp,marginBottom:8}}/>))}
-              {gcSteps.length<20&&<button onClick={()=>setGcSteps(p=>[...p,""])} style={{...btnG,width:"100%",fontSize:10,marginBottom:8}}>+ Add step</button>}
-              {gcSteps.length>=20&&<div style={{fontSize:10,color:C.textDim,textAlign:"center",fontStyle:"italic",marginBottom:8}}>Maximum 20 steps</div>}
-            </div>}
-            {gcType==="habit"&&<div>
-              <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>This becomes a <strong style={{color:C.text}}>daily</strong> habit. When will you do it?</div>
-              <div style={{display:"flex",gap:8,marginBottom:16}}>
-                {[{k:"morning",l:"☀️ Morning"},{k:"night",l:"🌙 Evening"}].map(s=>{const on=gcSlot===s.k;return(<button key={s.k} onClick={()=>setGcSlot(s.k)} style={{flex:1,padding:"13px 0",borderRadius:12,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:13,fontWeight:800,fontFamily:FN.b,cursor:"pointer",transition:"all 0.2s ease"}}>{s.l}</button>);})}
-              </div>
-              <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Daily action (optional — defaults to the title):</div>
-              <input value={gcAction} onChange={e=>setGcAction(e.target.value)} placeholder="e.g. Read 30 min, Study Spanish 20 min" style={{...inp,marginBottom:14}}/>
-              <div style={{padding:"12px 14px",background:C.accentSoft,borderRadius:10,border:`1px solid ${C.accentMed}`,marginBottom:4}}>
-                <div style={{fontSize:11,color:C.text,fontFamily:FN.m,lineHeight:1.55}}>It's added to your daily habits right away, marked <strong>Testing</strong>. Keep a <strong>30-day streak</strong> and it graduates into a permanent habit automatically.</div>
-              </div>
-            </div>}
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setGcStep(1)} style={{...btnG,flex:1}}>Back</button>
-              <button onClick={submitGoal} style={{...btnB,flex:2}}>{gcType==="habit"?"Start Habit":"Create Goal"}</button>
-            </div>
+            <button onClick={submitGoal} disabled={!gcName.trim()||!gcType} style={{...btnB,width:"100%",marginTop:14,opacity:(gcName.trim()&&gcType)?1:0.4,cursor:(gcName.trim()&&gcType)?"pointer":"default"}}>{gcType==="habit"?"Start Habit":"Create Goal"}</button>
+            {!gcType&&<div style={{fontSize:11,color:C.textDim,textAlign:"center",marginTop:8,fontStyle:"italic"}}>Pick a goal type to continue</div>}
           </div>}
         </Overlay>
         {menuTab==="workout"&&<div className="tab-content">
