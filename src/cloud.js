@@ -1,145 +1,88 @@
-// cloud.js  —  v4
-// Design notes (why this cannot repeat the old failures):
-//   * No wall clocks  -> device clock skew can never discard your data.
-//   * No "dirty" flag -> nothing can get stuck "on" and block a pull forever.
-//     "Do I have unsaved changes?" is COMPUTED by hashing the current data and
-//     comparing it to the hash of the last copy we synced. It self-corrects.
-//   * A push is NEVER refused -> it cannot deadlock the way the old versions did.
-//   * If the content did not actually change, we do not push at all -> two open
-//     tabs cannot ping-pong reloads at each other.
-import { db } from "./firebase";
-import { doc, getDoc, onSnapshot, runTransaction } from "firebase/firestore";
+// cloud.js
+import { auth, db } from "./firebase";
+import { doc, getDoc, runTransaction } from "firebase/firestore";
 
-const VERSION = 6;
 const STORE_KEY = "dash-v18";
-const SYNCED_REV = "dash-synced-rev";   // cloud revision this device is based on
-const SYNCED_HASH = "dash-synced-hash"; // hash of the data at that revision
-
+const META_KEY = "dash-v18-sync"; // { rev, editedAt } — persisted sync baseline (survives reloads)
 const nativeSet = localStorage.setItem.bind(localStorage);
-
-console.log("[sync] cloud.js v" + VERSION + " active");
-nativeSet("dash-sync-version", String(VERSION));
 
 let currentUid = null;
 let ready = false;
 let pushTimer = null;
 let pushing = false;
 let pendingWhilePushing = false;
-let unsubscribe = null;
 
-// Fast, stable string hash (FNV-1a). Used only to answer "did the data change?"
-function hash(str) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-  }
-  return String(h);
+// ── Sync baseline, persisted in localStorage so it is NOT lost on reload ──
+// rev      = the cloud revision our local blob currently corresponds to
+// editedAt = wall-clock time of the last LOCAL edit (set only when the app writes, never when we adopt the cloud)
+function getMeta() {
+  try { return JSON.parse(localStorage.getItem(META_KEY) || "{}") || {}; }
+  catch (e) { return {}; }
+}
+function setMeta(patch) {
+  const m = { ...getMeta(), ...patch };
+  try { nativeSet(META_KEY, JSON.stringify(m)); } catch (e) {}
+  return m;
 }
 
-const syncedRev = () => Number(localStorage.getItem(SYNCED_REV) || 0);
-const syncedHash = () => localStorage.getItem(SYNCED_HASH) || "";
-const localBlob = () => localStorage.getItem(STORE_KEY);
-
-// ---- Visible status (so you can SEE what sync is doing, on the phone, with no console) ----
-const status = { version: VERSION, state: "starting", detail: "", rev: 0, at: Date.now() };
-function setStatus(state, detail) {
-  status.state = state; status.detail = detail || ""; status.at = Date.now();
-  try { window.dispatchEvent(new CustomEvent("cloud-status", { detail: { ...status } })); } catch (e) {}
-  renderBadge();
-}
-export function getCloudStatus() { return { ...status }; }
-
-function renderBadge() {
-  if (typeof document === "undefined" || !document.body) return;
-  // Hidden by default now that sync is stable. A Settings toggle sets this flag to "1"
-  // when the user wants to watch sync status; otherwise we never show the badge and
-  // clean up any existing one. Sync logic itself is unaffected.
-  let visible = false;
-  try { visible = localStorage.getItem("sync-badge-visible") === "1"; } catch (e) {}
-  if (!visible) {
-    const existing = document.getElementById("sync-badge");
-    if (existing) existing.remove();
-    return;
-  }
-  let el = document.getElementById("sync-badge");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "sync-badge";
-    el.style.cssText = "position:fixed;left:8px;bottom:8px;z-index:99999;font:11px/1.35 ui-monospace,monospace;" +
-      "background:rgba(10,14,22,.92);color:#9FB0C4;border:1px solid #2A3646;border-radius:8px;padding:6px 9px;" +
-      "max-width:70vw;pointer-events:auto;cursor:pointer;";
-    el.onclick = () => { el.style.display = "none"; };
-    document.body.appendChild(el);
-  }
-  const dot = status.state === "error" ? "#FF6B6B" : status.state === "pending" ? "#F5B301" : "#34E29B";
-  const ago = Math.round((Date.now() - status.at) / 1000);
-  el.innerHTML = '<span style="color:' + dot + '">\u25CF</span> sync v' + status.version +
-    " \u00B7 " + status.state + (status.rev ? " \u00B7 rev " + status.rev : "") +
-    (status.detail ? '<br><span style="color:#68788C">' + status.detail + "</span>" : "") +
-    '<br><span style="color:#68788C">' + ago + "s ago \u00B7 tap to hide</span>";
-}
-setInterval(renderBadge, 5000);
-
-function markSynced(rev, blob) {
-  nativeSet(SYNCED_REV, String(rev));
-  nativeSet(SYNCED_HASH, hash(blob));
+// Optional tiny status badge hook (kept compatible with the app's existing badge toggle).
+function badge(state) {
+  try {
+    if (localStorage.getItem("sync-badge-visible") !== "1") return;
+    let el = document.getElementById("sync-badge");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "sync-badge";
+      el.style.cssText =
+        "position:fixed;bottom:10px;right:10px;z-index:9999;font:600 10px -apple-system,sans-serif;" +
+        "padding:4px 9px;border-radius:12px;pointer-events:none;transition:opacity .3s ease;backdrop-filter:blur(6px);";
+      document.body.appendChild(el);
+    }
+    const map = {
+      syncing: ["Syncing…", "rgba(50,213,131,0.18)", "#32D583"],
+      synced:  ["Synced",   "rgba(50,213,131,0.12)", "#32D583"],
+      offline: ["Offline",  "rgba(255,159,10,0.16)", "#FF9F0A"],
+      error:   ["Sync error","rgba(255,69,58,0.16)", "#FF453A"],
+    };
+    const [label, bg, fg] = map[state] || map.synced;
+    el.textContent = "● " + label;
+    el.style.background = bg;
+    el.style.color = fg;
+    el.style.opacity = state === "synced" ? "0" : "1";
+  } catch (e) {}
 }
 
-// Do we hold edits that have not reached the cloud? Computed from content — never stuck.
-function hasLocalChanges() {
-  const b = localBlob();
-  if (b == null) return false;
-  return hash(b) !== syncedHash();
-}
-
-// Loop breaker: if we somehow adopt over and over, stop rather than thrash.
-let adoptTimes = [];
-function adoptStorm() {
-  const now = Date.now();
-  adoptTimes = adoptTimes.filter((t) => now - t < 10000);
-  adoptTimes.push(now);
-  return adoptTimes.length > 6;
-}
-
-// Place the cloud copy locally and ask the app to re-read it.
-// NO page reload: reloading skipped installCloudSync() and caused two devices to
-// bounce "Syncing..." screens at each other forever.
-function adopt(blob, rev) {
-  if (adoptStorm()) {
-    setStatus("error", "sync loop detected - paused; reload manually");
-    console.error("[sync] adopt storm - backing off");
-    return;
-  }
+function adopt(blob, rev, editedAt) {
   nativeSet(STORE_KEY, blob);
-  markSynced(rev, blob);
-  try { window.dispatchEvent(new CustomEvent("cloud-adopted")); } catch (e) {}
+  setMeta({ rev, editedAt });
+  // Tell AuthGate to remount the app so React re-reads the freshly adopted data (no full page reload).
+  try { window.dispatchEvent(new Event("cloud-adopted")); } catch (e) {}
 }
 
+// Push always re-reads the cloud's CURRENT rev inside the transaction and writes rev+1, so it can't
+// deadlock. It records the new rev as our baseline. editedAt is left untouched (it tracks local edits).
 async function doPush() {
   if (!currentUid || !ready) return;
   if (pushing) { pendingWhilePushing = true; return; }
-  const blob = localBlob();
+  const blob = localStorage.getItem(STORE_KEY);
   if (blob == null) return;
-  if (!hasLocalChanges()) return; // nothing actually changed — do not touch the cloud
+  if (typeof navigator !== "undefined" && navigator.onLine === false) { badge("offline"); return; }
   pushing = true;
+  badge("syncing");
+  const ref = doc(db, "users", currentUid);
   try {
-    const result = await runTransaction(db, async (tx) => {
-      const ref = doc(db, "users", currentUid);
+    const newRev = await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
       const cloudRev = snap.exists() ? (snap.data().rev || 0) : 0;
       const next = cloudRev + 1;
-      tx.set(ref, { blob, rev: next, updatedAt: Date.now() }); // updatedAt is display-only
+      tx.set(ref, { blob, rev: next, updatedAt: Date.now() });
       return next;
     });
-    markSynced(result, blob); // now in sync, and no longer "changed"
-    status.rev = result;
-    setStatus("synced", "pushed your changes");
-    console.log("[sync] pushed (rev " + result + ")");
+    setMeta({ rev: newRev });
+    badge("synced");
   } catch (e) {
-    // Stays "changed" -> retried on next save, on reconnect, or next app open.
-    setStatus("error", "push failed: " + ((e && e.code) || e) + " (will retry)");
-    console.error("[sync] push failed, will retry:", (e && e.code) || e);
+    badge("error");
+    console.error("Cloud push deferred (offline/transient):", e && e.code ? e.code : e);
   } finally {
     pushing = false;
     if (pendingWhilePushing) { pendingWhilePushing = false; schedulePush(); }
@@ -157,88 +100,83 @@ function flushNow() {
   doPush();
 }
 
-// LIVE: another device saved something -> take it, unless we hold our own unsaved edits.
-function startListening(uid) {
-  if (unsubscribe) unsubscribe();
-  unsubscribe = onSnapshot(
-    doc(db, "users", uid),
-    (snap) => {
-      if (!snap.exists()) return;
-      const { blob, rev } = snap.data();
-      const cloudRev = rev || 0;
-      if (!blob) return;
-      if (cloudRev <= syncedRev()) return;      // nothing new
-      if (blob === localBlob()) { markSynced(cloudRev, blob); return; } // same data, just re-stamp
-      if (hasLocalChanges()) {                  // we have our own unsaved edits -> keep ours, push
-        setStatus("pending", "your unsaved edits win; pushing");
-        console.log("[sync] local edits pending - keeping ours");
-        schedulePush();
-        return;
-      }
-      status.rev = cloudRev;
-      setStatus("synced", "got update from your other device");
-      console.log("[sync] newer data from another device - adopting (rev " + cloudRev + ")");
-      adopt(blob, cloudRev);
-    },
-    (e) => { setStatus("error", "listener: " + ((e && e.code) || e)); console.error("[sync] listener error:", (e && e.code) || e); }
-  );
-}
-
 export function installCloudSync() {
-  if (!localStorage.setItem.__cloudPatched) {
-    const patched = (key, value) => {
-      nativeSet(key, value);
-      if (key === STORE_KEY) schedulePush();
-    };
-    patched.__cloudPatched = true;
-    localStorage.setItem = patched;
-  }
+  if (localStorage.setItem.__cloudPatched) return;
+  // Patch setItem so the app's own writes (a) stamp the local edit time and (b) schedule a push.
+  const patched = (key, value) => {
+    nativeSet(key, value);
+    if (key === STORE_KEY) {
+      setMeta({ editedAt: Date.now() });
+      schedulePush();
+    }
+  };
+  patched.__cloudPatched = true;
+  localStorage.setItem = patched;
+
   if (typeof document !== "undefined") {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") flushNow();
-      else schedulePush();
     });
   }
   if (typeof window !== "undefined") {
     window.addEventListener("pagehide", flushNow);
     window.addEventListener("beforeunload", flushNow);
-    window.addEventListener("online", schedulePush);
+    window.addEventListener("online", () => schedulePush());
   }
-  if (currentUid) startListening(currentUid);
 }
 
+// On login: reconcile local vs cloud with timestamp-aware, last-edit-wins resolution.
+//
+// Returns "reload" when it adopted a newer cloud copy (the caller should reload so React re-reads
+// localStorage), otherwise "ok". It NEVER blocks on the upload — the push is scheduled in the
+// background so the app can render immediately from the local cache (local-first).
 export async function initialSync(uid) {
   currentUid = uid;
+  const localBlob = localStorage.getItem(STORE_KEY);
+  const meta = getMeta();
+  const baselineRev = meta.rev || 0;
+  const localEditedAt = meta.editedAt || 0;
   try {
     const snap = await getDoc(doc(db, "users", uid));
-    const local = localBlob();
-
     if (snap.exists()) {
-      const { blob, rev } = snap.data();
-      const cloudRev = rev || 0;
-      const cloudIsNewer = cloudRev > syncedRev();
+      const data = snap.data() || {};
+      const cloudBlob = data.blob;
+      const cloudRev = data.rev || 0;
+      const cloudUpdatedAt = data.updatedAt || 0;
 
-      if (blob && local == null) {                       // brand-new device
-        nativeSet(STORE_KEY, blob); markSynced(cloudRev, blob);
-        ready = true; status.rev = cloudRev; setStatus("synced", "loaded your data from cloud");
-        console.log("[sync] first load - took cloud copy");
-        return "ok";
+      // 1. Brand-new device (no local data) → always adopt the cloud copy.
+      if (cloudBlob && localBlob == null) {
+        adopt(cloudBlob, cloudRev, cloudUpdatedAt);
+        ready = true;
+        return "reload";
       }
-      if (blob && cloudIsNewer && !hasLocalChanges()) {  // cloud ahead, we have nothing pending
-        nativeSet(STORE_KEY, blob); markSynced(cloudRev, blob);
-        ready = true; status.rev = cloudRev; setStatus("synced", "loaded newer data from cloud");
-        console.log("[sync] adopted cloud copy (rev " + cloudRev + ")");
-        return "ok";   // Dashboard has not mounted yet - it will simply read this data
+
+      // 2. Cloud has a revision we've never seen (another device wrote after us).
+      if (cloudBlob && cloudRev > baselineRev) {
+        // Keep local ONLY if our local edits are strictly newer than the cloud write. Read the edit
+        // time LIVE (not the pre-render baseline) so edits made during the sync window are never
+        // discarded by adopting an older cloud copy.
+        const liveEditedAt = (getMeta().editedAt || 0);
+        const localIsNewer = Math.max(localEditedAt, liveEditedAt) > cloudUpdatedAt;
+        if (localIsNewer) {
+          // Our edits win; record the cloud rev as our base so the push lands as cloudRev+1.
+          setMeta({ rev: cloudRev });
+        } else {
+          // Cloud is genuinely newer and we have no newer local edits → adopt it (no clobber).
+          adopt(cloudBlob, cloudRev, cloudUpdatedAt);
+          ready = true;
+          return "reload";
+        }
+      } else {
+        // We are level with or ahead of the cloud; keep our baseline in sync.
+        setMeta({ rev: Math.max(baselineRev, cloudRev) });
       }
-      if (blob && local === blob) markSynced(cloudRev, blob); // identical, just re-stamp
     }
-
     ready = true;
-    setStatus(hasLocalChanges() ? "pending" : "synced", hasLocalChanges() ? "uploading your changes" : "up to date");
-    if (local != null) await doPush(); // our copy is current or holds unsynced edits
+    // Local-first: don't await the upload. Push our copy up in the background so the cloud is current.
+    schedulePush();
   } catch (e) {
-    setStatus("error", "startup: " + ((e && e.code) || e));
-    console.error("[sync] initial sync failed, using local data:", (e && e.code) || e);
+    console.error("Initial sync failed (using local data for now):", e);
     ready = true;
   }
   return "ok";
@@ -248,5 +186,4 @@ export function stopCloudSync() {
   currentUid = null;
   ready = false;
   clearTimeout(pushTimer);
-  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
 }
