@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Brush, ReferenceLine } from "recharts";
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Brush, ReferenceLine, LabelList } from "recharts";
 
 /* ═══ TOKENS ═══ */
 // Two palettes: DARK (navy editorial) and LIGHT (warm paper editorial). Both keep the same
@@ -640,6 +640,51 @@ function VideoRecorderModal({open,onClose,onSave,dateLabel}){
    slide + a camera picture-in-picture into one recorded video (canvas.captureStream + mic). ═══ */
 const CF="-apple-system,'SF Pro Display','SF Pro Text',Inter,system-ui,sans-serif";
 const REVIEW_WINDOWS=[{k:"week",label:"This Week",full:"This Week",n:7,word:"week"},{k:"month",label:"Month",full:"This Month",n:30,word:"month"},{k:"quarter",label:"Quarter",full:"This Quarter",n:90,word:"quarter"},{k:"year",label:"Year",full:"This Year",n:365,word:"year"}];
+
+/* ═══ CAREER — flexible professional-development workspace (Master Sheet · Tracks · Career Goals) ═══ */
+const defCareer={objective:"",tracks:[],goals:[],seeded:false};
+// Track templates: starting field/status/grouping sets. Everything stays editable per track afterward.
+const CAREER_TEMPLATES=[
+  {k:"interview",name:"Interview Track",icon:"🏦",groupLabel:"Sector",groups:["Private Banking","Private Wealth Mgmt","Investment Banking","Asset Management","Other"],
+    statuses:["Not Contacted","Contacted","Responded","Networking","Applied","Interviewing","Offer","Rejected"],
+    extra:[{key:"linkedin",label:"LinkedIn",type:"link"},{key:"role",label:"Role",type:"text"},{key:"location",label:"Location",type:"text"}],
+    desc:"Recruiting by sector — people, companies & opportunities."},
+  {k:"team",name:"Team Track",icon:"👥",groupLabel:"Team",groups:[],
+    statuses:["Not Contacted","Contacted","Responded","Networking","Applied","Interviewing","Offer","Rejected"],
+    extra:[{key:"linkedin",label:"LinkedIn",type:"link"},{key:"role",label:"Role",type:"text"},{key:"company2",label:"Company",type:"text"}],
+    desc:"Target specific teams within companies rather than sectors."},
+  {k:"nonfinance",name:"Non-Finance Track",icon:"🌐",groupLabel:"Industry",groups:[],
+    statuses:["Not Contacted","Contacted","Responded","Networking","Applied","Interviewing","Offer","Rejected"],
+    extra:[{key:"linkedin",label:"LinkedIn",type:"link"},{key:"role",label:"Role",type:"text"},{key:"location",label:"Location",type:"text"}],
+    desc:"Opportunities outside finance, organized by industry."},
+  {k:"blank",name:"Custom Track",icon:"✨",groupLabel:"Group",groups:[],
+    statuses:["Active","In Progress","On Hold","Done"],
+    extra:[{key:"detail",label:"Detail",type:"text"}],
+    desc:"Start from scratch — certifications, skills, anything."},
+];
+// Canonical status → stage, so the Master Sheet can aggregate across customized tracks by meaning, not exact text.
+const careerStage=s=>{const t=(s||"").toLowerCase();
+  if(/reject|declin|closed|lost|withdraw/.test(t))return"closed";
+  if(/offer|accept|hired|done|complete/.test(t))return"offer";
+  if(/interview/.test(t))return"interview";
+  if(/appl|submit/.test(t))return"applied";
+  if(/network|respond|convo|conversation|meeting|call/.test(t))return"networking";
+  if(/contact|reach|sent|outreach/.test(t))return"contacted";
+  return"new";};
+const CAREER_STAGE_COLOR={new:"#8993A2",contacted:"#0A84FF",networking:"#32ADE6",applied:"#FF9F0A",interview:"#AF52DE",offer:"#32D583",closed:"#FF453A"};
+const careerStatusColor=s=>CAREER_STAGE_COLOR[careerStage(s)]||"#8993A2";
+// Which stages count as "active / in motion" vs terminal.
+const CAREER_ACTIVE_STAGES=["contacted","networking","applied","interview"];
+// Pipeline columns for the Master Sheet matrix (ordered as a funnel).
+const CAREER_STAGE_COLS=[{k:"new",l:"New"},{k:"contacted",l:"Contacted"},{k:"networking",l:"Network"},{k:"applied",l:"Applied"},{k:"interview",l:"Interview"},{k:"offer",l:"Offer"}];
+const CAREER_METRICS=[
+  {k:"opportunities",label:"Opportunities added"},
+  {k:"contacted",label:"People contacted"},
+  {k:"networking",label:"Networking conversations"},
+  {k:"applied",label:"Applications submitted"},
+  {k:"interview",label:"Interviews secured"},
+  {k:"offer",label:"Offers"},
+];
 function rrect(ctx,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 function clipText(ctx,t,maxW){t=String(t==null?"":t);if(ctx.measureText(t).width<=maxW)return t;while(t.length>1&&ctx.measureText(t+"…").width>maxW)t=t.slice(0,-1);return t+"…";}
 function wrapLines(ctx,t,maxW,maxLines){const words=String(t||"").split(/\s+/);const lines=[];let cur="";for(const w of words){const test=cur?cur+" "+w:w;if(ctx.measureText(test).width>maxW&&cur){lines.push(cur);cur=w;if(lines.length>=maxLines-1)break;}else cur=test;}if(cur&&lines.length<maxLines)lines.push(clipText(ctx,cur+(words.length>lines.join(" ").split(/\s+/).length?"…":""),maxW));return lines.slice(0,maxLines);}
@@ -959,6 +1004,7 @@ const Icons={
   groups:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   analytics:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
   goals:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
+  career:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M2 13h20"/></svg>,
   journal:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>,
   workout:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/></svg>,
   budget:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
@@ -1175,6 +1221,12 @@ export default function Dashboard(){
   const[vjUrls,setVjUrls]=useState({}); // id -> object URL (rebuilt from IndexedDB)
   const[showVjRecorder,setShowVjRecorder]=useState(false);
   const[showStatReview,setShowStatReview]=useState(false); // Stat Review recorder modal
+  // ── Career workspace ──
+  const[career,setCareer]=useState(defCareer);
+  const[careerView,setCareerView]=useState("overview"); // overview | tracks | goals
+  const[careerTrackId,setCareerTrackId]=useState(null);  // selected track in Tracks view
+  const[careerModal,setCareerModal]=useState(null);      // {kind, mode, ...} drives the career editor overlay
+  const[careerDraft,setCareerDraft]=useState(null);      // local form draft (cheap edits, stable focus)
   const vjFileRef=useRef(null);
   // ─── Budget: Financial Snapshot ───
   const[accounts,setAccounts]=useState({checking:"",savings:"",cash:"",investment:"",credit:""});
@@ -1668,6 +1720,78 @@ export default function Dashboard(){
     const start=new Date(firstDay.getFullYear(),firstDay.getMonth(),1),cur=new Date(now.getFullYear(),now.getMonth(),1);for(let d=new Date(start);d<=cur;d.setMonth(d.getMonth()+1)){const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;const sum=Object.entries(focusCompletionLog).filter(([k])=>k.startsWith(ym)).reduce((a,[,v])=>a+v,0);out.push({label:d.toLocaleDateString("en-US",{month:"short",year:"2-digit"}),count:sum});}return out;
   },[anGoalRange,focusCompletionLog,now]);
   const goalsTimeline=useMemo(()=>aspirations.map(a=>({id:a.id,text:a.text,type:a.goalType,start:a.created||a.createdOn||null,end:a.completedOn||(a.graduated?a.graduatedAt:null)||null,status:a.graduated?"graduated":a.completedOn?"completed":a.status==="archived"?"archived":a.status==="paused"?"paused":"active"})).sort((x,y)=>(pd(y.start||dk(now))-pd(x.start||dk(now)))),[aspirations,now]);
+
+  /* ═══ CAREER — derived aggregation for the Master Sheet + goal progress (enter data once, everything updates) ═══ */
+  const careerCount=(records,stage)=>records.filter(r=>careerStage(r.status)===stage).length;
+  // Count a metric across a set of records (used by both the Master Sheet and auto-advancing goal milestones).
+  const careerMetricCount=(records,metric)=>{
+    if(metric==="opportunities")return records.length;
+    if(metric==="offer")return records.filter(r=>careerStage(r.status)==="offer").length;
+    if(metric==="interview")return records.filter(r=>["interview","offer"].includes(careerStage(r.status))).length;
+    if(metric==="applied")return records.filter(r=>["applied","interview","offer"].includes(careerStage(r.status))).length;
+    if(metric==="networking")return records.filter(r=>["networking","applied","interview","offer"].includes(careerStage(r.status))).length;
+    if(metric==="contacted")return records.filter(r=>careerStage(r.status)!=="new").length;
+    return 0;
+  };
+  const careerStats=useMemo(()=>{
+    const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+    const activeTracks=career.tracks.filter(t=>!t.archived);
+    const all=activeTracks.flatMap(t=>t.records.map(r=>({...r,trackId:t.id,trackName:t.name,trackIcon:t.icon})));
+    const stageOf=r=>careerStage(r.status);
+    const daysSince=d=>d?Math.floor((todayMid-pd(d).getTime())/86400000):null;
+    const opportunities=all.length;
+    const contacted=all.filter(r=>stageOf(r)!=="new").length;
+    const networking=all.filter(r=>stageOf(r)==="networking").length;
+    const applied=careerMetricCount(all,"applied");
+    const interviews=careerMetricCount(all,"interview");
+    const offers=all.filter(r=>stageOf(r)==="offer").length;
+    const active=all.filter(r=>CAREER_ACTIVE_STAGES.includes(stageOf(r)));
+    const pending=all.filter(r=>["contacted","applied"].includes(stageOf(r)));
+    const followUpsDue=all.filter(r=>r.next&&pd(r.next).getTime()<=todayMid&&!["closed","offer"].includes(stageOf(r)));
+    const stale=all.filter(r=>CAREER_ACTIVE_STAGES.includes(stageOf(r))&&r.last&&daysSince(r.last)>=7&&!(r.next&&pd(r.next).getTime()>todayMid));
+    // Traction per track: how many records are in motion.
+    const traction=activeTracks.map(t=>({id:t.id,name:t.name,icon:t.icon,active:t.records.filter(r=>CAREER_ACTIVE_STAGES.includes(careerStage(r.status))||careerStage(r.status)==="offer").length,total:t.records.length})).sort((a,b)=>b.active-a.active);
+    // Action items — the "what should I do next" list.
+    const actions=[];
+    followUpsDue.forEach(r=>{const dd=daysSince(r.next);actions.push({id:"fu"+r.id,kind:"followup",urgency:0,days:dd,label:`Follow up with ${r.name||"opportunity"}`,sub:`${r.trackName} · ${dd>0?`${dd}d overdue`:"due today"}`,color:C.red,rec:r});});
+    all.filter(r=>r.next&&pd(r.next).getTime()>todayMid&&stageOf(r)==="interview").forEach(r=>{const dd=-daysSince(r.next);if(dd<=5)actions.push({id:"iv"+r.id,kind:"interview",urgency:1,days:dd,label:`Interview with ${r.name||r.company||"opportunity"}`,sub:`${r.trackName} · in ${dd}d`,color:"#AF52DE",rec:r});});
+    stale.forEach(r=>{const dd=daysSince(r.last);actions.push({id:"st"+r.id,kind:"stale",urgency:2,days:dd,label:`Reconnect with ${r.name||"opportunity"}`,sub:`${r.trackName} · quiet ${dd}d`,color:C.orange,rec:r});});
+    pending.filter(r=>!followUpsDue.includes(r)&&!stale.includes(r)).forEach(r=>{actions.push({id:"pd"+r.id,kind:"pending",urgency:3,days:daysSince(r.last)||0,label:`Awaiting reply — ${r.name||r.company}`,sub:`${r.trackName} · ${r.status}`,color:C.blue,rec:r});});
+    actions.sort((a,b)=>a.urgency-b.urgency||(b.days||0)-(a.days||0));
+    return{opportunities,contacted,networking,applied,interviews,offers,active:active.length,pending:pending.length,followUpsDue,stale,traction,actions,all,activeTracks};
+  },[career,now]);
+  // Career goal progress: milestones with a metric auto-advance from their linked track's activity.
+  const careerGoalProgress=g=>{
+    const track=g.trackId?career.tracks.find(t=>t.id===g.trackId):null;
+    const recs=track?track.records:careerStats.all;
+    const ms=(g.milestones||[]).map(m=>{
+      if(m.metric&&m.target>0){const c=careerMetricCount(recs,m.metric);return{...m,auto:true,count:c,pct:Math.max(0,Math.min(100,Math.round(c/m.target*100))),done:c>=m.target};}
+      return{...m,auto:false,pct:m.done?100:0};
+    });
+    const pct=ms.length?Math.round(ms.reduce((a,m)=>a+m.pct,0)/ms.length):0;
+    return{milestones:ms,pct,track};
+  };
+  // ── Career mutations ──
+  const careerSave=fn=>setCareer(prev=>{const next=fn(JSON.parse(JSON.stringify(prev)));return next;});
+  const careerAddTrack=tpl=>{const id=uid();careerSave(c=>{c.tracks.push({id,name:tpl.name,icon:tpl.icon,groupLabel:tpl.groupLabel,groups:[...tpl.groups],statuses:[...tpl.statuses],extra:tpl.extra.map(e=>({...e})),records:[],archived:false,createdAt:dk(now)});return c;});setCareerTrackId(id);return id;};
+  const careerUpdTrack=(id,patch)=>careerSave(c=>{const t=c.tracks.find(x=>x.id===id);if(t)Object.assign(t,patch);return c;});
+  const careerAddRecord=(trackId,rec)=>careerSave(c=>{const t=c.tracks.find(x=>x.id===trackId);if(t)t.records.push({id:uid(),name:"",company:"",group:"",status:t.statuses[0]||"",last:dk(now),next:"",notes:"",extra:{},createdAt:dk(now),...rec});return c;});
+  const careerUpdRecord=(trackId,recId,patch)=>careerSave(c=>{const t=c.tracks.find(x=>x.id===trackId);if(t){const r=t.records.find(x=>x.id===recId);if(r)Object.assign(r,patch);}return c;});
+  const careerDelRecord=(trackId,recId)=>careerSave(c=>{const t=c.tracks.find(x=>x.id===trackId);if(t)t.records=t.records.filter(x=>x.id!==recId);return c;});
+  const careerAddGoal=g=>{const id=uid();careerSave(c=>{c.goals.push({id,title:"",targetDate:"",trackId:null,milestones:[],archived:false,createdAt:dk(now),...g});return c;});return id;};
+  const careerUpdGoal=(id,patch)=>careerSave(c=>{const g=c.goals.find(x=>x.id===id);if(g)Object.assign(g,patch);return c;});
+  const careerDelGoal=id=>careerSave(c=>{c.goals=c.goals.filter(x=>x.id!==id);return c;});
+  // Seed the career editor draft whenever a modal opens.
+  useEffect(()=>{
+    if(!careerModal){setCareerDraft(null);return;}
+    const m=careerModal;
+    if(m.kind==="record"){
+      if(m.mode==="edit"&&m.rec)setCareerDraft({name:"",company:"",group:"",status:"",last:"",next:"",notes:"",extra:{},...m.rec,extra:{...(m.rec.extra||{})}});
+      else{const t=career.tracks.find(x=>x.id===m.trackId);setCareerDraft({name:"",company:"",group:"",status:t&&t.statuses[0]||"",last:dk(now),next:"",notes:"",extra:{}});}
+    }else if(m.kind==="track-edit"){const t=career.tracks.find(x=>x.id===m.trackId);if(t)setCareerDraft({name:t.name,icon:t.icon,groupLabel:t.groupLabel,groups:[...t.groups],statuses:[...t.statuses],extra:t.extra.map(e=>({...e}))});}
+    else if(m.kind==="goal"){if(m.mode==="edit"&&m.goal)setCareerDraft({...m.goal,milestones:(m.goal.milestones||[]).map(x=>({...x}))});else setCareerDraft({title:"",targetDate:"",trackId:null,milestones:[]});}
+    else setCareerDraft(null);
+  },[careerModal]);
 
   // Weekly recap (in terms of completion %)
   const weekRecap=useMemo(()=>{
@@ -2216,6 +2340,7 @@ ${body}
       if(d.subscriptions)setSubscriptions(d.subscriptions);if(d.txRules)setTxRules(d.txRules);if(d.weekPlan)setWeekPlan(d.weekPlan);if(d.finGoals)setFinGoals(d.finGoals);if(typeof d.dietEnabled==="boolean")setDietEnabled(d.dietEnabled);if(typeof d.handwriting==="boolean")setHandwriting(d.handwriting);if(d.catBudgets)setCatBudgets(d.catBudgets);
       if(d.focusCompletionLog)setFocusCompletionLog(d.focusCompletionLog);
       if(d.habitOrder)setHabitOrder(d.habitOrder);
+      if(d.career)setCareer({...defCareer,...d.career});
       // Migrate photoLog from main blob to separate key (one-time)
       if(d.photoLog&&d.photoLog.length>0){try{localStorage.setItem("dash-v18-photos",JSON.stringify(d.photoLog));}catch(e){}}
     }
@@ -2288,10 +2413,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -3340,7 +3465,7 @@ ${body}
   const deleteGoalEdit=()=>{if(!editGoal)return;const{kind,goal}=editGoal;if(kind==="weekly")setWGoals(p=>p.filter(g=>g.id!==goal.id));else removeGoal(goal.id);setEditGoal(null);};
 
   /* ─── Footer page navigation with swipe ─── */
-  const pageOrder=["today","groups","analytics","goals","workout","budget"];
+  const pageOrder=["today","groups","analytics","goals","career","workout","budget"];
   const curPage=menuTab||tab||"today";
   const goPage=(key)=>{
     const from=pageOrder.indexOf(curPage),to=pageOrder.indexOf(key);
@@ -3748,7 +3873,70 @@ ${body}
     </div>);
   };
 
-  const mainTabs=[{k:"today",l:"Today",i:Icons.today},{k:"groups",l:"Journal",i:Icons.journal},{k:"analytics",l:"Analytics",i:Icons.analytics},{k:"goals",l:"Goals",i:Icons.goals},{k:"workout",l:"Health",i:Icons.workout},{k:"budget",l:"Budget",i:Icons.budget}];
+  const mainTabs=[{k:"today",l:"Today",i:Icons.today},{k:"groups",l:"Journal",i:Icons.journal},{k:"analytics",l:"Analytics",i:Icons.analytics},{k:"goals",l:"Goals",i:Icons.goals},{k:"career",l:"Career",i:Icons.career},{k:"workout",l:"Health",i:Icons.workout},{k:"budget",l:"Budget",i:Icons.budget}];
+
+  /* ─── Analytics: on-graph value labels (declutters automatically on longer ranges) ─── */
+  const anLabel=(count,unit,color)=>(props)=>{const {x,y,value,index}=props;if(value==null||x==null||y==null)return null;const step=count<=8?1:count<=16?2:count<=31?3:Math.ceil(count/9);if(index%step!==0&&index!==count-1)return null;return <text x={x} y={y-7} textAnchor="middle" fontSize={9} fontWeight={700} fill={color}>{value}{unit||""}</text>;};
+
+  /* ─── Shared Focus-Mode goal components (used by Today Flow Mode AND the structured split-screen) ─── */
+  const FOCUS_PURPLE="#A78BFA";
+  const SectionHeader=({title,color,count})=>(
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,marginTop:18}}>
+      <div style={{width:8,height:8,borderRadius:2,background:color}}/>
+      <span style={{fontSize:11,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.1em"}}>{title}</span>
+      <span style={{fontSize:9,fontFamily:FN.m,color:C.textDim,fontWeight:700}}>{count}</span>
+    </div>
+  );
+  const GoalCard=({goal,color,badge,summary,children})=>{
+    const collapsed=focusCollapsed[goal.id];
+    const done=goal.done!=null?goal.done:(goal.current!=null?goal.current:0);
+    const total=goal.total!=null?goal.total:(goal.target!=null?goal.target:0);
+    const pct=total>0?Math.round(Math.min(100,done/total*100)):0;
+    const complete=total>0&&pct>=100;
+    return(<div className={completingGoal[goal.id]==="monthly"?"monthly-done":completingGoal[goal.id]?"weekly-done":""} style={{marginBottom:8,borderRadius:12,background:C.surface,border:`1px solid ${complete?color:C.hairline}`,borderLeft:`3px solid ${color}`,overflow:"hidden",transition:"border-color 0.3s ease"}}>
+      <div onClick={()=>setFocusCollapsed(p=>({...p,[goal.id]:!p[goal.id]}))} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",cursor:"pointer"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:9,fontFamily:FN.m,color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>{badge}</div>
+          <div style={{fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:C.text,overflow:"hidden",textOverflow:"ellipsis"}}>{goal.text}</div>
+          {total>0&&<div style={{marginTop:8,display:"flex",alignItems:"center",gap:8}}><div style={{flex:1,height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:complete?C.greenBright:color,borderRadius:3,transition:"width 0.45s cubic-bezier(0.4,0,0.2,1)"}}/></div><span style={{fontSize:10,fontFamily:FN.m,fontWeight:700,color:complete?C.greenBright:color}}>{done}/{total}</span></div>}
+        </div>
+        {total>0?<div style={{flexShrink:0}}><Ring value={done} goal={total||1} size={40} stroke={4} color={complete?C.greenBright:color}><span style={{fontSize:complete?12:9,fontWeight:800,fontFamily:FN.m,color:complete?C.greenBright:C.text}}>{complete?"✓":`${pct}%`}</span></Ring></div>:<span style={{fontSize:11,fontFamily:FN.m,fontWeight:700,color,flexShrink:0}}>{summary}</span>}
+        <span style={{fontSize:12,color:C.textDim,transform:collapsed?"none":"rotate(180deg)",transition:"transform 0.2s ease",flexShrink:0}}>▾</span>
+      </div>
+      {!collapsed&&<div style={{padding:"0 16px 12px"}}>{children}</div>}
+    </div>);
+  };
+  const StepRow=({done,active,text,onToggle,color,flashKey})=>{const flash=justChecked[flashKey];return(
+    <div onClick={onToggle} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",cursor:"pointer",borderTop:`1px solid ${C.hairline}`}}>
+      <div style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${done?C.greenBright:active?color:C.textDim}`,background:done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:10,fontWeight:800,flexShrink:0,transition:"all 0.2s ease",animation:flash?"checkStamp 0.4s ease":"none"}}>{done&&"✓"}</div>
+      <span style={{position:"relative",fontSize:13,color:done?C.textDim:C.text,fontWeight:active&&!done?700:400,flex:1}}>{text}<span style={{position:"absolute",left:0,top:"52%",height:1.5,width:"100%",background:C.green,transformOrigin:"left center",transform:done&&!flash?"scaleX(1)":"scaleX(0)",animation:flash?"strikeSweep 0.32s ease forwards":"none",opacity:done?1:0}}/></span>
+      {active&&!done&&<span style={{fontSize:8,fontFamily:FN.m,color,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Next</span>}
+    </div>);
+  };
+  // The one Monthly Goals interface — rendered identically in Flow Mode and the structured split-screen.
+  const renderMonthlyGoals=()=>{
+    const monthlyGoals=monthlyFocusGoals;
+    if(monthlyGoals.length===0)return null;
+    return(<>
+      <SectionHeader title="Monthly Goals" color={FOCUS_PURPLE} count={monthlyGoals.length}/>
+      {monthlyGoals.map(goal=>{
+        if(goal.kind==="steps"){
+          const activeId=goal.steps.find(s=>!s.done)?.id;
+          return(<GoalCard key={goal.id} goal={goal} color={FOCUS_PURPLE} badge="Monthly" summary={`${goal.done}/${goal.total}`}>
+            {goal.steps.map(s=><StepRow key={s.id} done={s.done} active={s.id===activeId} text={s.text} color={FOCUS_PURPLE} flashKey={s.id} onToggle={()=>toggleMonthlyStep(goal.id,s.id)} />)}
+          </GoalCard>);
+        }
+        const flash=justChecked[goal.id];const done=goal.complete;const fullyDone=!!goal.completedOn;
+        return(<div key={goal.id} onClick={()=>{if(!fullyDone)toggleMonthlyAction(goal.id);}} className={`task-row${flash?" just-checked":""}`} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 18px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${done?C.greenBright:C.hairline}`,borderLeft:`3px solid ${done?C.greenBright:FOCUS_PURPLE}`,cursor:fullyDone?"default":"pointer",opacity:done?0.75:1}}>
+          <div style={{width:22,height:22,borderRadius:4,flexShrink:0,border:`1.5px solid ${done?C.greenBright:C.textDim}`,background:done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:12,fontWeight:800}}>{done&&"✓"}</div>
+          <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:2}}>
+            <span style={{fontSize:9,fontFamily:FN.m,color:FOCUS_PURPLE,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Monthly{goal.implementationIntention?` · ${goal.implementationIntention}`:""}</span>
+            <span style={{position:"relative",display:"inline-block",alignSelf:"flex-start",fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:done?C.textDim:C.text}}>{goal.actionText}<span className={flash?"strike-line animate":"strike-line"} style={done?undefined:{display:"none"}}/></span>
+          </div>
+        </div>);
+      })}
+    </>);
+  };
 
   /* ═══ RENDER ═══ */
   return(
@@ -4202,16 +4390,8 @@ ${body}
                   </div>
                 );})}
               </div>}
-              {monthlyFocusGoals.length>0&&<div style={{marginTop:16}}>
-                <div style={{fontSize:11,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Monthly Goals</div>
-                {monthlyFocusGoals.map(g=>{const prog=aspirationProgress.find(x=>x.id===g.id);const pct=prog?prog.pct:0;return(
-                  <div key={g.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0"}}>
-                    <span style={{flex:1,fontSize:13,color:C.text,fontFamily:FN.h,fontStyle:"italic"}}>{g.text||g.title}</span>
-                    <div style={{width:90,height:5,background:C.surfaceDim,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.greenBright:C.green,borderRadius:3}}/></div>
-                    <span style={{fontSize:10,fontFamily:FN.m,fontWeight:700,color:C.textDim,width:34,textAlign:"right"}}>{pct}%</span>
-                  </div>
-                );})}
-              </div>}
+              {/* Real Monthly Goals interface — the same component used in Focus/Flow mode (not a % summary) */}
+              {renderMonthlyGoals()}
               {/* Daily Completion Summary — quick read on today's focus + goal progress */}
               {(()=>{const fT=focusTasks.length,fD=focusTasks.filter(t=>dc[t.id]).length;const gl=[...weeklyFocusGoals,...monthlyFocusGoals];const gAvg=gl.length?Math.round(gl.reduce((a,g)=>{const p=aspirationProgress.find(x=>x.id===g.id);return a+(p?p.pct:0);},0)/gl.length):0;const fPct=fT?Math.round(fD/fT*100):0;return(
                 <div style={{marginTop:20,padding:"14px 16px",borderRadius:14,background:C.surface,border:`1px solid ${C.hairline}`}}>
@@ -4407,27 +4587,8 @@ ${body}
                 })}
               </>}
 
-              {/* Section 3 — Monthly Goals (third priority): outcome = step dropdown, habit/measurable = single daily checkbox */}
-              {monthlyGoals.length>0&&<>
-                <SectionHeader title="Monthly Goals" color={FOCUS_PURPLE} count={monthlyGoals.length}/>
-                {monthlyGoals.map(goal=>{
-                  if(goal.kind==="steps"){
-                    const activeId=goal.steps.find(s=>!s.done)?.id;
-                    return(<GoalCard key={goal.id} goal={goal} color={FOCUS_PURPLE} badge="Monthly" summary={`${goal.done}/${goal.total}`}>
-                      {goal.steps.map(s=><StepRow key={s.id} done={s.done} active={s.id===activeId} text={s.text} color={FOCUS_PURPLE} flashKey={s.id} onToggle={()=>toggleMonthlyStep(goal.id,s.id)} />)}
-                    </GoalCard>);
-                  }
-                  // habit / measurable daily action — single checkbox row (no sub-steps to expand)
-                  const flash=justChecked[goal.id];const done=goal.complete;const fullyDone=!!goal.completedOn;
-                  return(<div key={goal.id} onClick={()=>{if(!fullyDone)toggleMonthlyAction(goal.id);}} className={`task-row${flash?" just-checked":""}`} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 18px",marginBottom:8,borderRadius:10,background:C.surface,border:`1px solid ${done?C.greenBright:C.hairline}`,borderLeft:`3px solid ${done?C.greenBright:FOCUS_PURPLE}`,cursor:fullyDone?"default":"pointer",opacity:done?0.75:1}}>
-                    <div style={{width:22,height:22,borderRadius:4,flexShrink:0,border:`1.5px solid ${done?C.greenBright:C.textDim}`,background:done?C.greenBright:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.btnText,fontSize:12,fontWeight:800}}>{done&&"✓"}</div>
-                    <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:2}}>
-                      <span style={{fontSize:9,fontFamily:FN.m,color:FOCUS_PURPLE,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Monthly{goal.implementationIntention?` · ${goal.implementationIntention}`:""}</span>
-                      <span style={{position:"relative",display:"inline-block",alignSelf:"flex-start",fontSize:15,fontWeight:500,fontFamily:FN.h,fontStyle:"italic",color:done?C.textDim:C.text}}>{goal.actionText}<span className={flash?"strike-line animate":"strike-line"} style={done?undefined:{display:"none"}}/></span>
-                    </div>
-                  </div>);
-                })}
-              </>}
+              {/* Section 3 — Monthly Goals: the one shared interface (also used in the structured split-screen) */}
+              {renderMonthlyGoals()}
               </div>
               </div>
             </div>);
@@ -4569,7 +4730,7 @@ ${body}
                 <XAxis dataKey="date" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} minTickGap={28}/>
                 <YAxis domain={[0,100]} tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} width={30}/>
                 <Tooltip content={<Tip />}/>
-                <Area type="monotone" dataKey="pct" stroke={C.green} strokeWidth={2.5} fill="url(#consGrad)" dot={false} connectNulls={false} isAnimationActive={false} name="%"/>
+                <Area type="monotone" dataKey="pct" stroke={C.green} strokeWidth={2.5} fill="url(#consGrad)" dot={false} connectNulls={false} isAnimationActive={false} name="%"><LabelList dataKey="pct" content={anLabel(consistencySeries.length,"%",C.textSec)}/></Area>
               </AreaChart></ResponsiveContainer>);})()}
             <div style={{display:"flex",gap:5,marginTop:10}}>{["1W","1M","3M","6M","1Y"].map(r=>{const on=anRange===r;return(<button key={r} onClick={()=>setAnRange(r)} style={{flex:1,padding:"7px 0",borderRadius:8,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:11,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{r}</button>);})}</div>
           </div>
@@ -4601,9 +4762,9 @@ ${body}
               return(<ResponsiveContainer width="100%" height={160}><LineChart data={focusCountSeries} margin={{top:6,right:8,left:-18,bottom:0}}>
                 <CartesianGrid stroke={C.hairline} strokeDasharray="2 5" vertical={false}/>
                 <XAxis dataKey="label" tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} minTickGap={24}/>
-                <YAxis allowDecimals={false} tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} width={26}/>
+                <YAxis domain={[0,"auto"]} allowDecimals={false} tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} width={26}/>
                 <Tooltip content={<Tip />}/>
-                <Line type="monotone" dataKey="count" stroke={C.blue} strokeWidth={2.5} dot={{r:2.5,fill:C.blue,strokeWidth:0}} activeDot={{r:4}} name="completed" isAnimationActive={false}/>
+                <Line type="monotone" dataKey="count" stroke={C.blue} strokeWidth={2.5} dot={{r:2.5,fill:C.blue,strokeWidth:0}} activeDot={{r:4}} name="completed" isAnimationActive={false}><LabelList dataKey="count" content={anLabel(focusCountSeries.length,"",C.textSec)}/></Line>
               </LineChart></ResponsiveContainer>);})()}
             <div style={{display:"flex",gap:4,marginTop:10,flexWrap:"wrap"}}>{[["today","Today"],["week","Week"],["month","Month"],["3M","3M"],["year","Year"],["all","All"]].map(([k,l])=>{const on=anGoalRange===k;return(<button key={k} onClick={()=>setAnGoalRange(k)} style={{flex:"1 0 14%",padding:"7px 0",borderRadius:8,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:10.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{l}</button>);})}</div>
           </div>
@@ -4707,7 +4868,7 @@ ${body}
                     <YAxis domain={[0,100]} ticks={[0,60,80,90,100]} tick={{fontSize:8,fill:C.textDim}} axisLine={false} tickLine={false}/>
                     <ReferenceLine y={72} stroke={C.textDim} strokeDasharray="3 3" label={{value:"Garmin avg 72",fontSize:7,fill:C.textDim,position:"insideTopRight"}}/>
                     <Tooltip contentStyle={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:8,fontSize:11}}/>
-                    <Line type="monotone" dataKey="score" stroke="#8B7FE8" strokeWidth={2} dot={{r:2,fill:"#8B7FE8"}}/>
+                    <Line type="monotone" dataKey="score" stroke="#8B7FE8" strokeWidth={2} dot={{r:2,fill:"#8B7FE8"}}><LabelList dataKey="score" content={anLabel(vals.length,"",C.textSec)}/></Line>
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -5317,6 +5478,309 @@ ${body}
             {!gcType&&<div style={{fontSize:11,color:C.textDim,textAlign:"center",marginTop:8,fontStyle:"italic"}}>Pick a goal type to continue</div>}
           </div>}
         </Overlay>
+
+        {/* ═══════════════ CAREER TAB ═══════════════ */}
+        {tab==="career"&&<div className="tab-content">
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.12em"}}>Career</div>
+            <div className="display" style={{fontSize:22,fontStyle:"italic",color:C.text}}>Professional workspace</div>
+          </div>
+          {/* Sub-nav */}
+          <div style={{display:"flex",gap:8,marginBottom:18}}>{[{k:"overview",l:"Master Sheet"},{k:"tracks",l:"Tracks"},{k:"goals",l:"Goals"}].map(t=>{const on=careerView===t.k;return(<button key={t.k} onClick={()=>setCareerView(t.k)} style={{flex:1,padding:"13px 0",borderRadius:13,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.04em",transition:"all 0.2s ease"}}>{t.l}</button>);})}</div>
+
+          {/* ─────────── MASTER SHEET (Overview) ─────────── */}
+          {careerView==="overview"&&(()=>{
+            const empty=careerStats.activeTracks.length===0;
+            // Pipeline matrix: each track's records bucketed by stage, plus column totals.
+            const pipeline=careerStats.activeTracks.map(t=>{const st={};CAREER_STAGE_COLS.forEach(c=>st[c.k]=0);let closed=0;t.records.forEach(r=>{const g=careerStage(r.status);if(g==="closed")closed++;else if(st[g]!=null)st[g]++;});return{id:t.id,name:t.name,icon:t.icon,st,closed,total:t.records.length};});
+            const stageTotals=CAREER_STAGE_COLS.map(c=>({...c,count:pipeline.reduce((a,p)=>a+p.st[c.k],0)}));
+            const cellName={width:142,flexShrink:0,padding:"10px 12px",fontSize:12.5,display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",position:"sticky",left:0,zIndex:1};
+            const cellNum={width:54,flexShrink:0,padding:"10px 2px",textAlign:"center",fontSize:12.5,fontFamily:FN.m};
+            const secLbl={fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:9};
+            return(<div>
+              {/* Objective — open header, not a boxed card */}
+              <div style={{marginBottom:16,paddingBottom:12,borderBottom:`1px solid ${C.hairline}`}}>
+                <div style={{fontSize:9,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Current objective</div>
+                <input value={career.objective} onChange={e=>careerSave(c=>{c.objective=e.target.value;return c;})} placeholder="e.g. Secure a 2027 Private Banking Analyst position" style={{width:"100%",boxSizing:"border-box",background:"transparent",border:"none",outline:"none",color:C.text,fontSize:17,fontFamily:FN.h,fontStyle:"italic",padding:0}}/>
+              </div>
+              {empty?(
+                <div style={{...card,padding:"28px 20px",textAlign:"center"}}>
+                  <div style={{fontSize:30,marginBottom:10}}>🧭</div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:6}}>Your career command center</div>
+                  <div style={{fontSize:12.5,color:C.textDim,lineHeight:1.55,marginBottom:16,maxWidth:300,marginLeft:"auto",marginRight:"auto"}}>The Master Sheet pulls everything from your Tracks into one live pipeline — who's responding, what's overdue, where you're gaining traction. Create a track to begin.</div>
+                  <button onClick={()=>{setCareerView("tracks");setCareerModal({kind:"track-new"});}} style={{...btnB,padding:"12px 24px"}}>Create your first track</button>
+                </div>
+              ):(<>
+                {/* Compact KPI strip */}
+                <div style={{display:"flex",marginBottom:18,border:`1px solid ${C.hairline}`,borderRadius:12,overflow:"hidden"}}>
+                  {[{l:"Opportunities",v:careerStats.opportunities,c:C.text},{l:"Active",v:careerStats.active,c:C.accent},{l:"Interviews",v:careerStats.interviews,c:CAREER_STAGE_COLOR.interview},{l:"Offers",v:careerStats.offers,c:CAREER_STAGE_COLOR.offer},{l:"Due",v:careerStats.followUpsDue.length,c:careerStats.followUpsDue.length?C.red:C.textDim}].map((s,i)=>(
+                    <div key={s.l} style={{flex:1,minWidth:0,padding:"12px 4px",textAlign:"center",borderLeft:i?`1px solid ${C.hairline}`:"none"}}>
+                      <div className="hero-num" style={{fontSize:22,color:s.c,lineHeight:1}}>{s.v}</div>
+                      <div style={{fontSize:8.5,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.02em",marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.l}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* PIPELINE MATRIX — tracks × stages */}
+                <div style={{marginBottom:20}}>
+                  <div style={secLbl}>Pipeline</div>
+                  <div className="hide-scroll" style={{overflowX:"auto",border:`1px solid ${C.hairline}`,borderRadius:12}}>
+                    <div style={{minWidth:142+54*(CAREER_STAGE_COLS.length+1)}}>
+                      <div style={{display:"flex",borderBottom:`1px solid ${C.hairline}`,background:C.surfaceDim}}>
+                        <div style={{...cellName,background:C.surfaceDim,fontWeight:700,color:C.textDim,fontSize:10,textTransform:"uppercase",letterSpacing:"0.04em"}}>Track</div>
+                        {CAREER_STAGE_COLS.map(c=><div key={c.k} style={{...cellNum,color:CAREER_STAGE_COLOR[c.k],fontWeight:800,fontSize:8.5,textTransform:"uppercase",letterSpacing:"0.02em",display:"flex",alignItems:"center",justifyContent:"center"}}>{c.l}</div>)}
+                        <div style={{...cellNum,fontWeight:800,color:C.textDim,fontSize:8.5,textTransform:"uppercase"}}>Total</div>
+                      </div>
+                      {pipeline.map(p=>(<div key={p.id} onClick={()=>{setCareerView("tracks");setCareerTrackId(p.id);}} className="press" style={{display:"flex",borderBottom:`1px solid ${C.hairline}`,cursor:"pointer",background:C.surface}}>
+                        <div style={{...cellName,background:C.surface,color:C.text,fontWeight:600}}><span style={{flexShrink:0}}>{p.icon}</span><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span></div>
+                        {CAREER_STAGE_COLS.map(c=><div key={c.k} style={{...cellNum,color:p.st[c.k]?C.text:C.textDim,fontWeight:p.st[c.k]?800:400,background:p.st[c.k]?CAREER_STAGE_COLOR[c.k]+"18":"transparent"}}>{p.st[c.k]||"·"}</div>)}
+                        <div style={{...cellNum,fontWeight:800,color:C.accent}}>{p.total}</div>
+                      </div>))}
+                      <div style={{display:"flex",background:C.surfaceDim}}>
+                        <div style={{...cellName,background:C.surfaceDim,fontWeight:800,color:C.textDim,fontSize:10,textTransform:"uppercase"}}>Total</div>
+                        {stageTotals.map(c=><div key={c.k} style={{...cellNum,fontWeight:800,color:c.count?CAREER_STAGE_COLOR[c.k]:C.textDim}}>{c.count||"·"}</div>)}
+                        <div style={{...cellNum,fontWeight:800,color:C.accent}}>{careerStats.opportunities}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {/* FUNNEL graph */}
+                <div style={{marginBottom:20}}>
+                  <div style={secLbl}>Funnel</div>
+                  <div style={{...card,padding:"14px 10px 4px"}}>
+                    <ResponsiveContainer width="100%" height={150}><BarChart data={stageTotals.map(c=>({name:c.l,count:c.count,k:c.k}))} margin={{top:16,right:6,left:-22,bottom:0}}>
+                      <CartesianGrid stroke={C.hairline} strokeDasharray="2 5" vertical={false}/>
+                      <XAxis dataKey="name" tick={{fill:C.textDim,fontSize:8}} axisLine={false} tickLine={false} interval={0}/>
+                      <YAxis allowDecimals={false} domain={[0,"auto"]} tick={{fill:C.textDim,fontSize:9}} axisLine={false} tickLine={false} width={26}/>
+                      <Tooltip content={<Tip/>}/>
+                      <Bar dataKey="count" radius={[4,4,0,0]} isAnimationActive={false}>{stageTotals.map((c,i)=><Cell key={i} fill={CAREER_STAGE_COLOR[c.k]}/>)}<LabelList dataKey="count" position="top" content={anLabel(stageTotals.length,"",C.textSec)}/></Bar>
+                    </BarChart></ResponsiveContainer>
+                  </div>
+                </div>
+                {/* Action items */}
+                <div>
+                  <div style={{...secLbl,display:"flex",alignItems:"center",gap:8}}>What needs attention{careerStats.actions.length>0&&<span style={{fontSize:10,fontWeight:800,color:C.btnText,background:C.accent,borderRadius:10,padding:"1px 8px"}}>{careerStats.actions.length}</span>}</div>
+                  {careerStats.actions.length===0?(
+                    <div style={{border:`1px solid ${C.hairline}`,borderRadius:12,padding:"16px",textAlign:"center",fontSize:13,color:C.textDim}}>✓ You're all caught up. Nothing overdue.</div>
+                  ):(
+                    <div style={{border:`1px solid ${C.hairline}`,borderRadius:12,overflow:"hidden"}}>{careerStats.actions.slice(0,8).map((a,i)=>(
+                      <button key={a.id} onClick={()=>{setCareerView("tracks");setCareerTrackId(a.rec.trackId);setCareerModal({kind:"record",mode:"edit",trackId:a.rec.trackId,rec:a.rec});}} style={{display:"flex",alignItems:"center",gap:11,width:"100%",padding:"11px 13px",background:C.surface,border:"none",borderTop:i?`1px solid ${C.hairline}`:"none",cursor:"pointer",textAlign:"left"}}>
+                        <span style={{width:8,height:8,borderRadius:"50%",background:a.color,flexShrink:0}}/>
+                        <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.label}</span><span style={{display:"block",fontSize:11,color:C.textDim}}>{a.sub}</span></span>
+                        <span style={{fontSize:16,color:C.textDim}}>›</span>
+                      </button>
+                    ))}</div>
+                  )}
+                </div>
+              </>)}
+            </div>);
+          })()}
+
+          {/* ─────────── TRACKS ─────────── */}
+          {careerView==="tracks"&&(()=>{
+            const activeTracks=career.tracks.filter(t=>!t.archived);
+            const archivedTracks=career.tracks.filter(t=>t.archived);
+            if(career.tracks.length===0)return(
+              <div style={{...card,padding:"28px 20px",textAlign:"center"}}>
+                <div style={{fontSize:30,marginBottom:10}}>🗂️</div>
+                <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:6}}>Create a Career Track</div>
+                <div style={{fontSize:12.5,color:C.textDim,lineHeight:1.55,marginBottom:16,maxWidth:300,marginLeft:"auto",marginRight:"auto"}}>A track is where you log people, companies, applications and interviews. Start from a template — everything stays editable.</div>
+                <button onClick={()=>setCareerModal({kind:"track-new"})} style={{...btnB,padding:"12px 24px"}}>+ New Track</button>
+              </div>
+            );
+            const cur=career.tracks.find(t=>t.id===careerTrackId&&!t.archived)||activeTracks[0]||null;
+            return(<div>
+              {/* Track switcher */}
+              <div className="hide-scroll" style={{display:"flex",gap:7,overflowX:"auto",marginBottom:14,paddingBottom:2}}>
+                {activeTracks.map(t=>{const on=cur&&cur.id===t.id;return(<button key={t.id} onClick={()=>setCareerTrackId(t.id)} style={{flexShrink:0,display:"flex",alignItems:"center",gap:7,padding:"9px 14px",borderRadius:20,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.text,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b}}><span>{t.icon}</span>{t.name}<span style={{fontSize:10,opacity:0.7}}>{t.records.length}</span></button>);})}
+                <button onClick={()=>setCareerModal({kind:"track-new"})} style={{flexShrink:0,padding:"9px 14px",borderRadius:20,border:`1px dashed ${C.hairline}`,background:"transparent",color:C.textDim,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b}}>+ Track</button>
+              </div>
+              {cur&&<div>
+                {/* Track header */}
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:16,fontWeight:800,color:C.text,display:"flex",alignItems:"center",gap:8}}><span>{cur.icon}</span>{cur.name}</div>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{cur.records.length} {cur.records.length===1?"entry":"entries"} · grouped by {cur.groupLabel}</div>
+                  </div>
+                  <button onClick={()=>setCareerModal({kind:"track-edit",trackId:cur.id})} title="Track settings" style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,width:38,height:38,cursor:"pointer",color:C.textSec,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+                  <button onClick={()=>setCareerModal({kind:"record",mode:"new",trackId:cur.id})} style={{...btnB,padding:"10px 16px",flexShrink:0}}>+ Add</button>
+                </div>
+                {/* Records as an open spreadsheet table, grouped by the track's axis */}
+                {cur.records.length===0?(
+                  <div style={{border:`1px dashed ${C.hairline}`,borderRadius:12,padding:"24px",textAlign:"center",fontSize:13,color:C.textDim}}>No entries yet. Tap <b style={{color:C.accent}}>+ Add</b> to log your first {cur.groupLabel==="Team"?"contact":"opportunity"}.</div>
+                ):(()=>{
+                  const groups={};cur.records.forEach(r=>{const g=r.group||"Ungrouped";(groups[g]=groups[g]||[]).push(r);});
+                  const order=[...cur.groups.filter(g=>groups[g]),...Object.keys(groups).filter(g=>!cur.groups.includes(g))];
+                  const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+                  const cName={width:150,flexShrink:0,padding:"10px 12px",position:"sticky",left:0,zIndex:1,minWidth:0};
+                  const cCol=(w)=>({width:w,flexShrink:0,padding:"10px 10px",fontSize:12,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"});
+                  const minW=150+150+118+78+78+170;
+                  return(<div className="hide-scroll" style={{overflowX:"auto",border:`1px solid ${C.hairline}`,borderRadius:12}}>
+                    <div style={{minWidth:minW}}>
+                      {/* Column headers */}
+                      <div style={{display:"flex",background:C.surfaceDim,borderBottom:`1px solid ${C.hairline}`,fontSize:9,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>
+                        <div style={{...cName,background:C.surfaceDim,padding:"9px 12px"}}>Name</div>
+                        <div style={cCol(150)}>Company</div>
+                        <div style={cCol(118)}>Status</div>
+                        <div style={cCol(78)}>Last</div>
+                        <div style={cCol(78)}>Next</div>
+                        <div style={cCol(170)}>Notes</div>
+                      </div>
+                      {order.map(gname=>(<div key={gname}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:C.bg,borderBottom:`1px solid ${C.hairline}`}}>
+                          <span style={{fontSize:9.5,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.05em"}}>{gname}</span>
+                          <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>· {groups[gname].length}</span>
+                        </div>
+                        {groups[gname].map(r=>{const sc=careerStatusColor(r.status);const overdue=r.next&&pd(r.next).getTime()<todayMid;return(
+                          <div key={r.id} onClick={()=>setCareerModal({kind:"record",mode:"edit",trackId:cur.id,rec:r})} className="press" style={{display:"flex",alignItems:"center",borderBottom:`1px solid ${C.hairline}`,cursor:"pointer",background:C.surface}}>
+                            <div style={{...cName,background:C.surface}}>
+                              <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.name||"Untitled"}</div>
+                              {r.extra&&r.extra.role&&<div style={{fontSize:10,color:C.textDim,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.extra.role}</div>}
+                            </div>
+                            <div style={{...cCol(150),color:C.textSec}}>{r.company||"—"}</div>
+                            <div style={cCol(118)}><span style={{fontSize:10,fontWeight:800,color:sc,background:sc+"1E",borderRadius:20,padding:"3px 10px",whiteSpace:"nowrap"}}>{r.status||"—"}</span></div>
+                            <div style={{...cCol(78),color:C.textDim,fontFamily:FN.m,fontSize:11}}>{r.last?fd(pd(r.last)):"—"}</div>
+                            <div style={{...cCol(78),color:overdue?C.red:C.textDim,fontFamily:FN.m,fontSize:11,fontWeight:overdue?700:400}}>{r.next?fd(pd(r.next)):"—"}</div>
+                            <div style={{...cCol(170),color:C.textDim,fontSize:11}}>{r.notes||"—"}</div>
+                          </div>
+                        );})}
+                      </div>))}
+                    </div>
+                  </div>);
+                })()}
+              </div>}
+              {archivedTracks.length>0&&<div style={{marginTop:10,fontSize:11,color:C.textDim,textAlign:"center"}}>{archivedTracks.length} archived track{archivedTracks.length===1?"":"s"} · <span onClick={()=>setCareerModal({kind:"archived"})} style={{color:C.accent,cursor:"pointer",fontWeight:600}}>view</span></div>}
+            </div>);
+          })()}
+
+          {/* ─────────── CAREER GOALS ─────────── */}
+          {careerView==="goals"&&(()=>{
+            const goals=career.goals.filter(g=>!g.archived);
+            return(<div>
+              <button onClick={()=>setCareerModal({kind:"goal",mode:"new"})} className="press" style={{...btnB,width:"100%",padding:"14px 0",fontSize:12,marginBottom:14}}>+ New Career Goal</button>
+              {goals.length===0?(
+                <div style={{...card,padding:"28px 20px",textAlign:"center"}}>
+                  <div style={{fontSize:30,marginBottom:10}}>🎯</div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:6}}>Set a career objective</div>
+                  <div style={{fontSize:12.5,color:C.textDim,lineHeight:1.55,maxWidth:300,marginLeft:"auto",marginRight:"auto"}}>Break a big goal into milestones. Link it to a track and milestones advance automatically as you log activity.</div>
+                </div>
+              ):(
+                <div style={{display:"flex",flexDirection:"column",gap:14}}>{goals.map(g=>{const gp=careerGoalProgress(g);return(
+                  <div key={g.id} style={{...card,padding:"16px 17px"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:12}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:15.5,fontWeight:800,color:C.text,lineHeight:1.25}}>{g.title||"Untitled goal"}</div>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:5,flexWrap:"wrap"}}>
+                          {g.targetDate&&<span style={{fontSize:10.5,color:C.textDim}}>🗓 {fd(pd(g.targetDate))}</span>}
+                          {gp.track&&<span style={{fontSize:10,fontWeight:700,color:C.accent,background:C.accent+"18",borderRadius:20,padding:"2px 9px"}}>{gp.track.icon} {gp.track.name}</span>}
+                        </div>
+                      </div>
+                      <button onClick={()=>setCareerModal({kind:"goal",mode:"edit",goal:g})} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:13,padding:4}}>Edit</button>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                      <div style={{flex:1,height:8,background:C.surfaceDim,borderRadius:5,overflow:"hidden"}}><div style={{height:"100%",width:`${gp.pct}%`,background:gp.pct>=100?C.greenBright:C.accentGrad||C.accent,borderRadius:5,transition:"width 0.4s ease"}}/></div>
+                      <span style={{fontSize:14,fontFamily:FN.m,fontWeight:800,color:gp.pct>=100?C.green:C.text,width:42,textAlign:"right"}}>{gp.pct}%</span>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:2}}>{gp.milestones.map(m=>(
+                      <div key={m.id} onClick={()=>{if(!m.auto)careerUpdGoal(g.id,{milestones:g.milestones.map(x=>x.id===m.id?{...x,done:!x.done}:x)});}} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 2px",cursor:m.auto?"default":"pointer"}}>
+                        <span style={{width:20,height:20,borderRadius:6,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:m.done?C.accent:"transparent",border:`1.5px solid ${m.done?C.accent:C.hairline}`,color:C.btnText,fontSize:12,fontWeight:800}}>{m.done?"✓":""}</span>
+                        <span style={{flex:1,fontSize:13,color:m.done?C.textDim:C.text,textDecoration:m.done?"line-through":"none"}}>{m.text||"Milestone"}</span>
+                        {m.auto&&<span style={{fontSize:11,fontFamily:FN.m,fontWeight:700,color:m.done?C.green:C.textSec}}>{m.count}/{m.target}</span>}
+                      </div>
+                    ))}</div>
+                    {gp.milestones.length===0&&<div style={{fontSize:12,color:C.textDim,fontStyle:"italic",padding:"6px 2px"}}>No milestones yet — tap Edit to add some.</div>}
+                  </div>
+                );})}</div>
+              )}
+            </div>);
+          })()}
+        </div>}
+
+        {/* ═══ CAREER EDITOR MODAL ═══ */}
+        <Overlay open={!!careerModal} onClose={()=>setCareerModal(null)} title={!careerModal?"":careerModal.kind==="track-new"?"New Track":careerModal.kind==="track-edit"?"Track Settings":careerModal.kind==="archived"?"Archived Tracks":careerModal.kind==="goal"?(careerModal.mode==="edit"?"Edit Career Goal":"New Career Goal"):careerModal.mode==="edit"?"Edit Entry":"Add Entry"}>
+          {careerModal&&(()=>{
+            const lblMini={fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6};
+            const m=careerModal, d=careerDraft;
+            // ── New track: template picker ──
+            if(m.kind==="track-new")return(<div>
+              <div style={{fontSize:12,color:C.textDim,marginBottom:14,lineHeight:1.5}}>Pick a starting point — you can rename it, change how it's grouped, and edit its fields anytime.</div>
+              {CAREER_TEMPLATES.map(tpl=>(<button key={tpl.k} onClick={()=>{careerAddTrack(tpl);setCareerModal(null);setCareerView("tracks");}} className="press" style={{display:"flex",gap:12,width:"100%",textAlign:"left",padding:"15px 16px",marginBottom:9,borderRadius:13,background:C.surfaceDim,border:`1px solid ${C.hairline}`,cursor:"pointer"}}>
+                <span style={{fontSize:22,flexShrink:0}}>{tpl.icon}</span>
+                <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:14,fontWeight:700,color:C.text}}>{tpl.name}</span><span style={{display:"block",fontSize:11.5,color:C.textDim,lineHeight:1.4,marginTop:2}}>{tpl.desc}</span></span>
+              </button>))}
+            </div>);
+            // ── Archived tracks ──
+            if(m.kind==="archived")return(<div>
+              {career.tracks.filter(t=>t.archived).map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"13px 15px",marginBottom:8,borderRadius:12,background:C.surfaceDim,border:`1px solid ${C.hairline}`}}>
+                <span style={{fontSize:18}}>{t.icon}</span><span style={{flex:1,fontSize:13.5,fontWeight:600,color:C.text}}>{t.name}</span><span style={{fontSize:11,color:C.textDim}}>{t.records.length} entries</span>
+                <button onClick={()=>careerUpdTrack(t.id,{archived:false})} style={{...btnG,padding:"7px 12px",fontSize:11}}>Restore</button>
+              </div>))}
+            </div>);
+            // ── Record form ──
+            if(m.kind==="record"&&d){const t=career.tracks.find(x=>x.id===m.trackId);if(!t)return null;const set=p=>setCareerDraft(v=>({...v,...p}));const setExtra=(k,val)=>setCareerDraft(v=>({...v,extra:{...v.extra,[k]:val}}));return(<div>
+              <div style={lblMini}>Name</div>
+              <input value={d.name} onChange={e=>set({name:e.target.value})} placeholder="Person or opportunity" style={{...inp,marginBottom:12}} autoFocus/>
+              <div style={lblMini}>Company</div>
+              <input value={d.company} onChange={e=>set({company:e.target.value})} placeholder="Company / firm" style={{...inp,marginBottom:12}}/>
+              <div style={{display:"flex",gap:10,marginBottom:12}}>
+                <div style={{flex:1,minWidth:0}}><div style={lblMini}>{t.groupLabel}</div><input list="career-grp-opts" value={d.group} onChange={e=>set({group:e.target.value})} placeholder={t.groupLabel} style={{...inp,width:"100%",boxSizing:"border-box"}}/><datalist id="career-grp-opts">{t.groups.map(g=><option key={g} value={g}/>)}</datalist></div>
+                <div style={{flex:1,minWidth:0}}><div style={lblMini}>Status</div><select value={d.status} onChange={e=>set({status:e.target.value})} style={{...inp,width:"100%",boxSizing:"border-box",appearance:"auto",WebkitAppearance:"menulist"}}>{t.statuses.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+              </div>
+              <div style={{display:"flex",gap:10,marginBottom:12}}>
+                <div style={{flex:1,minWidth:0}}><div style={lblMini}>Last interaction</div><input type="date" value={d.last} onChange={e=>set({last:e.target.value})} style={{...inp,width:"100%",boxSizing:"border-box"}}/></div>
+                <div style={{flex:1,minWidth:0}}><div style={lblMini}>Next follow-up</div><input type="date" value={d.next} onChange={e=>set({next:e.target.value})} style={{...inp,width:"100%",boxSizing:"border-box"}}/></div>
+              </div>
+              {t.extra.map(f=>(<div key={f.key} style={{marginBottom:12}}><div style={lblMini}>{f.label}</div><input value={d.extra[f.key]||""} onChange={e=>setExtra(f.key,e.target.value)} placeholder={f.label} style={inp}/></div>))}
+              <div style={lblMini}>Notes</div>
+              <textarea value={d.notes} onChange={e=>set({notes:e.target.value})} placeholder="Context, next steps…" rows={3} style={{...inp,marginBottom:14,resize:"vertical",fontFamily:FN.b,width:"100%",boxSizing:"border-box"}}/>
+              <button onClick={()=>{if(m.mode==="new")careerAddRecord(t.id,d);else careerUpdRecord(t.id,m.rec.id,d);setCareerModal(null);}} disabled={!d.name.trim()} style={{...btnB,width:"100%",opacity:d.name.trim()?1:0.4}}>{m.mode==="new"?"Add Entry":"Save"}</button>
+              {m.mode==="edit"&&<button onClick={()=>{careerDelRecord(t.id,m.rec.id);setCareerModal(null);}} style={{...btnG,width:"100%",marginTop:8,color:C.red,borderColor:(C.red+"55")}}>Delete entry</button>}
+            </div>);}
+            // ── Track settings ──
+            if(m.kind==="track-edit"&&d){const set=p=>setCareerDraft(v=>({...v,...p}));return(<div>
+              <div style={lblMini}>Track name</div>
+              <div style={{display:"flex",gap:10,marginBottom:14}}>
+                <input value={d.icon} onChange={e=>set({icon:e.target.value.slice(0,2)})} style={{...inp,width:52,textAlign:"center",fontSize:18}}/>
+                <input value={d.name} onChange={e=>set({name:e.target.value})} style={{...inp,flex:1}}/>
+              </div>
+              <div style={lblMini}>Organize entries by</div>
+              <input value={d.groupLabel} onChange={e=>set({groupLabel:e.target.value})} placeholder="e.g. Sector, Team, Industry" style={{...inp,marginBottom:14}}/>
+              <div style={lblMini}>{d.groupLabel||"Group"} options</div>
+              {d.groups.map((g,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:7}}><input value={g} onChange={e=>set({groups:d.groups.map((x,j)=>j===i?e.target.value:x)})} style={{...inp,flex:1}}/><button onClick={()=>set({groups:d.groups.filter((_,j)=>j!==i)})} style={{...btnG,padding:"0 14px",color:C.red}}>✕</button></div>))}
+              <button onClick={()=>set({groups:[...d.groups,""]})} style={{...btnG,width:"100%",fontSize:11,marginBottom:14}}>+ Add {(d.groupLabel||"group").toLowerCase()}</button>
+              <div style={lblMini}>Status options</div>
+              {d.statuses.map((s,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:7,alignItems:"center"}}><span style={{width:10,height:10,borderRadius:"50%",background:careerStatusColor(s),flexShrink:0}}/><input value={s} onChange={e=>set({statuses:d.statuses.map((x,j)=>j===i?e.target.value:x)})} style={{...inp,flex:1}}/><button onClick={()=>set({statuses:d.statuses.filter((_,j)=>j!==i)})} style={{...btnG,padding:"0 14px",color:C.red}}>✕</button></div>))}
+              <button onClick={()=>set({statuses:[...d.statuses,""]})} style={{...btnG,width:"100%",fontSize:11,marginBottom:14}}>+ Add status</button>
+              <div style={lblMini}>Extra fields</div>
+              {d.extra.map((f,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:7}}><input value={f.label} onChange={e=>set({extra:d.extra.map((x,j)=>j===i?{...x,label:e.target.value,key:x.key||e.target.value.toLowerCase().replace(/[^a-z0-9]+/g,"_")}:x)})} placeholder="Field name" style={{...inp,flex:1}}/><button onClick={()=>set({extra:d.extra.filter((_,j)=>j!==i)})} style={{...btnG,padding:"0 14px",color:C.red}}>✕</button></div>))}
+              <button onClick={()=>set({extra:[...d.extra,{key:"f"+Date.now(),label:"",type:"text"}]})} style={{...btnG,width:"100%",fontSize:11,marginBottom:18}}>+ Add field</button>
+              <button onClick={()=>{careerUpdTrack(m.trackId,{name:d.name,icon:d.icon,groupLabel:d.groupLabel,groups:d.groups.filter(x=>x.trim()),statuses:d.statuses.filter(x=>x.trim()),extra:d.extra.filter(x=>x.label.trim())});setCareerModal(null);}} style={{...btnB,width:"100%"}}>Save track</button>
+              <button onClick={()=>{careerUpdTrack(m.trackId,{archived:true});setCareerModal(null);}} style={{...btnG,width:"100%",marginTop:8}}>Archive track</button>
+            </div>);}
+            // ── Career goal form ──
+            if(m.kind==="goal"&&d){const set=p=>setCareerDraft(v=>({...v,...p}));const setMs=(i,p)=>set({milestones:d.milestones.map((x,j)=>j===i?{...x,...p}:x)});return(<div>
+              <div style={lblMini}>Objective</div>
+              <input value={d.title} onChange={e=>set({title:e.target.value})} placeholder="e.g. Secure a Private Wealth Management role" style={{...inp,marginBottom:14,fontFamily:FN.h,fontStyle:"italic"}} autoFocus/>
+              <div style={{display:"flex",gap:10,marginBottom:14}}>
+                <div style={{flex:1,minWidth:0}}><div style={lblMini}>Target date</div><input type="date" value={d.targetDate} onChange={e=>set({targetDate:e.target.value})} style={{...inp,width:"100%",boxSizing:"border-box"}}/></div>
+                <div style={{flex:1,minWidth:0}}><div style={lblMini}>Linked track</div><select value={d.trackId||""} onChange={e=>set({trackId:e.target.value||null})} style={{...inp,width:"100%",boxSizing:"border-box",appearance:"auto",WebkitAppearance:"menulist"}}><option value="">None</option>{career.tracks.filter(t=>!t.archived).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+              </div>
+              <div style={lblMini}>Milestones</div>
+              <div style={{fontSize:11,color:C.textDim,marginBottom:10,lineHeight:1.45}}>Give a milestone a metric and it fills in automatically from the linked track's activity.</div>
+              {d.milestones.map((ms,i)=>(<div key={i} style={{padding:"11px 12px",marginBottom:8,borderRadius:11,background:C.surfaceDim,border:`1px solid ${C.hairline}`}}>
+                <div style={{display:"flex",gap:8,marginBottom:8}}><input value={ms.text} onChange={e=>setMs(i,{text:e.target.value})} placeholder={`Milestone ${i+1}`} style={{...inp,flex:1}}/><button onClick={()=>set({milestones:d.milestones.filter((_,j)=>j!==i)})} style={{...btnG,padding:"0 12px",color:C.red}}>✕</button></div>
+                <div style={{display:"flex",gap:8}}>
+                  <select value={ms.metric||""} onChange={e=>setMs(i,{metric:e.target.value||null,target:e.target.value?(ms.target||5):0,done:false})} style={{...inp,flex:1,minWidth:0,boxSizing:"border-box",appearance:"auto",WebkitAppearance:"menulist",fontSize:12,padding:"9px 10px"}}><option value="">Manual (check off)</option>{CAREER_METRICS.map(mt=><option key={mt.k} value={mt.k}>{mt.label}</option>)}</select>
+                  {ms.metric&&<input type="number" value={ms.target||""} onChange={e=>setMs(i,{target:parseInt(e.target.value)||0})} placeholder="Target" style={{...inp,width:90,boxSizing:"border-box",fontSize:12,padding:"9px 10px"}}/>}
+                </div>
+              </div>))}
+              <button onClick={()=>set({milestones:[...d.milestones,{id:uid(),text:"",done:false,metric:null,target:0}]})} style={{...btnG,width:"100%",fontSize:11,marginBottom:16}}>+ Add milestone</button>
+              <button onClick={()=>{const payload={title:d.title,targetDate:d.targetDate,trackId:d.trackId,milestones:d.milestones.filter(x=>x.text.trim()||x.metric)};if(m.mode==="new")careerAddGoal(payload);else careerUpdGoal(m.goal.id,payload);setCareerModal(null);}} disabled={!d.title.trim()} style={{...btnB,width:"100%",opacity:d.title.trim()?1:0.4}}>{m.mode==="new"?"Create Goal":"Save"}</button>
+              {m.mode==="edit"&&<button onClick={()=>{careerDelGoal(m.goal.id);setCareerModal(null);}} style={{...btnG,width:"100%",marginTop:8,color:C.red,borderColor:(C.red+"55")}}>Delete goal</button>}
+            </div>);}
+            return null;
+          })()}
+        </Overlay>
+
         {menuTab==="workout"&&<div className="tab-content">
           {/* ═══ HEALTH SUB-NAV ═══ */}
           {/* Health nav — two primary tabs (Sleep folded into Progress), large, centered, evenly spread */}
