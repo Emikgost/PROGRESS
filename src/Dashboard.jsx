@@ -644,25 +644,37 @@ const REVIEW_WINDOWS=[{k:"week",label:"This Week",full:"This Week",n:7,word:"wee
 
 /* ═══ CAREER — flexible professional-development workspace (Master Sheet · Tracks · Career Goals) ═══ */
 const defCareer={objective:"",tracks:[],goals:[],seeded:false};
-// Track templates: starting field/status/grouping sets. Everything stays editable per track afterward.
+const careerColId=()=>"c_"+Math.random().toString(36).slice(2,8);
+const RECRUIT_STATUSES=["Not Contacted","Contacted","Responded","Networking","Applied","Interviewing","Offer","Rejected"];
+// Track templates: starting COLUMNS (each has an editable label + a type). "status"/"date(role)" columns
+// drive the Master Sheet metrics by TYPE, so renaming a column never breaks anything.
 const CAREER_TEMPLATES=[
-  {k:"interview",name:"Interview Track",icon:"🏦",groupLabel:"Sector",groups:["Private Banking","Private Wealth Mgmt","Investment Banking","Asset Management","Other"],
-    statuses:["Not Contacted","Contacted","Responded","Networking","Applied","Interviewing","Offer","Rejected"],
-    extra:[{key:"linkedin",label:"LinkedIn",type:"link"},{key:"role",label:"Role",type:"text"},{key:"location",label:"Location",type:"text"}],
-    desc:"Recruiting by sector — people, companies & opportunities."},
-  {k:"team",name:"Team Track",icon:"👥",groupLabel:"Team",groups:[],
-    statuses:["Not Contacted","Contacted","Responded","Networking","Applied","Interviewing","Offer","Rejected"],
-    extra:[{key:"linkedin",label:"LinkedIn",type:"link"},{key:"role",label:"Role",type:"text"},{key:"company2",label:"Company",type:"text"}],
-    desc:"Target specific teams within companies rather than sectors."},
-  {k:"nonfinance",name:"Non-Finance Track",icon:"🌐",groupLabel:"Industry",groups:[],
-    statuses:["Not Contacted","Contacted","Responded","Networking","Applied","Interviewing","Offer","Rejected"],
-    extra:[{key:"linkedin",label:"LinkedIn",type:"link"},{key:"role",label:"Role",type:"text"},{key:"location",label:"Location",type:"text"}],
-    desc:"Opportunities outside finance, organized by industry."},
-  {k:"blank",name:"Custom Track",icon:"✨",groupLabel:"Group",groups:[],
-    statuses:["Active","In Progress","On Hold","Done"],
-    extra:[{key:"detail",label:"Detail",type:"text"}],
+  {k:"interview",name:"Interview Track",icon:"🏦",statuses:RECRUIT_STATUSES,
+    columns:[{label:"Name",type:"text"},{label:"Company",type:"text"},{label:"Sector",type:"text"},{label:"LinkedIn",type:"text"},{label:"Role",type:"text"},{label:"Status",type:"status",role:"status"},{label:"Last contact",type:"date",role:"last"},{label:"Next step",type:"date",role:"next"},{label:"Notes",type:"text"}],
+    desc:"Recruiting — people, companies & opportunities."},
+  {k:"team",name:"Team Track",icon:"👥",statuses:RECRUIT_STATUSES,
+    columns:[{label:"Name",type:"text"},{label:"Team",type:"text"},{label:"Company",type:"text"},{label:"LinkedIn",type:"text"},{label:"Role",type:"text"},{label:"Status",type:"status",role:"status"},{label:"Last contact",type:"date",role:"last"},{label:"Next step",type:"date",role:"next"},{label:"Notes",type:"text"}],
+    desc:"Target specific teams within companies."},
+  {k:"nonfinance",name:"Non-Finance Track",icon:"🌐",statuses:RECRUIT_STATUSES,
+    columns:[{label:"Name",type:"text"},{label:"Company",type:"text"},{label:"Industry",type:"text"},{label:"LinkedIn",type:"text"},{label:"Role",type:"text"},{label:"Status",type:"status",role:"status"},{label:"Last contact",type:"date",role:"last"},{label:"Next step",type:"date",role:"next"},{label:"Notes",type:"text"}],
+    desc:"Opportunities outside finance."},
+  {k:"blank",name:"Custom Track",icon:"✨",statuses:["Active","In Progress","On Hold","Done"],
+    columns:[{label:"Name",type:"text"},{label:"Detail",type:"text"},{label:"Status",type:"status",role:"status"},{label:"Due",type:"date",role:"next"},{label:"Notes",type:"text"}],
     desc:"Start from scratch — certifications, skills, anything."},
 ];
+// Give template columns real ids.
+const careerTemplateColumns=tpl=>tpl.columns.map(c=>({...c,id:careerColId()}));
+// Migrate any track saved in the old fixed-field shape into the new {columns, records:[{cells}]} model.
+function migrateCareerTrack(t){
+  if(t.columns)return t;
+  const cols=[];const add=(label,type,role)=>{const id=careerColId();cols.push(role?{id,label,type,role}:{id,label,type});return id;};
+  const nameId=add("Name","text"),compId=add("Company","text"),grpId=add(t.groupLabel||"Group","text"),stId=add("Status","status","status"),lastId=add("Last contact","date","last"),nextId=add("Next step","date","next");
+  const exIds=(t.extra||[]).map(f=>({f,id:add(f.label||"Field","text")}));
+  const notesId=add("Notes","text");
+  const records=(t.records||[]).map(r=>({id:r.id||("r_"+Math.random().toString(36).slice(2,8)),createdAt:r.createdAt,cells:{[nameId]:r.name||"",[compId]:r.company||"",[grpId]:r.group||"",[stId]:r.status||"",[lastId]:r.last||"",[nextId]:r.next||"",[notesId]:r.notes||"",...Object.fromEntries(exIds.map(e=>[e.id,(r.extra||{})[e.f.key]||""]))}}));
+  const n={...t,columns:cols,records};delete n.groupLabel;delete n.groups;delete n.extra;return n;
+}
+const migrateCareer=c=>({...c,tracks:(c.tracks||[]).map(migrateCareerTrack)});
 // Canonical status → stage, so the Master Sheet can aggregate across customized tracks by meaning, not exact text.
 const careerStage=s=>{const t=(s||"").toLowerCase();
   if(/reject|declin|closed|lost|withdraw/.test(t))return"closed";
@@ -1723,8 +1735,11 @@ export default function Dashboard(){
   const goalsTimeline=useMemo(()=>aspirations.map(a=>({id:a.id,text:a.text,type:a.goalType,start:a.created||a.createdOn||null,end:a.completedOn||(a.graduated?a.graduatedAt:null)||null,status:a.graduated?"graduated":a.completedOn?"completed":a.status==="archived"?"archived":a.status==="paused"?"paused":"active"})).sort((x,y)=>(pd(y.start||dk(now))-pd(x.start||dk(now)))),[aspirations,now]);
 
   /* ═══ CAREER — derived aggregation for the Master Sheet + goal progress (enter data once, everything updates) ═══ */
-  const careerCount=(records,stage)=>records.filter(r=>careerStage(r.status)===stage).length;
-  // Count a metric across a set of records (used by both the Master Sheet and auto-advancing goal milestones).
+  // ── Column-aware normalization: find a track's status/date/name columns by TYPE, so labels can be
+  //    renamed freely without breaking metrics, and project each record's cells into those roles. ──
+  const trackCols=t=>{const cols=t.columns||[];const status=cols.find(c=>c.type==="status");const dates=cols.filter(c=>c.type==="date");const next=cols.find(c=>c.role==="next")||dates.find(c=>c.role!=="last")||dates[0];const last=cols.find(c=>c.role==="last")||dates.find(c=>c!==next)||null;const name=cols.find(c=>c.type==="text");return{status,next,last,name};};
+  const normRecs=t=>{const m=trackCols(t);return(t.records||[]).map(r=>({id:r.id,status:m.status?(r.cells[m.status.id]||""):"",last:m.last?(r.cells[m.last.id]||""):"",next:m.next?(r.cells[m.next.id]||""):"",name:m.name?(r.cells[m.name.id]||""):"",trackId:t.id,trackName:t.name,trackIcon:t.icon,_rec:r}));};
+  // Count a metric across normalized records (used by the Master Sheet and auto-advancing goal milestones).
   const careerMetricCount=(records,metric)=>{
     if(metric==="opportunities")return records.length;
     if(metric==="offer")return records.filter(r=>careerStage(r.status)==="offer").length;
@@ -1737,7 +1752,7 @@ export default function Dashboard(){
   const careerStats=useMemo(()=>{
     const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
     const activeTracks=career.tracks.filter(t=>!t.archived);
-    const all=activeTracks.flatMap(t=>t.records.map(r=>({...r,trackId:t.id,trackName:t.name,trackIcon:t.icon})));
+    const all=activeTracks.flatMap(normRecs);
     const stageOf=r=>careerStage(r.status);
     const daysSince=d=>d?Math.floor((todayMid-pd(d).getTime())/86400000):null;
     const opportunities=all.length;
@@ -1750,21 +1765,19 @@ export default function Dashboard(){
     const pending=all.filter(r=>["contacted","applied"].includes(stageOf(r)));
     const followUpsDue=all.filter(r=>r.next&&pd(r.next).getTime()<=todayMid&&!["closed","offer"].includes(stageOf(r)));
     const stale=all.filter(r=>CAREER_ACTIVE_STAGES.includes(stageOf(r))&&r.last&&daysSince(r.last)>=7&&!(r.next&&pd(r.next).getTime()>todayMid));
-    // Traction per track: how many records are in motion.
-    const traction=activeTracks.map(t=>({id:t.id,name:t.name,icon:t.icon,active:t.records.filter(r=>CAREER_ACTIVE_STAGES.includes(careerStage(r.status))||careerStage(r.status)==="offer").length,total:t.records.length})).sort((a,b)=>b.active-a.active);
-    // Action items — the "what should I do next" list.
+    const traction=activeTracks.map(t=>{const nr=normRecs(t);return{id:t.id,name:t.name,icon:t.icon,active:nr.filter(r=>CAREER_ACTIVE_STAGES.includes(careerStage(r.status))||careerStage(r.status)==="offer").length,total:t.records.length};}).sort((a,b)=>b.active-a.active);
     const actions=[];
-    followUpsDue.forEach(r=>{const dd=daysSince(r.next);actions.push({id:"fu"+r.id,kind:"followup",urgency:0,days:dd,label:`Follow up with ${r.name||"opportunity"}`,sub:`${r.trackName} · ${dd>0?`${dd}d overdue`:"due today"}`,color:C.red,rec:r});});
-    all.filter(r=>r.next&&pd(r.next).getTime()>todayMid&&stageOf(r)==="interview").forEach(r=>{const dd=-daysSince(r.next);if(dd<=5)actions.push({id:"iv"+r.id,kind:"interview",urgency:1,days:dd,label:`Interview with ${r.name||r.company||"opportunity"}`,sub:`${r.trackName} · in ${dd}d`,color:"#AF52DE",rec:r});});
-    stale.forEach(r=>{const dd=daysSince(r.last);actions.push({id:"st"+r.id,kind:"stale",urgency:2,days:dd,label:`Reconnect with ${r.name||"opportunity"}`,sub:`${r.trackName} · quiet ${dd}d`,color:C.orange,rec:r});});
-    pending.filter(r=>!followUpsDue.includes(r)&&!stale.includes(r)).forEach(r=>{actions.push({id:"pd"+r.id,kind:"pending",urgency:3,days:daysSince(r.last)||0,label:`Awaiting reply — ${r.name||r.company}`,sub:`${r.trackName} · ${r.status}`,color:C.blue,rec:r});});
+    followUpsDue.forEach(r=>{const dd=daysSince(r.next);actions.push({id:"fu"+r.id,kind:"followup",urgency:0,days:dd,label:`Follow up with ${r.name||"opportunity"}`,sub:`${r.trackName} · ${dd>0?`${dd}d overdue`:"due today"}`,color:C.red,trackId:r.trackId});});
+    all.filter(r=>r.next&&pd(r.next).getTime()>todayMid&&stageOf(r)==="interview").forEach(r=>{const dd=-daysSince(r.next);if(dd<=5)actions.push({id:"iv"+r.id,kind:"interview",urgency:1,days:dd,label:`Interview with ${r.name||"opportunity"}`,sub:`${r.trackName} · in ${dd}d`,color:"#AF52DE",trackId:r.trackId});});
+    stale.forEach(r=>{const dd=daysSince(r.last);actions.push({id:"st"+r.id,kind:"stale",urgency:2,days:dd,label:`Reconnect with ${r.name||"opportunity"}`,sub:`${r.trackName} · quiet ${dd}d`,color:C.orange,trackId:r.trackId});});
+    pending.filter(r=>!followUpsDue.includes(r)&&!stale.includes(r)).forEach(r=>{actions.push({id:"pd"+r.id,kind:"pending",urgency:3,days:daysSince(r.last)||0,label:`Awaiting reply — ${r.name||"opportunity"}`,sub:`${r.trackName} · ${r.status||"—"}`,color:C.blue,trackId:r.trackId});});
     actions.sort((a,b)=>a.urgency-b.urgency||(b.days||0)-(a.days||0));
     return{opportunities,contacted,networking,applied,interviews,offers,active:active.length,pending:pending.length,followUpsDue,stale,traction,actions,all,activeTracks};
   },[career,now]);
   // Career goal progress: milestones with a metric auto-advance from their linked track's activity.
   const careerGoalProgress=g=>{
     const track=g.trackId?career.tracks.find(t=>t.id===g.trackId):null;
-    const recs=track?track.records:careerStats.all;
+    const recs=track?normRecs(track):careerStats.all;
     const ms=(g.milestones||[]).map(m=>{
       if(m.metric&&m.target>0){const c=careerMetricCount(recs,m.metric);return{...m,auto:true,count:c,pct:Math.max(0,Math.min(100,Math.round(c/m.target*100))),done:c>=m.target};}
       return{...m,auto:false,pct:m.done?100:0};
@@ -1774,12 +1787,17 @@ export default function Dashboard(){
   };
   // ── Career mutations ──
   const careerSave=fn=>setCareer(prev=>{const next=fn(JSON.parse(JSON.stringify(prev)));return next;});
-  const careerAddTrack=tpl=>{const id=uid();careerSave(c=>{c.tracks.push({id,name:tpl.name,icon:tpl.icon,groupLabel:tpl.groupLabel,groups:[...tpl.groups],statuses:[...tpl.statuses],extra:tpl.extra.map(e=>({...e})),records:[],archived:false,createdAt:dk(now)});return c;});setCareerTrackId(id);return id;};
+  const careerAddTrack=tpl=>{const id=uid();careerSave(c=>{c.tracks.push({id,name:tpl.name,icon:tpl.icon,statuses:[...tpl.statuses],columns:careerTemplateColumns(tpl),records:[],archived:false,createdAt:dk(now)});return c;});setCareerTrackId(id);return id;};
   const careerUpdTrack=(id,patch)=>careerSave(c=>{const t=c.tracks.find(x=>x.id===id);if(t)Object.assign(t,patch);return c;});
   // Targeted immutable updates (no full deep-clone) so typing directly into grid cells stays snappy.
-  const careerAddRecord=(trackId,rec)=>{const id=uid();setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,records:[...t.records,{id,name:"",company:"",group:"",status:t.statuses[0]||"",last:"",next:"",notes:"",extra:{},createdAt:dk(now),...rec}]})}));return id;};
-  const careerUpdRecord=(trackId,recId,patch)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,records:t.records.map(r=>r.id!==recId?r:{...r,...patch,extra:patch.extra?{...(r.extra||{}),...patch.extra}:r.extra})})}));
+  const careerAddRecord=trackId=>{const id=uid();setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,records:[...t.records,{id,cells:{},createdAt:dk(now)}]})}));return id;};
+  const careerUpdCell=(trackId,recId,colId,val)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,records:t.records.map(r=>r.id!==recId?r:{...r,cells:{...r.cells,[colId]:val}})})}));
   const careerDelRecord=(trackId,recId)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,records:t.records.filter(r=>r.id!==recId)})}));
+  // ── Column (field) mutations — rename / add / remove / reorder / retype, fully fluid per track ──
+  const careerAddColumn=(trackId,col)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,columns:[...(t.columns||[]),{id:careerColId(),label:(col&&col.label)||"New column",type:(col&&col.type)||"text"}]})}));
+  const careerUpdColumn=(trackId,colId,patch)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,columns:t.columns.map(col=>col.id!==colId?col:{...col,...patch})})}));
+  const careerDelColumn=(trackId,colId)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,columns:t.columns.filter(col=>col.id!==colId),records:t.records.map(r=>{const cells={...r.cells};delete cells[colId];return{...r,cells};})})}));
+  const careerMoveColumn=(trackId,colId,dir)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>{if(t.id!==trackId)return t;const i=(t.columns||[]).findIndex(x=>x.id===colId);const j=i+dir;if(i<0||j<0||j>=t.columns.length)return t;const cols=[...t.columns];[cols[i],cols[j]]=[cols[j],cols[i]];return{...t,columns:cols};})}));
   const careerAddGoal=g=>{const id=uid();careerSave(c=>{c.goals.push({id,title:"",targetDate:"",trackId:null,milestones:[],archived:false,createdAt:dk(now),...g});return c;});return id;};
   const careerUpdGoal=(id,patch)=>careerSave(c=>{const g=c.goals.find(x=>x.id===id);if(g)Object.assign(g,patch);return c;});
   const careerDelGoal=id=>careerSave(c=>{c.goals=c.goals.filter(x=>x.id!==id);return c;});
@@ -1787,10 +1805,7 @@ export default function Dashboard(){
   useEffect(()=>{
     if(!careerModal){setCareerDraft(null);return;}
     const m=careerModal;
-    if(m.kind==="record"){
-      if(m.mode==="edit"&&m.rec)setCareerDraft({name:"",company:"",group:"",status:"",last:"",next:"",notes:"",extra:{},...m.rec,extra:{...(m.rec.extra||{})}});
-      else{const t=career.tracks.find(x=>x.id===m.trackId);setCareerDraft({name:"",company:"",group:"",status:t&&t.statuses[0]||"",last:dk(now),next:"",notes:"",extra:{}});}
-    }else if(m.kind==="track-edit"){const t=career.tracks.find(x=>x.id===m.trackId);if(t)setCareerDraft({name:t.name,icon:t.icon,groupLabel:t.groupLabel,groups:[...t.groups],statuses:[...t.statuses],extra:t.extra.map(e=>({...e}))});}
+    if(m.kind==="track-edit"){const t=career.tracks.find(x=>x.id===m.trackId);if(t)setCareerDraft({name:t.name,icon:t.icon,statuses:[...(t.statuses||[])]});}
     else if(m.kind==="goal"){if(m.mode==="edit"&&m.goal)setCareerDraft({...m.goal,milestones:(m.goal.milestones||[]).map(x=>({...x}))});else setCareerDraft({title:"",targetDate:"",trackId:null,milestones:[]});}
     else setCareerDraft(null);
   },[careerModal]);
@@ -2342,7 +2357,7 @@ ${body}
       if(d.subscriptions)setSubscriptions(d.subscriptions);if(d.txRules)setTxRules(d.txRules);if(d.weekPlan)setWeekPlan(d.weekPlan);if(d.finGoals)setFinGoals(d.finGoals);if(typeof d.dietEnabled==="boolean")setDietEnabled(d.dietEnabled);if(typeof d.handwriting==="boolean")setHandwriting(d.handwriting);if(d.catBudgets)setCatBudgets(d.catBudgets);
       if(d.focusCompletionLog)setFocusCompletionLog(d.focusCompletionLog);
       if(d.habitOrder)setHabitOrder(d.habitOrder);
-      if(d.career)setCareer({...defCareer,...d.career});
+      if(d.career)setCareer(migrateCareer({...defCareer,...d.career}));
       // Migrate photoLog from main blob to separate key (one-time)
       if(d.photoLog&&d.photoLog.length>0){try{localStorage.setItem("dash-v18-photos",JSON.stringify(d.photoLog));}catch(e){}}
     }
@@ -5494,7 +5509,7 @@ ${body}
           {careerView==="overview"&&(()=>{
             const empty=careerStats.activeTracks.length===0;
             // Pipeline matrix: each track's records bucketed by stage, plus column totals.
-            const pipeline=careerStats.activeTracks.map(t=>{const st={};CAREER_STAGE_COLS.forEach(c=>st[c.k]=0);let closed=0;t.records.forEach(r=>{const g=careerStage(r.status);if(g==="closed")closed++;else if(st[g]!=null)st[g]++;});return{id:t.id,name:t.name,icon:t.icon,st,closed,total:t.records.length};});
+            const pipeline=careerStats.activeTracks.map(t=>{const st={};CAREER_STAGE_COLS.forEach(c=>st[c.k]=0);let closed=0;normRecs(t).forEach(r=>{const g=careerStage(r.status);if(g==="closed")closed++;else if(st[g]!=null)st[g]++;});return{id:t.id,name:t.name,icon:t.icon,st,closed,total:t.records.length};});
             const stageTotals=CAREER_STAGE_COLS.map(c=>({...c,count:pipeline.reduce((a,p)=>a+p.st[c.k],0)}));
             const cellName={width:142,flexShrink:0,padding:"10px 12px",fontSize:12.5,display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",position:"sticky",left:0,zIndex:1};
             const cellNum={width:54,flexShrink:0,padding:"10px 2px",textAlign:"center",fontSize:12.5,fontFamily:FN.m};
@@ -5565,7 +5580,7 @@ ${body}
                     <div style={{border:`1px solid ${C.hairline}`,borderRadius:12,padding:"16px",textAlign:"center",fontSize:13,color:C.textDim}}>✓ You're all caught up. Nothing overdue.</div>
                   ):(
                     <div style={{border:`1px solid ${C.hairline}`,borderRadius:12,overflow:"hidden"}}>{careerStats.actions.slice(0,8).map((a,i)=>(
-                      <button key={a.id} onClick={()=>{setCareerView("tracks");setCareerTrackId(a.rec.trackId);setCareerModal({kind:"record",mode:"edit",trackId:a.rec.trackId,rec:a.rec});}} style={{display:"flex",alignItems:"center",gap:11,width:"100%",padding:"11px 13px",background:C.surface,border:"none",borderTop:i?`1px solid ${C.hairline}`:"none",cursor:"pointer",textAlign:"left"}}>
+                      <button key={a.id} onClick={()=>{setCareerTrackId(a.trackId);setCareerView("tracks");}} style={{display:"flex",alignItems:"center",gap:11,width:"100%",padding:"11px 13px",background:C.surface,border:"none",borderTop:i?`1px solid ${C.hairline}`:"none",cursor:"pointer",textAlign:"left"}}>
                         <span style={{width:8,height:8,borderRadius:"50%",background:a.color,flexShrink:0}}/>
                         <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.label}</span><span style={{display:"block",fontSize:11,color:C.textDim}}>{a.sub}</span></span>
                         <span style={{fontSize:16,color:C.textDim}}>›</span>
@@ -5597,58 +5612,57 @@ ${body}
                 <button onClick={()=>setCareerModal({kind:"track-new"})} style={{flexShrink:0,padding:"9px 14px",borderRadius:20,border:`1px dashed ${C.hairline}`,background:"transparent",color:C.textDim,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b}}>+ Track</button>
               </div>
               {cur&&(()=>{
-                // Columns = each piece of info; rows = people. Type straight into the cells; metrics derive from this.
-                const cols=[
-                  {key:"name",label:"Name",type:"text",w:150,sticky:true},
-                  {key:"company",label:"Company",type:"text",w:140},
-                  {key:"group",label:cur.groupLabel||"Group",type:"text",w:120},
-                  {key:"status",label:"Status",type:"status",w:144},
-                  {key:"last",label:"Last contact",type:"date",w:140},
-                  {key:"next",label:"Next step",type:"date",w:140},
-                  ...cur.extra.map(f=>({key:"extra."+f.key,label:f.label,type:"text",w:140})),
-                  {key:"notes",label:"Notes",type:"text",w:220},
-                ];
-                const DELW=38;
-                const minW=cols.reduce((a,c)=>a+c.w,0)+DELW;
-                const getV=(r,c)=>c.key.startsWith("extra.")?((r.extra||{})[c.key.slice(6)]||""):(r[c.key]||"");
-                const setV=(r,c,val)=>c.key.startsWith("extra.")?careerUpdRecord(cur.id,r.id,{extra:{[c.key.slice(6)]:val}}):careerUpdRecord(cur.id,r.id,{[c.key]:val});
-                const cellBoxStyle=(w,sticky,bg)=>({width:w,flexShrink:0,borderRight:`1px solid ${C.hairline}`,...(sticky?{position:"sticky",left:0,zIndex:1,background:bg}:{})});
-                const inputStyle={width:"100%",boxSizing:"border-box",background:"transparent",border:"none",outline:"none",color:C.text,fontSize:12.5,fontFamily:FN.b,padding:"10px 9px"};
+                // Columns live on the track and are fully editable (rename inline, add/remove/retype in settings).
+                // Metrics key off column TYPE (status / date), so renaming a column never breaks anything.
+                const cols=cur.columns||[];
+                const m=trackCols(cur);
+                const DELW=34, ADDW=42;
+                const colW=c=>c.type==="status"?150:c.type==="date"?138:150;
+                const minW=cols.reduce((a,c)=>a+colW(c),0)+DELW+ADDW;
+                const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+                const cellBox=(w,sticky,bg)=>({width:w,flexShrink:0,borderRight:`1px solid ${C.hairline}`,...(sticky?{position:"sticky",left:0,zIndex:1,background:bg}:{})});
+                const inp2={width:"100%",boxSizing:"border-box",background:"transparent",border:"none",outline:"none",color:C.text,fontSize:12.5,fontFamily:FN.b,padding:"10px 9px"};
                 return(<div>
                 {/* Track header */}
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:16,fontWeight:800,color:C.text,display:"flex",alignItems:"center",gap:8}}><span>{cur.icon}</span>{cur.name}</div>
-                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{cur.records.length} {cur.records.length===1?"row":"rows"}</div>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{cur.records.length} {cur.records.length===1?"row":"rows"} · {cols.length} columns</div>
                   </div>
                   <button onClick={()=>setCareerModal({kind:"track-edit",trackId:cur.id})} title="Columns & settings" style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,width:38,height:38,cursor:"pointer",color:C.textSec,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
                 </div>
                 {/* Editable sheet */}
                 <div className="hide-scroll" style={{overflowX:"auto",border:`1px solid ${C.hairline}`,borderRadius:12}}>
                   <div style={{minWidth:minW}}>
-                    {/* Header row */}
+                    {/* Header row — column names are editable inline */}
                     <div style={{display:"flex",background:C.surfaceDim,borderBottom:`1px solid ${C.hairline}`}}>
-                      {cols.map(c=>(<div key={c.key} style={{...cellBoxStyle(c.w,c.sticky,C.surfaceDim),zIndex:c.sticky?2:1,padding:"9px 9px",fontSize:9,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.label}</div>))}
+                      {cols.map((c,ci)=>(<div key={c.id} style={{...cellBox(colW(c),ci===0,C.surfaceDim),zIndex:ci===0?2:1,display:"flex",alignItems:"center"}}>
+                        <input className="sheet-cell" value={c.label} onChange={e=>careerUpdColumn(cur.id,c.id,{label:e.target.value})} placeholder="Column" style={{width:"100%",boxSizing:"border-box",background:"transparent",border:"none",outline:"none",color:C.textDim,fontSize:9.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",padding:"9px 9px",fontFamily:FN.b}}/>
+                        {c.type==="status"&&<span title="Status column — drives your metrics" style={{fontSize:8,color:C.accent,paddingRight:7,flexShrink:0}}>●</span>}
+                        {c.type==="date"&&<span title="Date column" style={{fontSize:8,color:C.textDim,paddingRight:7,flexShrink:0}}>◷</span>}
+                      </div>))}
+                      <button onClick={()=>careerAddColumn(cur.id)} title="Add column" style={{width:ADDW,flexShrink:0,background:C.surfaceDim,border:"none",borderRight:`1px solid ${C.hairline}`,color:C.accent,fontSize:17,fontWeight:700,cursor:"pointer"}}>+</button>
                       <div style={{width:DELW,flexShrink:0}}/>
                     </div>
                     {/* Rows */}
-                    {cur.records.map(r=>{const sc=careerStatusColor(r.status);const overdue=r.next&&pd(r.next).getTime()<new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();return(
+                    {cur.records.map(r=>{const statusVal=m.status?(r.cells[m.status.id]||""):"";const sc=careerStatusColor(statusVal);const nextVal=m.next?(r.cells[m.next.id]||""):"";const overdue=nextVal&&pd(nextVal).getTime()<todayMid;return(
                       <div key={r.id} style={{display:"flex",borderBottom:`1px solid ${C.hairline}`,background:C.surface}}>
-                        {cols.map(c=>(<div key={c.key} style={cellBoxStyle(c.w,c.sticky,C.surface)}>
+                        {cols.map((c,ci)=>{const v=r.cells[c.id]||"";return(<div key={c.id} style={cellBox(colW(c),ci===0,C.surface)}>
                           {c.type==="status"
-                            ?<select className="sheet-cell" value={r.status||""} onChange={e=>setV(r,c,e.target.value)} style={{...inputStyle,color:sc,fontWeight:700,WebkitAppearance:"none",appearance:"none",cursor:"pointer"}}>{(cur.statuses||[]).map(s=><option key={s} value={s} style={{color:C.text}}>{s}</option>)}{!cur.statuses.includes(r.status)&&r.status&&<option value={r.status}>{r.status}</option>}</select>
+                            ?<select className="sheet-cell" value={v} onChange={e=>careerUpdCell(cur.id,r.id,c.id,e.target.value)} style={{...inp2,color:sc,fontWeight:700,WebkitAppearance:"none",appearance:"none",cursor:"pointer"}}><option value="">—</option>{(cur.statuses||[]).map(s=><option key={s} value={s} style={{color:C.text}}>{s}</option>)}{v&&!(cur.statuses||[]).includes(v)&&<option value={v}>{v}</option>}</select>
                             :c.type==="date"
-                            ?<input type="date" className="sheet-cell" value={getV(r,c)} onChange={e=>setV(r,c,e.target.value)} style={{...inputStyle,fontFamily:FN.m,fontSize:11,color:c.key==="next"&&overdue?C.red:C.text}}/>
-                            :<input className="sheet-cell" value={getV(r,c)} onChange={e=>setV(r,c,e.target.value)} placeholder={c.sticky?"Name…":""} style={{...inputStyle,fontWeight:c.sticky?600:400}}/>}
-                        </div>))}
+                            ?<input type="date" className="sheet-cell" value={v} onChange={e=>careerUpdCell(cur.id,r.id,c.id,e.target.value)} style={{...inp2,fontFamily:FN.m,fontSize:11,color:c.id===(m.next&&m.next.id)&&overdue?C.red:C.text}}/>
+                            :<input className="sheet-cell" value={v} onChange={e=>careerUpdCell(cur.id,r.id,c.id,e.target.value)} placeholder={ci===0?"Add name…":""} style={{...inp2,fontWeight:ci===0?600:400}}/>}
+                        </div>);})}
+                        <div style={{width:ADDW,flexShrink:0,borderRight:`1px solid ${C.hairline}`}}/>
                         <button onClick={()=>careerDelRecord(cur.id,r.id)} title="Delete row" style={{width:DELW,flexShrink:0,background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:13}}>✕</button>
                       </div>
                     );})}
                     {/* Add-row */}
-                    <button onClick={()=>careerAddRecord(cur.id,{})} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"11px 12px",background:"transparent",border:"none",borderTop:cur.records.length?"none":`0`,color:C.accent,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,position:"sticky",left:0}}>+ Add row</button>
+                    <button onClick={()=>careerAddRecord(cur.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"11px 12px",background:"transparent",border:"none",color:C.accent,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,position:"sticky",left:0}}>+ Add row</button>
                   </div>
                 </div>
-                <div style={{fontSize:10.5,color:C.textDim,marginTop:8,textAlign:"center"}}>Tip: type straight into any cell. Your Master Sheet metrics update from the Status column automatically.</div>
+                <div style={{fontSize:10.5,color:C.textDim,marginTop:8,textAlign:"center",lineHeight:1.5}}>Type into any cell. <b style={{color:C.textSec}}>Tap a column name to rename it</b>, or <b style={{color:C.textSec}}>+</b> to add one. Metrics read the <span style={{color:C.accent}}>●</span> Status column.</div>
                 </div>);
               })()}
               {archivedTracks.length>0&&<div style={{marginTop:10,fontSize:11,color:C.textDim,textAlign:"center"}}>{archivedTracks.length} archived track{archivedTracks.length===1?"":"s"} · <span onClick={()=>setCareerModal({kind:"archived"})} style={{color:C.accent,cursor:"pointer",fontWeight:600}}>view</span></div>}
@@ -5699,7 +5713,7 @@ ${body}
         </div>}
 
         {/* ═══ CAREER EDITOR MODAL ═══ */}
-        <Overlay open={!!careerModal} onClose={()=>setCareerModal(null)} title={!careerModal?"":careerModal.kind==="track-new"?"New Track":careerModal.kind==="track-edit"?"Track Settings":careerModal.kind==="archived"?"Archived Tracks":careerModal.kind==="goal"?(careerModal.mode==="edit"?"Edit Career Goal":"New Career Goal"):careerModal.mode==="edit"?"Edit Entry":"Add Entry"}>
+        <Overlay open={!!careerModal} onClose={()=>setCareerModal(null)} title={!careerModal?"":careerModal.kind==="track-new"?"New Track":careerModal.kind==="track-edit"?"Track Settings":careerModal.kind==="archived"?"Archived Tracks":careerModal.kind==="goal"?(careerModal.mode==="edit"?"Edit Career Goal":"New Career Goal"):""}>
           {careerModal&&(()=>{
             const lblMini={fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6};
             const m=careerModal, d=careerDraft;
@@ -5719,44 +5733,27 @@ ${body}
               </div>))}
             </div>);
             // ── Record form ──
-            if(m.kind==="record"&&d){const t=career.tracks.find(x=>x.id===m.trackId);if(!t)return null;const set=p=>setCareerDraft(v=>({...v,...p}));const setExtra=(k,val)=>setCareerDraft(v=>({...v,extra:{...v.extra,[k]:val}}));return(<div>
-              <div style={lblMini}>Name</div>
-              <input value={d.name} onChange={e=>set({name:e.target.value})} placeholder="Person or opportunity" style={{...inp,marginBottom:12}} autoFocus/>
-              <div style={lblMini}>Company</div>
-              <input value={d.company} onChange={e=>set({company:e.target.value})} placeholder="Company / firm" style={{...inp,marginBottom:12}}/>
-              <div style={{display:"flex",gap:10,marginBottom:12}}>
-                <div style={{flex:1,minWidth:0}}><div style={lblMini}>{t.groupLabel}</div><input list="career-grp-opts" value={d.group} onChange={e=>set({group:e.target.value})} placeholder={t.groupLabel} style={{...inp,width:"100%",boxSizing:"border-box"}}/><datalist id="career-grp-opts">{t.groups.map(g=><option key={g} value={g}/>)}</datalist></div>
-                <div style={{flex:1,minWidth:0}}><div style={lblMini}>Status</div><select value={d.status} onChange={e=>set({status:e.target.value})} style={{...inp,width:"100%",boxSizing:"border-box",appearance:"auto",WebkitAppearance:"menulist"}}>{t.statuses.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-              </div>
-              <div style={{display:"flex",gap:10,marginBottom:12}}>
-                <div style={{flex:1,minWidth:0}}><div style={lblMini}>Last interaction</div><input type="date" value={d.last} onChange={e=>set({last:e.target.value})} style={{...inp,width:"100%",boxSizing:"border-box"}}/></div>
-                <div style={{flex:1,minWidth:0}}><div style={lblMini}>Next follow-up</div><input type="date" value={d.next} onChange={e=>set({next:e.target.value})} style={{...inp,width:"100%",boxSizing:"border-box"}}/></div>
-              </div>
-              {t.extra.map(f=>(<div key={f.key} style={{marginBottom:12}}><div style={lblMini}>{f.label}</div><input value={d.extra[f.key]||""} onChange={e=>setExtra(f.key,e.target.value)} placeholder={f.label} style={inp}/></div>))}
-              <div style={lblMini}>Notes</div>
-              <textarea value={d.notes} onChange={e=>set({notes:e.target.value})} placeholder="Context, next steps…" rows={3} style={{...inp,marginBottom:14,resize:"vertical",fontFamily:FN.b,width:"100%",boxSizing:"border-box"}}/>
-              <button onClick={()=>{if(m.mode==="new")careerAddRecord(t.id,d);else careerUpdRecord(t.id,m.rec.id,d);setCareerModal(null);}} disabled={!d.name.trim()} style={{...btnB,width:"100%",opacity:d.name.trim()?1:0.4}}>{m.mode==="new"?"Add Entry":"Save"}</button>
-              {m.mode==="edit"&&<button onClick={()=>{careerDelRecord(t.id,m.rec.id);setCareerModal(null);}} style={{...btnG,width:"100%",marginTop:8,color:C.red,borderColor:(C.red+"55")}}>Delete entry</button>}
-            </div>);}
-            // ── Track settings ──
-            if(m.kind==="track-edit"&&d){const set=p=>setCareerDraft(v=>({...v,...p}));return(<div>
+            // ── Track settings + live column manager ──
+            if(m.kind==="track-edit"&&d){const set=p=>setCareerDraft(v=>({...v,...p}));const t=career.tracks.find(x=>x.id===m.trackId);if(!t)return null;return(<div>
               <div style={lblMini}>Track name</div>
-              <div style={{display:"flex",gap:10,marginBottom:14}}>
+              <div style={{display:"flex",gap:10,marginBottom:16}}>
                 <input value={d.icon} onChange={e=>set({icon:e.target.value.slice(0,2)})} style={{...inp,width:52,textAlign:"center",fontSize:18}}/>
                 <input value={d.name} onChange={e=>set({name:e.target.value})} style={{...inp,flex:1}}/>
               </div>
-              <div style={lblMini}>Organize entries by</div>
-              <input value={d.groupLabel} onChange={e=>set({groupLabel:e.target.value})} placeholder="e.g. Sector, Team, Industry" style={{...inp,marginBottom:14}}/>
-              <div style={lblMini}>{d.groupLabel||"Group"} options</div>
-              {d.groups.map((g,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:7}}><input value={g} onChange={e=>set({groups:d.groups.map((x,j)=>j===i?e.target.value:x)})} style={{...inp,flex:1}}/><button onClick={()=>set({groups:d.groups.filter((_,j)=>j!==i)})} style={{...btnG,padding:"0 14px",color:C.red}}>✕</button></div>))}
-              <button onClick={()=>set({groups:[...d.groups,""]})} style={{...btnG,width:"100%",fontSize:11,marginBottom:14}}>+ Add {(d.groupLabel||"group").toLowerCase()}</button>
+              <div style={lblMini}>Columns</div>
+              <div style={{fontSize:11,color:C.textDim,marginBottom:10,lineHeight:1.45}}>Rename, reorder, or retype any column. A <b style={{color:C.accent}}>Status</b> column powers your pipeline; <b style={{color:C.textSec}}>Date</b> columns power follow-ups.</div>
+              {t.columns.map((col,i)=>(<div key={col.id} style={{display:"flex",gap:5,marginBottom:7,alignItems:"center"}}>
+                <input value={col.label} onChange={e=>careerUpdColumn(t.id,col.id,{label:e.target.value})} placeholder="Column name" style={{...inp,flex:1,minWidth:0}}/>
+                <select value={col.type} onChange={e=>careerUpdColumn(t.id,col.id,{type:e.target.value,...(e.target.value==="status"?{role:"status"}:{})})} style={{...inp,width:78,boxSizing:"border-box",appearance:"auto",WebkitAppearance:"menulist",fontSize:11,padding:"9px 5px"}}><option value="text">Text</option><option value="date">Date</option><option value="status">Status</option></select>
+                <button onClick={()=>careerMoveColumn(t.id,col.id,-1)} disabled={i===0} style={{...btnG,padding:"0 8px",opacity:i===0?0.35:1}}>↑</button>
+                <button onClick={()=>careerMoveColumn(t.id,col.id,1)} disabled={i===t.columns.length-1} style={{...btnG,padding:"0 8px",opacity:i===t.columns.length-1?0.35:1}}>↓</button>
+                <button onClick={()=>careerDelColumn(t.id,col.id)} style={{...btnG,padding:"0 10px",color:C.red}}>✕</button>
+              </div>))}
+              <button onClick={()=>careerAddColumn(t.id)} style={{...btnG,width:"100%",fontSize:11,marginBottom:18}}>+ Add column</button>
               <div style={lblMini}>Status options</div>
               {d.statuses.map((s,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:7,alignItems:"center"}}><span style={{width:10,height:10,borderRadius:"50%",background:careerStatusColor(s),flexShrink:0}}/><input value={s} onChange={e=>set({statuses:d.statuses.map((x,j)=>j===i?e.target.value:x)})} style={{...inp,flex:1}}/><button onClick={()=>set({statuses:d.statuses.filter((_,j)=>j!==i)})} style={{...btnG,padding:"0 14px",color:C.red}}>✕</button></div>))}
-              <button onClick={()=>set({statuses:[...d.statuses,""]})} style={{...btnG,width:"100%",fontSize:11,marginBottom:14}}>+ Add status</button>
-              <div style={lblMini}>Extra fields</div>
-              {d.extra.map((f,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:7}}><input value={f.label} onChange={e=>set({extra:d.extra.map((x,j)=>j===i?{...x,label:e.target.value,key:x.key||e.target.value.toLowerCase().replace(/[^a-z0-9]+/g,"_")}:x)})} placeholder="Field name" style={{...inp,flex:1}}/><button onClick={()=>set({extra:d.extra.filter((_,j)=>j!==i)})} style={{...btnG,padding:"0 14px",color:C.red}}>✕</button></div>))}
-              <button onClick={()=>set({extra:[...d.extra,{key:"f"+Date.now(),label:"",type:"text"}]})} style={{...btnG,width:"100%",fontSize:11,marginBottom:18}}>+ Add field</button>
-              <button onClick={()=>{careerUpdTrack(m.trackId,{name:d.name,icon:d.icon,groupLabel:d.groupLabel,groups:d.groups.filter(x=>x.trim()),statuses:d.statuses.filter(x=>x.trim()),extra:d.extra.filter(x=>x.label.trim())});setCareerModal(null);}} style={{...btnB,width:"100%"}}>Save track</button>
+              <button onClick={()=>set({statuses:[...d.statuses,""]})} style={{...btnG,width:"100%",fontSize:11,marginBottom:18}}>+ Add status</button>
+              <button onClick={()=>{careerUpdTrack(m.trackId,{name:d.name,icon:d.icon,statuses:d.statuses.filter(x=>x.trim())});setCareerModal(null);}} style={{...btnB,width:"100%"}}>Done</button>
               <button onClick={()=>{careerUpdTrack(m.trackId,{archived:true});setCareerModal(null);}} style={{...btnG,width:"100%",marginTop:8}}>Archive track</button>
             </div>);}
             // ── Career goal form ──
