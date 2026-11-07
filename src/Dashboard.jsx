@@ -299,6 +299,7 @@ body,input,button,textarea,select{font-family:${FN.b}}
 body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-variant-numeric:tabular-nums}
 input::placeholder,textarea::placeholder{color:var(--tdim);opacity:0.75}
 input:focus,textarea:focus,select:focus{border-color:var(--acc)!important;box-shadow:0 0 0 3px var(--acc-soft)}
+.sheet-cell:focus{box-shadow:inset 0 0 0 1.6px var(--acc)!important;background:var(--acc-soft)!important;border-radius:2px}
 button{cursor:pointer}
 button:disabled{cursor:default}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:0.001ms!important;animation-iteration-count:1!important;transition-duration:0.001ms!important;scroll-behavior:auto!important}}
@@ -1775,9 +1776,10 @@ export default function Dashboard(){
   const careerSave=fn=>setCareer(prev=>{const next=fn(JSON.parse(JSON.stringify(prev)));return next;});
   const careerAddTrack=tpl=>{const id=uid();careerSave(c=>{c.tracks.push({id,name:tpl.name,icon:tpl.icon,groupLabel:tpl.groupLabel,groups:[...tpl.groups],statuses:[...tpl.statuses],extra:tpl.extra.map(e=>({...e})),records:[],archived:false,createdAt:dk(now)});return c;});setCareerTrackId(id);return id;};
   const careerUpdTrack=(id,patch)=>careerSave(c=>{const t=c.tracks.find(x=>x.id===id);if(t)Object.assign(t,patch);return c;});
-  const careerAddRecord=(trackId,rec)=>careerSave(c=>{const t=c.tracks.find(x=>x.id===trackId);if(t)t.records.push({id:uid(),name:"",company:"",group:"",status:t.statuses[0]||"",last:dk(now),next:"",notes:"",extra:{},createdAt:dk(now),...rec});return c;});
-  const careerUpdRecord=(trackId,recId,patch)=>careerSave(c=>{const t=c.tracks.find(x=>x.id===trackId);if(t){const r=t.records.find(x=>x.id===recId);if(r)Object.assign(r,patch);}return c;});
-  const careerDelRecord=(trackId,recId)=>careerSave(c=>{const t=c.tracks.find(x=>x.id===trackId);if(t)t.records=t.records.filter(x=>x.id!==recId);return c;});
+  // Targeted immutable updates (no full deep-clone) so typing directly into grid cells stays snappy.
+  const careerAddRecord=(trackId,rec)=>{const id=uid();setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,records:[...t.records,{id,name:"",company:"",group:"",status:t.statuses[0]||"",last:"",next:"",notes:"",extra:{},createdAt:dk(now),...rec}]})}));return id;};
+  const careerUpdRecord=(trackId,recId,patch)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,records:t.records.map(r=>r.id!==recId?r:{...r,...patch,extra:patch.extra?{...(r.extra||{}),...patch.extra}:r.extra})})}));
+  const careerDelRecord=(trackId,recId)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,records:t.records.filter(r=>r.id!==recId)})}));
   const careerAddGoal=g=>{const id=uid();careerSave(c=>{c.goals.push({id,title:"",targetDate:"",trackId:null,milestones:[],archived:false,createdAt:dk(now),...g});return c;});return id;};
   const careerUpdGoal=(id,patch)=>careerSave(c=>{const g=c.goals.find(x=>x.id===id);if(g)Object.assign(g,patch);return c;});
   const careerDelGoal=id=>careerSave(c=>{c.goals=c.goals.filter(x=>x.id!==id);return c;});
@@ -5594,60 +5596,61 @@ ${body}
                 {activeTracks.map(t=>{const on=cur&&cur.id===t.id;return(<button key={t.id} onClick={()=>setCareerTrackId(t.id)} style={{flexShrink:0,display:"flex",alignItems:"center",gap:7,padding:"9px 14px",borderRadius:20,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.text,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b}}><span>{t.icon}</span>{t.name}<span style={{fontSize:10,opacity:0.7}}>{t.records.length}</span></button>);})}
                 <button onClick={()=>setCareerModal({kind:"track-new"})} style={{flexShrink:0,padding:"9px 14px",borderRadius:20,border:`1px dashed ${C.hairline}`,background:"transparent",color:C.textDim,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b}}>+ Track</button>
               </div>
-              {cur&&<div>
+              {cur&&(()=>{
+                // Columns = each piece of info; rows = people. Type straight into the cells; metrics derive from this.
+                const cols=[
+                  {key:"name",label:"Name",type:"text",w:150,sticky:true},
+                  {key:"company",label:"Company",type:"text",w:140},
+                  {key:"group",label:cur.groupLabel||"Group",type:"text",w:120},
+                  {key:"status",label:"Status",type:"status",w:144},
+                  {key:"last",label:"Last contact",type:"date",w:140},
+                  {key:"next",label:"Next step",type:"date",w:140},
+                  ...cur.extra.map(f=>({key:"extra."+f.key,label:f.label,type:"text",w:140})),
+                  {key:"notes",label:"Notes",type:"text",w:220},
+                ];
+                const DELW=38;
+                const minW=cols.reduce((a,c)=>a+c.w,0)+DELW;
+                const getV=(r,c)=>c.key.startsWith("extra.")?((r.extra||{})[c.key.slice(6)]||""):(r[c.key]||"");
+                const setV=(r,c,val)=>c.key.startsWith("extra.")?careerUpdRecord(cur.id,r.id,{extra:{[c.key.slice(6)]:val}}):careerUpdRecord(cur.id,r.id,{[c.key]:val});
+                const cellBoxStyle=(w,sticky,bg)=>({width:w,flexShrink:0,borderRight:`1px solid ${C.hairline}`,...(sticky?{position:"sticky",left:0,zIndex:1,background:bg}:{})});
+                const inputStyle={width:"100%",boxSizing:"border-box",background:"transparent",border:"none",outline:"none",color:C.text,fontSize:12.5,fontFamily:FN.b,padding:"10px 9px"};
+                return(<div>
                 {/* Track header */}
-                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:16,fontWeight:800,color:C.text,display:"flex",alignItems:"center",gap:8}}><span>{cur.icon}</span>{cur.name}</div>
-                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{cur.records.length} {cur.records.length===1?"entry":"entries"} · grouped by {cur.groupLabel}</div>
+                    <div style={{fontSize:11,color:C.textDim,marginTop:2}}>{cur.records.length} {cur.records.length===1?"row":"rows"}</div>
                   </div>
-                  <button onClick={()=>setCareerModal({kind:"track-edit",trackId:cur.id})} title="Track settings" style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,width:38,height:38,cursor:"pointer",color:C.textSec,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-                  <button onClick={()=>setCareerModal({kind:"record",mode:"new",trackId:cur.id})} style={{...btnB,padding:"10px 16px",flexShrink:0}}>+ Add</button>
+                  <button onClick={()=>setCareerModal({kind:"track-edit",trackId:cur.id})} title="Columns & settings" style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,width:38,height:38,cursor:"pointer",color:C.textSec,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
                 </div>
-                {/* Records as an open spreadsheet table, grouped by the track's axis */}
-                {cur.records.length===0?(
-                  <div style={{border:`1px dashed ${C.hairline}`,borderRadius:12,padding:"24px",textAlign:"center",fontSize:13,color:C.textDim}}>No entries yet. Tap <b style={{color:C.accent}}>+ Add</b> to log your first {cur.groupLabel==="Team"?"contact":"opportunity"}.</div>
-                ):(()=>{
-                  const groups={};cur.records.forEach(r=>{const g=r.group||"Ungrouped";(groups[g]=groups[g]||[]).push(r);});
-                  const order=[...cur.groups.filter(g=>groups[g]),...Object.keys(groups).filter(g=>!cur.groups.includes(g))];
-                  const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
-                  const cName={width:150,flexShrink:0,padding:"10px 12px",position:"sticky",left:0,zIndex:1,minWidth:0};
-                  const cCol=(w)=>({width:w,flexShrink:0,padding:"10px 10px",fontSize:12,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"});
-                  const minW=150+150+118+78+78+170;
-                  return(<div className="hide-scroll" style={{overflowX:"auto",border:`1px solid ${C.hairline}`,borderRadius:12}}>
-                    <div style={{minWidth:minW}}>
-                      {/* Column headers */}
-                      <div style={{display:"flex",background:C.surfaceDim,borderBottom:`1px solid ${C.hairline}`,fontSize:9,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>
-                        <div style={{...cName,background:C.surfaceDim,padding:"9px 12px"}}>Name</div>
-                        <div style={cCol(150)}>Company</div>
-                        <div style={cCol(118)}>Status</div>
-                        <div style={cCol(78)}>Last</div>
-                        <div style={cCol(78)}>Next</div>
-                        <div style={cCol(170)}>Notes</div>
-                      </div>
-                      {order.map(gname=>(<div key={gname}>
-                        <div style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:C.bg,borderBottom:`1px solid ${C.hairline}`}}>
-                          <span style={{fontSize:9.5,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.05em"}}>{gname}</span>
-                          <span style={{fontSize:9,color:C.textDim,fontFamily:FN.m}}>· {groups[gname].length}</span>
-                        </div>
-                        {groups[gname].map(r=>{const sc=careerStatusColor(r.status);const overdue=r.next&&pd(r.next).getTime()<todayMid;return(
-                          <div key={r.id} onClick={()=>setCareerModal({kind:"record",mode:"edit",trackId:cur.id,rec:r})} className="press" style={{display:"flex",alignItems:"center",borderBottom:`1px solid ${C.hairline}`,cursor:"pointer",background:C.surface}}>
-                            <div style={{...cName,background:C.surface}}>
-                              <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.name||"Untitled"}</div>
-                              {r.extra&&r.extra.role&&<div style={{fontSize:10,color:C.textDim,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.extra.role}</div>}
-                            </div>
-                            <div style={{...cCol(150),color:C.textSec}}>{r.company||"—"}</div>
-                            <div style={cCol(118)}><span style={{fontSize:10,fontWeight:800,color:sc,background:sc+"1E",borderRadius:20,padding:"3px 10px",whiteSpace:"nowrap"}}>{r.status||"—"}</span></div>
-                            <div style={{...cCol(78),color:C.textDim,fontFamily:FN.m,fontSize:11}}>{r.last?fd(pd(r.last)):"—"}</div>
-                            <div style={{...cCol(78),color:overdue?C.red:C.textDim,fontFamily:FN.m,fontSize:11,fontWeight:overdue?700:400}}>{r.next?fd(pd(r.next)):"—"}</div>
-                            <div style={{...cCol(170),color:C.textDim,fontSize:11}}>{r.notes||"—"}</div>
-                          </div>
-                        );})}
-                      </div>))}
+                {/* Editable sheet */}
+                <div className="hide-scroll" style={{overflowX:"auto",border:`1px solid ${C.hairline}`,borderRadius:12}}>
+                  <div style={{minWidth:minW}}>
+                    {/* Header row */}
+                    <div style={{display:"flex",background:C.surfaceDim,borderBottom:`1px solid ${C.hairline}`}}>
+                      {cols.map(c=>(<div key={c.key} style={{...cellBoxStyle(c.w,c.sticky,C.surfaceDim),zIndex:c.sticky?2:1,padding:"9px 9px",fontSize:9,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.label}</div>))}
+                      <div style={{width:DELW,flexShrink:0}}/>
                     </div>
-                  </div>);
-                })()}
-              </div>}
+                    {/* Rows */}
+                    {cur.records.map(r=>{const sc=careerStatusColor(r.status);const overdue=r.next&&pd(r.next).getTime()<new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();return(
+                      <div key={r.id} style={{display:"flex",borderBottom:`1px solid ${C.hairline}`,background:C.surface}}>
+                        {cols.map(c=>(<div key={c.key} style={cellBoxStyle(c.w,c.sticky,C.surface)}>
+                          {c.type==="status"
+                            ?<select className="sheet-cell" value={r.status||""} onChange={e=>setV(r,c,e.target.value)} style={{...inputStyle,color:sc,fontWeight:700,WebkitAppearance:"none",appearance:"none",cursor:"pointer"}}>{(cur.statuses||[]).map(s=><option key={s} value={s} style={{color:C.text}}>{s}</option>)}{!cur.statuses.includes(r.status)&&r.status&&<option value={r.status}>{r.status}</option>}</select>
+                            :c.type==="date"
+                            ?<input type="date" className="sheet-cell" value={getV(r,c)} onChange={e=>setV(r,c,e.target.value)} style={{...inputStyle,fontFamily:FN.m,fontSize:11,color:c.key==="next"&&overdue?C.red:C.text}}/>
+                            :<input className="sheet-cell" value={getV(r,c)} onChange={e=>setV(r,c,e.target.value)} placeholder={c.sticky?"Name…":""} style={{...inputStyle,fontWeight:c.sticky?600:400}}/>}
+                        </div>))}
+                        <button onClick={()=>careerDelRecord(cur.id,r.id)} title="Delete row" style={{width:DELW,flexShrink:0,background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:13}}>✕</button>
+                      </div>
+                    );})}
+                    {/* Add-row */}
+                    <button onClick={()=>careerAddRecord(cur.id,{})} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"11px 12px",background:"transparent",border:"none",borderTop:cur.records.length?"none":`0`,color:C.accent,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,position:"sticky",left:0}}>+ Add row</button>
+                  </div>
+                </div>
+                <div style={{fontSize:10.5,color:C.textDim,marginTop:8,textAlign:"center"}}>Tip: type straight into any cell. Your Master Sheet metrics update from the Status column automatically.</div>
+                </div>);
+              })()}
               {archivedTracks.length>0&&<div style={{marginTop:10,fontSize:11,color:C.textDim,textAlign:"center"}}>{archivedTracks.length} archived track{archivedTracks.length===1?"":"s"} · <span onClick={()=>setCareerModal({kind:"archived"})} style={{color:C.accent,cursor:"pointer",fontWeight:600}}>view</span></div>}
             </div>);
           })()}
