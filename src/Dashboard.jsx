@@ -677,6 +677,7 @@ function migrateCareerTrack(t){
 const migrateCareer=c=>({...c,tracks:(c.tracks||[]).map(migrateCareerTrack)});
 // Canonical status → stage, so the Master Sheet can aggregate across customized tracks by meaning, not exact text.
 const careerStage=s=>{const t=(s||"").toLowerCase();
+  if(/not contacted|uncontacted|no contact|not yet|to contact|prospect|new lead/.test(t))return"new";
   if(/reject|declin|closed|lost|withdraw/.test(t))return"closed";
   if(/offer|accept|hired|done|complete/.test(t))return"offer";
   if(/interview/.test(t))return"interview";
@@ -1240,6 +1241,7 @@ export default function Dashboard(){
   const[careerTrackId,setCareerTrackId]=useState(null);  // selected track in Tracks view
   const[careerModal,setCareerModal]=useState(null);      // {kind, mode, ...} drives the career editor overlay
   const[careerDraft,setCareerDraft]=useState(null);      // local form draft (cheap edits, stable focus)
+  const[careerSearch,setCareerSearch]=useState("");      // filter box for the tracks sheet
   const vjFileRef=useRef(null);
   // ─── Budget: Financial Snapshot ───
   const[accounts,setAccounts]=useState({checking:"",savings:"",cash:"",investment:"",credit:""});
@@ -1798,6 +1800,9 @@ export default function Dashboard(){
   const careerUpdColumn=(trackId,colId,patch)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,columns:t.columns.map(col=>col.id!==colId?col:{...col,...patch})})}));
   const careerDelColumn=(trackId,colId)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>t.id!==trackId?t:{...t,columns:t.columns.filter(col=>col.id!==colId),records:t.records.map(r=>{const cells={...r.cells};delete cells[colId];return{...r,cells};})})}));
   const careerMoveColumn=(trackId,colId,dir)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>{if(t.id!==trackId)return t;const i=(t.columns||[]).findIndex(x=>x.id===colId);const j=i+dir;if(i<0||j<0||j>=t.columns.length)return t;const cols=[...t.columns];[cols[i],cols[j]]=[cols[j],cols[i]];return{...t,columns:cols};})}));
+  // One-time sort (reorders the records in place, like Google Sheets "sort range"), remembered per track.
+  const CAREER_STAGE_SEQ=["new","contacted","networking","applied","interview","offer","closed"];
+  const careerSortRecords=(trackId,colId,dir)=>setCareer(c=>({...c,tracks:c.tracks.map(t=>{if(t.id!==trackId)return t;const col=(t.columns||[]).find(x=>x.id===colId);if(!col)return t;const sv=r=>{const v=(r.cells||{})[colId]||"";if(col.type==="status")return v?CAREER_STAGE_SEQ.indexOf(careerStage(v)):99;if(col.type==="date")return v?pd(v).getTime():Infinity;return v?String(v).toLowerCase():"￿";};const recs=[...t.records].sort((a,b)=>{const x=sv(a),y=sv(b);return x<y?-1*dir:x>y?1*dir:0;});return{...t,records:recs,sort:{col:colId,dir}};})}));
   const careerAddGoal=g=>{const id=uid();careerSave(c=>{c.goals.push({id,title:"",targetDate:"",trackId:null,milestones:[],archived:false,createdAt:dk(now),...g});return c;});return id;};
   const careerUpdGoal=(id,patch)=>careerSave(c=>{const g=c.goals.find(x=>x.id===id);if(g)Object.assign(g,patch);return c;});
   const careerDelGoal=id=>careerSave(c=>{c.goals=c.goals.filter(x=>x.id!==id);return c;});
@@ -5608,7 +5613,7 @@ ${body}
             return(<div>
               {/* Track switcher */}
               <div className="hide-scroll" style={{display:"flex",gap:7,overflowX:"auto",marginBottom:14,paddingBottom:2}}>
-                {activeTracks.map(t=>{const on=cur&&cur.id===t.id;return(<button key={t.id} onClick={()=>setCareerTrackId(t.id)} style={{flexShrink:0,display:"flex",alignItems:"center",gap:7,padding:"9px 14px",borderRadius:20,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.text,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b}}><span>{t.icon}</span>{t.name}<span style={{fontSize:10,opacity:0.7}}>{t.records.length}</span></button>);})}
+                {activeTracks.map(t=>{const on=cur&&cur.id===t.id;return(<button key={t.id} onClick={()=>{setCareerTrackId(t.id);setCareerSearch("");}} style={{flexShrink:0,display:"flex",alignItems:"center",gap:7,padding:"9px 14px",borderRadius:20,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.text,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b}}><span>{t.icon}</span>{t.name}<span style={{fontSize:10,opacity:0.7}}>{t.records.length}</span></button>);})}
                 <button onClick={()=>setCareerModal({kind:"track-new"})} style={{flexShrink:0,padding:"9px 14px",borderRadius:20,border:`1px dashed ${C.hairline}`,background:"transparent",color:C.textDim,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b}}>+ Track</button>
               </div>
               {cur&&(()=>{
@@ -5622,6 +5627,9 @@ ${body}
                 const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
                 const cellBox=(w,sticky,bg)=>({width:w,flexShrink:0,borderRight:`1px solid ${C.hairline}`,...(sticky?{position:"sticky",left:0,zIndex:1,background:bg}:{})});
                 const inp2={width:"100%",boxSizing:"border-box",background:"transparent",border:"none",outline:"none",color:C.text,fontSize:12.5,fontFamily:FN.b,padding:"10px 9px"};
+                const q=careerSearch.trim().toLowerCase();
+                const displayRecs=q?cur.records.filter(r=>cols.some(c=>String(r.cells[c.id]||"").toLowerCase().includes(q))):cur.records;
+                const sortState=cur.sort;
                 return(<div>
                 {/* Track header */}
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
@@ -5631,23 +5639,34 @@ ${body}
                   </div>
                   <button onClick={()=>setCareerModal({kind:"track-edit",trackId:cur.id})} title="Columns & settings" style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,width:38,height:38,cursor:"pointer",color:C.textSec,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
                 </div>
+                {/* Search + quick add */}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                  <div style={{flex:1,display:"flex",alignItems:"center",gap:8,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,padding:"0 12px"}}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input value={careerSearch} onChange={e=>setCareerSearch(e.target.value)} placeholder="Search this track…" style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",color:C.text,fontSize:13,padding:"10px 0",fontFamily:FN.b}}/>
+                    {careerSearch&&<button onClick={()=>setCareerSearch("")} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:13,flexShrink:0}}>✕</button>}
+                  </div>
+                  {sortState&&<button onClick={()=>careerUpdTrack(cur.id,{sort:null})} title="Clear sort" style={{...btnG,padding:"10px 12px",fontSize:11,flexShrink:0}}>Clear sort</button>}
+                  <button onClick={()=>careerAddRecord(cur.id)} style={{...btnB,padding:"10px 15px",flexShrink:0}}>+ Add</button>
+                </div>
                 {/* Editable sheet */}
                 <div className="hide-scroll" style={{overflowX:"auto",border:`1px solid ${C.hairline}`,borderRadius:12}}>
                   <div style={{minWidth:minW}}>
                     {/* Header row — column names are editable inline */}
                     <div style={{display:"flex",background:C.surfaceDim,borderBottom:`1px solid ${C.hairline}`}}>
-                      {cols.map((c,ci)=>(<div key={c.id} style={{...cellBox(colW(c),ci===0,C.surfaceDim),zIndex:ci===0?2:1,display:"flex",alignItems:"center"}}>
-                        <input className="sheet-cell" value={c.label} onChange={e=>careerUpdColumn(cur.id,c.id,{label:e.target.value})} placeholder="Column" style={{width:"100%",boxSizing:"border-box",background:"transparent",border:"none",outline:"none",color:C.textDim,fontSize:9.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",padding:"9px 9px",fontFamily:FN.b}}/>
-                        {c.type==="status"&&<span title="Status column — drives your metrics" style={{fontSize:8,color:C.accent,paddingRight:7,flexShrink:0}}>●</span>}
-                        {c.type==="date"&&<span title="Date column" style={{fontSize:8,color:C.textDim,paddingRight:7,flexShrink:0}}>◷</span>}
-                      </div>))}
+                      {cols.map((c,ci)=>{const sortedHere=sortState&&sortState.col===c.id;return(<div key={c.id} style={{...cellBox(colW(c),ci===0,C.surfaceDim),zIndex:ci===0?2:1,display:"flex",alignItems:"center"}}>
+                        <input className="sheet-cell" value={c.label} onChange={e=>careerUpdColumn(cur.id,c.id,{label:e.target.value})} placeholder="Column" style={{width:"100%",minWidth:0,boxSizing:"border-box",background:"transparent",border:"none",outline:"none",color:C.textDim,fontSize:9.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",padding:"9px 6px 9px 9px",fontFamily:FN.b}}/>
+                        {c.type==="status"&&<span title="Status column — drives your metrics" style={{fontSize:8,color:C.accent,flexShrink:0}}>●</span>}
+                        {c.type==="date"&&<span title="Date column" style={{fontSize:8,color:C.textDim,flexShrink:0}}>◷</span>}
+                        <button onClick={()=>{const dir=(sortedHere&&sortState.dir===1)?-1:1;careerSortRecords(cur.id,c.id,dir);}} title="Sort by this column" style={{background:"transparent",border:"none",cursor:"pointer",color:sortedHere?C.accent:C.textDim,fontSize:9,padding:"0 6px 0 3px",flexShrink:0,opacity:sortedHere?1:0.55}}>{sortedHere?(sortState.dir===1?"▲":"▼"):"⇅"}</button>
+                      </div>);})}
                       <button onClick={()=>careerAddColumn(cur.id)} title="Add column" style={{width:ADDW,flexShrink:0,background:C.surfaceDim,border:"none",borderRight:`1px solid ${C.hairline}`,color:C.accent,fontSize:17,fontWeight:700,cursor:"pointer"}}>+</button>
                       <div style={{width:DELW,flexShrink:0}}/>
                     </div>
-                    {/* Rows */}
-                    {cur.records.map(r=>{const statusVal=m.status?(r.cells[m.status.id]||""):"";const sc=careerStatusColor(statusVal);const nextVal=m.next?(r.cells[m.next.id]||""):"";const overdue=nextVal&&pd(nextVal).getTime()<todayMid;return(
+                    {/* Rows — colour-coded down the left edge by pipeline stage */}
+                    {displayRecs.map(r=>{const statusVal=m.status?(r.cells[m.status.id]||""):"";const sc=careerStatusColor(statusVal);const stageColor=m.status?(CAREER_STAGE_COLOR[careerStage(statusVal)]||C.hairline):C.hairline;const nextVal=m.next?(r.cells[m.next.id]||""):"";const overdue=nextVal&&pd(nextVal).getTime()<todayMid;return(
                       <div key={r.id} style={{display:"flex",borderBottom:`1px solid ${C.hairline}`,background:C.surface}}>
-                        {cols.map((c,ci)=>{const v=r.cells[c.id]||"";return(<div key={c.id} style={cellBox(colW(c),ci===0,C.surface)}>
+                        {cols.map((c,ci)=>{const v=r.cells[c.id]||"";return(<div key={c.id} style={{...cellBox(colW(c),ci===0,C.surface),...(ci===0?{borderLeft:`4px solid ${stageColor}`}:{})}}>
                           {c.type==="status"
                             ?<select className="sheet-cell" value={v} onChange={e=>careerUpdCell(cur.id,r.id,c.id,e.target.value)} style={{...inp2,color:sc,fontWeight:700,WebkitAppearance:"none",appearance:"none",cursor:"pointer"}}><option value="">—</option>{(cur.statuses||[]).map(s=><option key={s} value={s} style={{color:C.text}}>{s}</option>)}{v&&!(cur.statuses||[]).includes(v)&&<option value={v}>{v}</option>}</select>
                             :c.type==="date"
@@ -5658,11 +5677,12 @@ ${body}
                         <button onClick={()=>careerDelRecord(cur.id,r.id)} title="Delete row" style={{width:DELW,flexShrink:0,background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:13}}>✕</button>
                       </div>
                     );})}
+                    {q&&displayRecs.length===0&&<div style={{padding:"18px",textAlign:"center",fontSize:12.5,color:C.textDim,position:"sticky",left:0}}>No matches for "{careerSearch}"</div>}
                     {/* Add-row */}
-                    <button onClick={()=>careerAddRecord(cur.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"11px 12px",background:"transparent",border:"none",color:C.accent,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,position:"sticky",left:0}}>+ Add row</button>
+                    {!q&&<button onClick={()=>careerAddRecord(cur.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"11px 12px",background:"transparent",border:"none",color:C.accent,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:FN.b,position:"sticky",left:0}}>+ Add row</button>}
                   </div>
                 </div>
-                <div style={{fontSize:10.5,color:C.textDim,marginTop:8,textAlign:"center",lineHeight:1.5}}>Type into any cell. <b style={{color:C.textSec}}>Tap a column name to rename it</b>, or <b style={{color:C.textSec}}>+</b> to add one. Metrics read the <span style={{color:C.accent}}>●</span> Status column.</div>
+                <div style={{fontSize:10.5,color:C.textDim,marginTop:8,textAlign:"center",lineHeight:1.5}}>Type into any cell · <b style={{color:C.textSec}}>tap a column name</b> to rename · <b style={{color:C.textSec}}>▲▼</b> to sort · rows are coloured by stage.</div>
                 </div>);
               })()}
               {archivedTracks.length>0&&<div style={{marginTop:10,fontSize:11,color:C.textDim,textAlign:"center"}}>{archivedTracks.length} archived track{archivedTracks.length===1?"":"s"} · <span onClick={()=>setCareerModal({kind:"archived"})} style={{color:C.accent,cursor:"pointer",fontWeight:600}}>view</span></div>}
