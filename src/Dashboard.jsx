@@ -1290,6 +1290,7 @@ export default function Dashboard(){
   // Diet UI state
   const[libModal,setLibModal]=useState(null);   // {meal} food-library sheet (meal may be null when opened from Analytics)
   const[libBottom,setLibBottom]=useState("add");// add | library | drinks
+  const[libFilter,setLibFilter]=useState("all");// all | food | recipe
   const[libSearch,setLibSearch]=useState("");
   const[logDetail,setLogDetail]=useState(null);  // {resolved,meal,editId?} serving/qty chooser
   const[foodEditor,setFoodEditor]=useState(null);// {mode:"food"|"recipe",draft}
@@ -2686,6 +2687,7 @@ ${body}
   // library mutations
   const dietSaveFood=(item)=>setFoodLib(prev=>{const i=prev.findIndex(f=>f.id===item.id);if(i<0)return[...prev,item];const c=[...prev];c[i]={...item,updatedAt:Date.now()};return c;});
   const dietDeleteFood=(id)=>setFoodLib(prev=>prev.filter(f=>f.id!==id));
+  const dietDuplicateFood=(id)=>{const src=foodLib.find(f=>f.id===id);if(!src)return null;const copy={...JSON.parse(JSON.stringify(src)),id:uid(),name:(src.name||"Food")+" (copy)",seeded:false,createdAt:Date.now(),updatedAt:Date.now()};setFoodLib(prev=>[...prev,copy]);return copy;};
   // logging (snapshots nutrients at log time so later edits to the library don't rewrite history)
   const dietLogFood=(resolved,meal,qty)=>{const q=+qty||1;const entry={id:uid(),date:dietDate,meal,srcId:resolved.id||null,srcKind:resolved.kind||"food",name:resolved.name,brand:resolved.brand||"",servingLabel:resolved.servingLabel,servingGrams:resolved.servingGrams,qty:q,nutr:{...resolved.nutr},t:Date.now()};setDietLog(prev=>[...prev,entry]);};
   const dietUpdEntry=(id,patch)=>setDietLog(prev=>prev.map(e=>e.id===id?{...e,...patch}:e));
@@ -2693,7 +2695,7 @@ ${body}
   const dietLogWater=(ml,meal)=>{const entry={id:uid(),date:dietDate,meal:meal||"snacks",srcId:null,srcKind:"water",name:"Water",brand:"",servingLabel:ml+" ml",servingGrams:ml,qty:1,nutr:{water:ml},t:Date.now()};setDietLog(prev=>[...prev,entry]);};
   // recent + search over the library
   const dietRecentFoods=useMemo(()=>{const seen=new Set(),out=[];[...dietLog].sort((a,b)=>(b.t||0)-(a.t||0)).forEach(e=>{if(e.srcId&&!seen.has(e.srcId)){seen.add(e.srcId);const f=foodLib.find(x=>x.id===e.srcId);if(f)out.push(f);}});return out.slice(0,8);},[dietLog,foodLib]);
-  const dietLibMatches=useMemo(()=>{const q=libSearch.trim().toLowerCase();let list=foodLib;if(libBottom==="drinks")list=foodLib.filter(f=>f.category==="drink");if(!q)return list;return list.filter(f=>f.name.toLowerCase().includes(q)||(f.brand||"").toLowerCase().includes(q));},[foodLib,libSearch,libBottom]);
+  const dietLibMatches=useMemo(()=>{const q=libSearch.trim().toLowerCase();let list=foodLib;if(libBottom==="drinks")list=foodLib.filter(f=>f.category==="drink");else if(libFilter==="recipe")list=foodLib.filter(f=>f.kind==="recipe");else if(libFilter==="food")list=foodLib.filter(f=>f.kind!=="recipe");if(!q)return list;return list.filter(f=>f.name.toLowerCase().includes(q)||(f.brand||"").toLowerCase().includes(q));},[foodLib,libSearch,libBottom,libFilter]);
   // ── Analytics: day-key range ending today (no future), per-day totals, averages over days ACTUALLY recorded ──
   const dietRangeKeys=useMemo(()=>{const n=dietAnalyticsRange*7;const arr=[];const base=new Date();base.setHours(0,0,0,0);for(let i=0;i<n;i++){const d=new Date(base);d.setDate(d.getDate()-i);arr.push(dk(d));}return arr;},[dietAnalyticsRange]);
   const dietRangeData=useMemo(()=>{const keySet=new Set(dietRangeKeys);const byDay={};dietLog.forEach(e=>{if(!keySet.has(e.date))return;const day=byDay[e.date]||(byDay[e.date]={});Object.keys(e.nutr||{}).forEach(k=>{const v=e.nutr[k];if(v===null||v===undefined)return;day[k]=(day[k]||0)+v*(+e.qty||0);});});return byDay;},[dietLog,dietRangeKeys]);
@@ -6117,6 +6119,12 @@ ${body}
                     {libSearch&&<button onClick={()=>setLibSearch("")} style={{background:"transparent",border:"none",color:C.textDim,fontSize:16,cursor:"pointer"}}>×</button>}
                   </div>
                 </div>
+                {/* filter chips + quick New */}
+                {libBottom!=="drinks"&&<div style={{display:"flex",alignItems:"center",gap:7,padding:"0 18px 12px"}}>
+                  {[{k:"all",l:"All"},{k:"food",l:"Foods"},{k:"recipe",l:"Recipes"}].map(ff=>{const on=libFilter===ff.k;return(<button key={ff.k} className="press" onClick={()=>setLibFilter(ff.k)} style={{padding:"7px 13px",borderRadius:20,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:11,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{ff.l}</button>);})}
+                  <div style={{flex:1}}/>
+                  <button className="press" onClick={()=>setFoodEditor(libFilter==="recipe"?makeRecipeDraft():makeFoodDraft())} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",borderRadius:20,border:"none",background:C.accentSoft,color:C.accent,fontSize:11,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>{libFilter==="recipe"?"Recipe":"New"}</button>
+                </div>}
                 {/* body */}
                 <div className="hide-scroll" style={{flex:1,overflowY:"auto",padding:"0 18px 16px"}}>
                   {libBottom==="drinks"&&<div style={{marginBottom:16}}>
@@ -6129,7 +6137,7 @@ ${body}
                     <div className="hide-scroll" style={{display:"flex",gap:9,overflowX:"auto",paddingBottom:2}}>{dietRecentFoods.map(f=>(<button key={f.id} className="press" onClick={()=>openLog(f)} style={{flex:"0 0 auto",width:84,padding:"12px 8px",borderRadius:13,border:`1px solid ${C.hairline}`,background:C.surface,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:7}}><span style={{width:34,height:34,borderRadius:"50%",background:C.accentSoft,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{f.category==="drink"?<><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></>:<><path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 0 0 2-2V2M5 2v20M19 2v20M13 11V2a4 4 0 0 1 4 4v5a4 4 0 0 1-4 0Z"/></>}</svg></span><span style={{fontSize:10,fontWeight:600,color:C.text,fontFamily:FN.b,textAlign:"center",lineHeight:1.2,maxHeight:24,overflow:"hidden"}}>{f.name.length>16?f.name.slice(0,15)+"…":f.name}</span></button>))}</div>
                   </div>}
                   <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",margin:"6px 0 10px"}}>{libSearch?"Results":libBottom==="library"?"All Foods & Recipes":libBottom==="drinks"?"":"Suggestions"}</div>
-                  {dietLibMatches.length===0&&<div style={{textAlign:"center",color:C.textDim,fontSize:12.5,padding:"26px 10px"}}>{libSearch?`No matches for “${libSearch}”.`:"Nothing here yet."}<div style={{marginTop:12}}><button className="press" onClick={()=>setFoodEditor(makeFoodDraft())} style={{...btnB,fontSize:12,padding:"10px 18px"}}>+ Create a food</button></div></div>}
+                  {dietLibMatches.length===0&&<div style={{textAlign:"center",color:C.textDim,fontSize:12.5,padding:"26px 10px"}}>{libSearch?`No matches for “${libSearch}”.`:libFilter==="recipe"?"No recipes yet.":libFilter==="food"?"No foods yet.":"Nothing here yet."}<div style={{marginTop:14,display:"flex",gap:8,justifyContent:"center"}}><button className="press" onClick={()=>setFoodEditor(makeFoodDraft())} style={{...btnG,fontSize:12,padding:"10px 16px"}}>+ New food</button><button className="press" onClick={()=>setFoodEditor(makeRecipeDraft())} style={{...btnB,fontSize:12,padding:"10px 16px"}}>+ New recipe</button></div></div>}
                   {dietLibMatches.map(f=>{const r=resolveFood(f,foodLib);const cal=Math.round((r.nutr.calories||0));return(
                     <div key={f.id} style={{display:"flex",alignItems:"center",gap:11,padding:"11px 2px",borderBottom:`1px solid ${C.hairline}`}}>
                       <div onClick={()=>openLog(f)} className="press" style={{flex:1,minWidth:0,cursor:"pointer"}}>
@@ -6137,9 +6145,10 @@ ${body}
                         <div style={{fontSize:10.5,color:C.textDim,fontWeight:600,fontFamily:FN.m,marginTop:2}}>{r.servingLabel}{r.servingGrams?` · ${Math.round(r.servingGrams)} g`:""}{f.brand?` · ${f.brand}`:""}</div>
                         <div style={{display:"flex",gap:10,marginTop:5}}>{["calories","carbs","fat","protein"].map(k=>{const v=r.nutr[k];if(v===null||v===undefined)return null;return(<span key={k} style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:10,fontWeight:700,color:C.textSec,fontFamily:FN.m}}><span style={{width:6,height:6,borderRadius:"50%",background:NUT_BY_ID[k].color}}/>{nutFmt(k,v)}{k==="calories"?"":"g"}</span>);})}</div>
                       </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
-                        <button className="press" onClick={()=>setFoodEditor(f.kind==="recipe"?makeRecipeDraft(f):makeFoodDraft(f))} title="Edit" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",padding:2}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                        {!f.seeded&&<button className="press" onClick={()=>setDietConfirm({msg:`Delete “${f.name}” from your library? Past log entries keep their data.`,label:"Delete",onYes:()=>dietDeleteFood(f.id)})} title="Delete" style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",padding:2,opacity:0.8}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>}
+                      <div style={{display:"flex",alignItems:"center",gap:1,flexShrink:0}}>
+                        <button className="press" onClick={()=>setFoodEditor(f.kind==="recipe"?makeRecipeDraft(f):makeFoodDraft(f))} title="Edit" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",padding:6,display:"flex"}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                        <button className="press" onClick={()=>{const c=dietDuplicateFood(f.id);if(c)setFoodEditor(c.kind==="recipe"?makeRecipeDraft(c):makeFoodDraft(c));}} title="Duplicate" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",padding:6,display:"flex"}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                        <button className="press" onClick={()=>setDietConfirm({msg:`Delete “${f.name}”${f.kind==="recipe"?" recipe":""} from your library? Past log entries keep their data.`,label:"Delete",onYes:()=>dietDeleteFood(f.id)})} title="Delete" style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",padding:6,opacity:0.85,display:"flex"}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                       </div>
                     </div>);})}
                 </div>
@@ -6263,6 +6272,10 @@ ${body}
                       </div>);})}
                     <div style={{fontSize:10,color:C.textDim,fontWeight:500,marginTop:6,lineHeight:1.5}}>Leave a field blank if unknown — blanks are treated as “not provided”, not zero. Enter 0 only when a value is genuinely zero.</div>
                   </>}
+                  {d.id&&<div style={{display:"flex",gap:10,marginTop:22,paddingTop:18,borderTop:`1px solid ${C.hairline}`}}>
+                    <button className="press" onClick={()=>{const c=dietDuplicateFood(d.id);if(c)setFoodEditor(c.kind==="recipe"?makeRecipeDraft(c):makeFoodDraft(c));}} style={{...btnG,flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Duplicate</button>
+                    <button className="press" onClick={()=>setDietConfirm({msg:`Delete “${d.name||"this item"}”${isRecipe?" recipe":""}? This can't be undone. Past log entries keep their data.`,label:"Delete",onYes:()=>{dietDeleteFood(d.id);setFoodEditor(null);}})} style={{...btnG,flex:1,color:C.red,borderColor:C.red+"55",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Delete</button>
+                  </div>}
                 </div>
               </div>
             </div>);})()}
