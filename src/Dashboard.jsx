@@ -516,33 +516,59 @@ function illoKey(name,extra){
   return"plate";
 }
 // Parse OCR text from a Nutrition Facts panel into {serving:{label,grams}, nutr:{...}}. Best-effort; blanks stay blank.
+// OCR-tolerant nutrition-label parser: forgives common OCR errors (o→0, stray chars, loose spacing,
+// comma decimals) and finds the number nearest each keyword rather than requiring an exact format.
 function parseNutritionLabel(raw){
-  const text=(raw||"").replace(/ /g," ");
-  const low=text.toLowerCase();
-  const num=m=>m?parseFloat(String(m).replace(/[, ]/g,"").replace(/[oO]/g,"0")):null;
-  const grab=re=>{const m=low.match(re);return m?num(m[1]):null;};
+  const low=(raw||"").replace(/ /g," ").replace(/[|¡!]/g," ").toLowerCase();
+  const toNum=s=>{if(s==null)return null;let t=String(s).replace(/o/gi,"0").replace(/,/g,".").replace(/[^0-9.]/g,"");const pr=t.split(".");if(pr.length>2)t=pr[0]+"."+pr.slice(1).join("");if(t===""||t===".")return null;const v=parseFloat(t);return isNaN(v)?null:v;};
   const out={serving:{label:"",grams:""},nutr:{}};
-  // serving size: "serving size 2/3 cup (55g)" or "(55 g)"
-  let sm=low.match(/serving size[:\s]*([^\n(]+?)\s*\(\s*([\d.]+)\s*g\s*\)/);
-  if(sm){out.serving.label=sm[1].trim();out.serving.grams=String(num(sm[2]));}
-  else{const gm=low.match(/\(\s*([\d.]+)\s*g\s*\)/);if(gm)out.serving.grams=String(num(gm[1]));const lm=low.match(/serving size[:\s]*([^\n(]+)/);if(lm)out.serving.label=lm[1].trim();}
-  const set=(id,v)=>{if(v!==null&&!isNaN(v))out.nutr[id]=v;};
-  set("calories",grab(/calories[:\s]*([\d.,]+)/));
-  set("fat",grab(/total fat[:\s]*([\d.]+)\s*g/));
-  set("satfat",grab(/saturated fat[:\s]*([\d.]+)\s*g/));
-  set("transfat",grab(/trans[\s\w]*fat[:\s]*([\d.]+)\s*g/));
-  set("cholesterol",grab(/cholesterol[:\s]*([\d.]+)\s*mg/));
-  set("sodium",grab(/sodium[:\s]*([\d.]+)\s*mg/));
-  set("carbs",grab(/(?:total carb(?:ohydrate)?s?)[:\s]*([\d.]+)\s*g/));
-  set("fiber",grab(/(?:dietary fiber|fiber|fibre)[:\s]*([\d.]+)\s*g/));
-  set("sugar",grab(/(?:total sugars?|sugars?)[:\s]*([\d.]+)\s*g/));
-  let add=grab(/added sugars?[:\s]*([\d.]+)\s*g/);if(add===null)add=grab(/includes[:\s]*([\d.]+)\s*g\s*added/);set("addedsugar",add);
-  set("protein",grab(/protein[:\s]*([\d.]+)\s*g/));
-  set("potassium",grab(/potassium[:\s]*([\d.]+)\s*mg/));
-  set("calcium",grab(/calcium[:\s]*([\d.]+)\s*mg/));
-  set("iron",grab(/iron[:\s]*([\d.]+)\s*mg/));
-  set("vitd",grab(/vitamin d[:\s]*([\d.]+)\s*mcg/));
+  let sm=low.match(/serv(?:ing)?\.?\s*size[^0-9a-z(]{0,4}([a-z0-9\/.\s-]*?)\(?\s*([\d.]+)\s*g\s*\)?/);
+  if(sm){out.serving.label=sm[1].replace(/\s+/g," ").trim().slice(0,28);const g=toNum(sm[2]);if(g!=null)out.serving.grams=String(g);}
+  else{const gm=low.match(/\(\s*([\d.]+)\s*g\s*\)/);if(gm){const g=toNum(gm[1]);if(g!=null)out.serving.grams=String(g);}const lm=low.match(/serv(?:ing)?\.?\s*size[:\s]*([a-z0-9\/.\s-]+)/);if(lm)out.serving.label=lm[1].replace(/\s+/g," ").trim().slice(0,28);}
+  const set=(id,v)=>{if(v!=null&&!isNaN(v))out.nutr[id]=v;};
+  const grab=(kw,unit)=>{const re=new RegExp(kw+"[^0-9oO]{0,8}([0-9oO]{1,5}(?:[.,][0-9oO]{1,2})?)\\s*"+(unit||""),"i");const m=low.match(re);return m?toNum(m[1]):null;};
+  set("calories",grab("cal(?:ories|orie)?",""));
+  set("fat",grab("t[o0]ta[l1]\\s*fat","g"));
+  set("satfat",grab("sat(?:urated)?\\s*fat","g"));
+  set("transfat",grab("trans\\s*(?:fat)?","g"));
+  set("cholesterol",grab("ch[o0]+[l1]ester[o0][l1]","mg"));
+  set("sodium",grab("s[o0]dium","mg"));
+  set("carbs",grab("(?:t[o0]ta[l1]\\s*)?carb(?:[o0]hydrates?|s)?","g"));
+  set("fiber",grab("(?:dietary\\s*)?fib(?:er|re)","g"));
+  let sug=grab("t[o0]ta[l1]\\s*sugars?","g");if(sug==null)sug=grab("sugars?","g");set("sugar",sug);
+  let add=grab("added\\s*sugars?","g");if(add==null){const m=low.match(/inc[l1]udes[^0-9]{0,6}([0-9.]+)\s*g\s*added/i);add=m?toNum(m[1]):null;}set("addedsugar",add);
+  set("protein",grab("pr[o0]te[il1]n","g"));
+  set("potassium",grab("p[o0]tassium","mg"));
+  set("calcium",grab("ca[l1]cium","mg"));
+  set("iron",grab("ir[o0]n","mg"));
+  set("vitd",grab("vitamin\\s*d","mcg"));
   return out;
+}
+function preprocessForOCR(dataUrl){
+  return new Promise(resolve=>{
+    try{
+      if(typeof document==="undefined")return resolve(dataUrl);
+      const img=new Image();
+      img.onload=()=>{try{
+        let w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;if(!w||!h)return resolve(dataUrl);
+        const scale=Math.min(3,Math.max(1,1500/Math.max(w,h)));
+        const cw=Math.round(w*scale),ch=Math.round(h*scale);
+        const cv=document.createElement("canvas");cv.width=cw;cv.height=ch;
+        const ctx=cv.getContext("2d");ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(img,0,0,cw,ch);
+        const idata=ctx.getImageData(0,0,cw,ch),d=idata.data,hist=new Array(256).fill(0);
+        for(let i=0;i<d.length;i+=4){const g=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)|0;d[i]=d[i+1]=d[i+2]=g;hist[g]++;}
+        const total=cw*ch;let sumAll=0;for(let i=0;i<256;i++)sumAll+=i*hist[i];
+        let sumB=0,wB=0,maxVar=-1,thr=140;
+        for(let i=0;i<256;i++){wB+=hist[i];if(!wB)continue;const wF=total-wB;if(wF<=0)break;sumB+=i*hist[i];const mB=sumB/wB,mF=(sumAll-sumB)/wF,v=wB*wF*(mB-mF)*(mB-mF);if(v>maxVar){maxVar=v;thr=i;}}
+        const t2=thr+8;
+        for(let i=0;i<d.length;i+=4){const v=d[i]>t2?255:0;d[i]=d[i+1]=d[i+2]=v;}
+        ctx.putImageData(idata,0,0);
+        resolve(cv.toDataURL("image/png"));
+      }catch(e){resolve(dataUrl);}};
+      img.onerror=()=>resolve(dataUrl);
+      img.src=dataUrl;
+    }catch(e){resolve(dataUrl);}
+  });
 }
 
 
@@ -2835,9 +2861,26 @@ ${body}
   const makeFoodDraft=(f)=>{const nutr={};if(f&&f.nutr)Object.keys(f.nutr).forEach(k=>{nutr[k]=String(f.nutr[k]);});return{mode:"food",id:f?f.id:null,name:f?f.name:"",brand:f?(f.brand||""):"",category:f?(f.category||"food"):"food",serving:{label:f?((f.serving||{}).label||""):"",grams:f?String((f.serving||{}).grams||""):""},nutr,expand:{0:true},createdAt:f?f.createdAt:null};};
   const makeIngDraft=()=>({name:"",brand:"",serving:{label:"",grams:""},amount:"",nutr:{},expand:{0:true}});
   // ── Nutrition-label scanner: lazy-load OCR, run it, open the New Food form prefilled ──
-  const loadTesseract=()=>new Promise((res,rej)=>{if(typeof window!=="undefined"&&window.Tesseract)return res(window.Tesseract);if(typeof document==="undefined")return rej(new Error("no-doc"));const sc=document.createElement("script");sc.src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";sc.async=true;sc.onload=()=>window.Tesseract?res(window.Tesseract):rej(new Error("Scanner library failed to load."));sc.onerror=()=>rej(new Error("Couldn't load the scanner. Check your connection and try again."));document.head.appendChild(sc);});
-  const scanOpenResult=(parsed,img,meal)=>{const nutr={};Object.keys(parsed.nutr||{}).forEach(k=>{nutr[k]=String(parsed.nutr[k]);});setFoodEditor({mode:"food",id:null,name:"",brand:"",category:"food",serving:{label:parsed.serving.label||"",grams:(parsed.serving.grams!==""&&parsed.serving.grams!=null)?String(parsed.serving.grams):""},nutr,expand:{0:true,1:Object.keys(nutr).some(k=>NUT_BY_ID[k]&&NUT_BY_ID[k].group===1)},createdAt:null,scanImage:img,_meal:meal||null});setScanner(null);};
-  const scanRunOcr=async(img,meal)=>{setScanner(s=>({...(s||{}),phase:"processing",image:img,meal:meal,progress:0,error:""}));try{const T=await loadTesseract();const r=await T.recognize(img,"eng",{logger:m=>{if(m&&m.status==="recognizing text")setScanner(s=>(s&&s.phase==="processing")?{...s,progress:Math.round((m.progress||0)*100)}:s);}});const text=(r&&r.data&&r.data.text)||"";scanOpenResult(parseNutritionLabel(text),img,meal);}catch(e){setScanner(s=>({...(s||{}),phase:"error",image:img,error:String((e&&e.message)||e)}));}};
+  const loadTesseract=()=>new Promise((res,rej)=>{if(typeof window!=="undefined"&&window.Tesseract)return res(window.Tesseract);if(typeof document==="undefined")return rej(new Error("no-doc"));
+    const urls=["https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js","https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"];
+    const tryLoad=i=>{if(i>=urls.length)return rej(new Error("Couldn't load the scanner. Check your connection and try again."));const sc=document.createElement("script");sc.src=urls[i];sc.async=true;sc.onload=()=>window.Tesseract?res(window.Tesseract):tryLoad(i+1);sc.onerror=()=>tryLoad(i+1);document.head.appendChild(sc);};
+    tryLoad(0);});
+  const scanOpenResult=(parsed,img,meal,text)=>{const nutr={};Object.keys(parsed.nutr||{}).forEach(k=>{nutr[k]=String(parsed.nutr[k]);});setFoodEditor({mode:"food",id:null,name:"",brand:"",category:"food",serving:{label:parsed.serving.label||"",grams:(parsed.serving.grams!==""&&parsed.serving.grams!=null)?String(parsed.serving.grams):""},nutr,expand:{0:true,1:Object.keys(nutr).some(k=>NUT_BY_ID[k]&&NUT_BY_ID[k].group===1)},createdAt:null,scanImage:img,scanText:text||"",_meal:meal||null});setScanner(null);};
+  const scanRunOcr=async(img,meal)=>{setScanner(s=>({...(s||{}),phase:"processing",image:img,meal:meal,progress:0,error:""}));try{
+    const T=await loadTesseract();
+    const proc=await preprocessForOCR(img).catch(()=>img);
+    const logger=m=>{if(!m)return;setScanner(s=>{if(!s||s.phase!=="processing")return s;const st=(m.status||"");const prog=Math.round((m.progress||0)*100);const msg=/recogn/i.test(st)?"Reading the label":/(load|init|download|fetch)/i.test(st)?"Preparing scanner (first run downloads the engine)":s.statusMsg;return{...s,progress:prog,statusMsg:msg};});};
+    let text="";
+    if(T.createWorker){
+      const worker=await T.createWorker("eng",1,{logger});
+      try{try{await worker.setParameters({tessedit_pageseg_mode:"6",preserve_interword_spaces:"1"});}catch(e){}const rr=await worker.recognize(proc);text=(rr&&rr.data&&rr.data.text)||"";}
+      finally{try{await worker.terminate();}catch(e){}}
+    }else{const rr=await T.recognize(proc,"eng",{logger});text=(rr&&rr.data&&rr.data.text)||"";}
+    const parsed=parseNutritionLabel(text);
+    const found=Object.keys(parsed.nutr||{}).length;
+    if(found===0&&!parsed.serving.grams){setScanner(s=>({...(s||{}),phase:"error",image:img,error:"Nothing readable was found on that image.",scanText:text}));return;}
+    scanOpenResult(parsed,img,meal,text);
+  }catch(e){setScanner(s=>({...(s||{}),phase:"error",image:img,error:String((e&&e.message)||e)}));}};
   useEffect(()=>{
     if(!(scanner&&scanner.phase==="camera"))return;
     let cancelled=false;
@@ -6377,9 +6420,12 @@ ${body}
                 </div>
                 <div className="hide-scroll" style={{flex:1,overflowY:"auto",padding:"16px 18px 24px"}}>
                   {!d.id&&<div style={{display:"flex",gap:8,marginBottom:18,background:C.surfaceDim,borderRadius:11,padding:4,border:`1px solid ${C.hairline}`}}>{[{k:"food",l:"Single Food"},{k:"recipe",l:"Recipe"}].map(t=>{const on=d.mode===t.k;return(<button key={t.k} className="press" onClick={()=>setFoodEditor(t.k==="recipe"?makeRecipeDraft():makeFoodDraft())} style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{t.l}</button>);})}</div>}
-                  {d.scanImage&&<div style={{display:"flex",alignItems:"center",gap:11,marginBottom:16,background:C.surface,border:`1px solid ${C.accentMed||C.hairline}`,borderRadius:12,padding:10}}>
-                    <img src={d.scanImage} alt="Scanned label" style={{width:54,height:54,borderRadius:9,objectFit:"cover",border:`1px solid ${C.hairline}`}}/>
-                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:800,color:C.accent,fontFamily:FN.b,display:"flex",alignItems:"center",gap:5}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/></svg>Scanned label</div><div style={{fontSize:10.5,color:C.textDim,fontWeight:500,marginTop:2,lineHeight:1.4}}>Recognized values are filled in below — review and correct anything before saving.</div></div>
+                  {d.scanImage&&<div style={{marginBottom:16,background:C.surface,border:`1px solid ${C.accentMed||C.hairline}`,borderRadius:12,padding:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:11}}>
+                      <img src={d.scanImage} alt="Scanned label" style={{width:54,height:54,borderRadius:9,objectFit:"cover",border:`1px solid ${C.hairline}`}}/>
+                      <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:800,color:C.accent,fontFamily:FN.b,display:"flex",alignItems:"center",gap:5}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/></svg>Scanned label</div><div style={{fontSize:10.5,color:C.textDim,fontWeight:500,marginTop:2,lineHeight:1.4}}>Recognized values are filled in below — review and correct anything before saving.</div></div>
+                    </div>
+                    {d.scanText?<details style={{marginTop:9}}><summary style={{fontSize:10.5,color:C.textDim,fontWeight:700,cursor:"pointer",outline:"none"}}>What the scan read</summary><pre style={{marginTop:7,maxHeight:120,overflow:"auto",fontSize:10,color:C.textSec,fontFamily:"ui-monospace,Menlo,monospace",whiteSpace:"pre-wrap",background:C.surfaceDim,borderRadius:8,padding:"8px 10px",lineHeight:1.4}}>{d.scanText}</pre></details>:null}
                   </div>}
                   {/* name + brand */}
                   <label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:6}}>Name</label>
@@ -6471,7 +6517,7 @@ ${body}
             const startDrag=(e,modeR)=>{e.preventDefault();e.stopPropagation();const box=scanBoxRef.current;if(!box)return;const rect=box.getBoundingClientRect();const sf={...fr};const sx=e.clientX,sy=e.clientY;
               const move=ev=>{const dx=(ev.clientX-sx)/rect.width*100,dy=(ev.clientY-sy)/rect.height*100;setScanner(s=>{if(!s)return s;const f={...sf};if(modeR){f.w=Math.min(100-sf.l,Math.max(28,sf.w+dx));f.h=Math.min(100-sf.t,Math.max(16,sf.h+dy));}else{f.l=Math.min(100-sf.w,Math.max(0,sf.l+dx));f.t=Math.min(100-sf.h,Math.max(0,sf.t+dy));}return{...s,frame:f};});};
               const up=()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up);};window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);};
-            const capture=()=>{const v=scanVideoRef.current,box=scanBoxRef.current;if(!v||!box||!v.videoWidth){return;}const vw=v.videoWidth,vh=v.videoHeight,cw=box.clientWidth,ch=box.clientHeight;const scale=Math.max(cw/vw,ch/vh);const offX=(vw*scale-cw)/2,offY=(vh*scale-ch)/2;let sx=(cw*fr.l/100+offX)/scale,sy=(ch*fr.t/100+offY)/scale,sw=(cw*fr.w/100)/scale,sh=(ch*fr.h/100)/scale;sx=Math.max(0,Math.min(vw-1,sx));sy=Math.max(0,Math.min(vh-1,sy));sw=Math.min(vw-sx,sw);sh=Math.min(vh-sy,sh);const MAXW=1500,os=sw>MAXW?MAXW/sw:1;const cv=document.createElement("canvas");cv.width=Math.max(1,Math.round(sw*os));cv.height=Math.max(1,Math.round(sh*os));cv.getContext("2d").drawImage(v,sx,sy,sw,sh,0,0,cv.width,cv.height);scanRunOcr(cv.toDataURL("image/jpeg",0.92),scanner.meal);};
+            const capture=()=>{const v=scanVideoRef.current,box=scanBoxRef.current;if(!v||!box||!v.videoWidth){return;}const vw=v.videoWidth,vh=v.videoHeight,cw=box.clientWidth,ch=box.clientHeight;const scale=Math.max(cw/vw,ch/vh);const offX=(vw*scale-cw)/2,offY=(vh*scale-ch)/2;let sx=(cw*fr.l/100+offX)/scale,sy=(ch*fr.t/100+offY)/scale,sw=(cw*fr.w/100)/scale,sh=(ch*fr.h/100)/scale;sx=Math.max(0,Math.min(vw-1,sx));sy=Math.max(0,Math.min(vh-1,sy));sw=Math.min(vw-sx,sw);sh=Math.min(vh-sy,sh);const MAXW=2400,os=sw>MAXW?MAXW/sw:1;const cv=document.createElement("canvas");cv.width=Math.max(1,Math.round(sw*os));cv.height=Math.max(1,Math.round(sh*os));const cx=cv.getContext("2d");cx.imageSmoothingEnabled=true;cx.imageSmoothingQuality="high";cx.drawImage(v,sx,sy,sw,sh,0,0,cv.width,cv.height);scanRunOcr(cv.toDataURL("image/jpeg",0.95),scanner.meal);};
             return(<div style={{position:"fixed",inset:0,zIndex:700,background:"#05070C",display:"flex",flexDirection:"column"}}>
               {ph==="camera"&&<>
                 <div ref={scanBoxRef} style={{position:"relative",flex:1,overflow:"hidden",touchAction:"none"}}>
@@ -6486,7 +6532,7 @@ ${body}
                   <div style={{position:"absolute",top:14,left:0,right:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px"}}>
                     <button className="press" onClick={()=>setScanner(null)} style={{background:"rgba(0,0,0,0.5)",border:"none",borderRadius:20,padding:"9px 15px",color:"#fff",fontSize:13,fontWeight:700,fontFamily:FN.b,cursor:"pointer"}}>Cancel</button>
                   </div>
-                  <div style={{position:"absolute",top:60,left:0,right:0,textAlign:"center",padding:"0 24px"}}><span style={{background:"rgba(0,0,0,0.5)",color:"#fff",fontSize:12,fontWeight:600,padding:"7px 13px",borderRadius:20,fontFamily:FN.b}}>Align the Nutrition Facts panel in the frame · drag to move, pull the corner to resize</span></div>
+                  <div style={{position:"absolute",top:60,left:0,right:0,textAlign:"center",padding:"0 24px"}}><span style={{background:"rgba(0,0,0,0.5)",color:"#fff",fontSize:12,fontWeight:600,padding:"7px 13px",borderRadius:20,fontFamily:FN.b}}>Fill the frame with the Nutrition Facts panel · hold steady, good light, avoid glare · drag to move, pull the corner to resize</span></div>
                 </div>
                 <div style={{padding:"18px 20px 26px",background:"#05070C",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                   <label className="press" style={{cursor:"pointer",color:"#9AA6B6",fontSize:11.5,fontWeight:700,fontFamily:FN.b,width:72,textAlign:"center"}}>Photo<input type="file" accept="image/*" onChange={onFile} style={{display:"none"}}/></label>
@@ -6509,8 +6555,8 @@ ${body}
                   <div style={{position:"absolute",inset:0,background:`linear-gradient(180deg,rgba(5,7,12,0.1),rgba(5,7,12,0.45))`}}/>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>{[0,1,2].map(i=>(<span key={i} className="scan-dot" style={{width:9,height:9,borderRadius:"50%",background:C.accent,animationDelay:`${i*0.18}s`}}/>))}</div>
-                <div style={{fontSize:15,fontWeight:800,color:"#fff",fontFamily:FN.h}}>Reading the label…</div>
-                <div style={{fontSize:12,color:"#9AA6B6",fontWeight:600,marginTop:6,fontFamily:FN.m}}>{scanner.progress?`${scanner.progress}%`:"Preparing"}</div>
+                <div style={{fontSize:15,fontWeight:800,color:"#fff",fontFamily:FN.h}}>{scanner.statusMsg||"Reading the label…"}</div>
+                <div style={{fontSize:12,color:"#9AA6B6",fontWeight:600,marginTop:6,fontFamily:FN.m,textAlign:"center",padding:"0 30px"}}>{scanner.progress?`${scanner.progress}%`:"Starting…"}</div>
                 <div style={{width:"72%",maxWidth:260,height:5,borderRadius:3,background:"rgba(255,255,255,0.12)",overflow:"hidden",marginTop:12}}><div style={{height:"100%",width:`${scanner.progress||6}%`,background:C.accent,borderRadius:3,transition:"width 0.3s ease"}}/></div>
               </div>}
               {ph==="error"&&<div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"30px 26px",textAlign:"center"}}>
@@ -6518,7 +6564,7 @@ ${body}
                 <div style={{fontSize:16,fontWeight:800,color:"#fff",fontFamily:FN.h,marginBottom:8}}>Couldn't read the label</div>
                 <div style={{fontSize:12.5,color:"#9AA6B6",fontWeight:500,marginBottom:24,maxWidth:300,lineHeight:1.5}}>{scanner.error||"The text wasn't clear enough."} You can try again or enter the values manually — your photo is kept either way.</div>
                 <button className="press" onClick={()=>setScanner(s=>({...s,phase:"camera",error:""}))} style={{...btnB,width:240,marginBottom:10}}>Try again</button>
-                <button className="press" onClick={()=>{setFoodEditor({...makeFoodDraft(),_meal:scanner.meal,scanImage:scanner.image});setScanner(null);}} style={{...btnG,width:240}}>Enter manually (keep photo)</button>
+                <button className="press" onClick={()=>{setFoodEditor({...makeFoodDraft(),_meal:scanner.meal,scanImage:scanner.image,scanText:scanner.scanText||""});setScanner(null);}} style={{...btnG,width:240}}>Enter manually (keep photo)</button>
                 <button className="press" onClick={()=>setScanner(null)} style={{background:"transparent",border:"none",color:"#6B7585",fontSize:12.5,fontWeight:600,marginTop:16,cursor:"pointer"}}>Cancel</button>
               </div>}
             </div>);})()}
