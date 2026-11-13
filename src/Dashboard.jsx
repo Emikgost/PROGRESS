@@ -288,7 +288,12 @@ const CSS=`
 .hide-scroll::-webkit-scrollbar{display:none}.hide-scroll{scrollbar-width:none}
 .tab-content{animation:slideUp 0.25s cubic-bezier(0.25,0.46,0.45,0.94)}
 .pill-btn{transition:all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)}.pill-btn:active{transform:scale(0.95)}
-.press{transition:all 0.15s ease}.press:active{transform:scale(0.96)}
+.press{transition:transform 0.18s cubic-bezier(0.22,1,0.36,1),background 0.2s ease,border-color 0.2s ease,box-shadow 0.2s ease,color 0.18s ease,opacity 0.18s ease}.press:active{transform:scale(0.95)}
+@keyframes dPaneIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes dSheetUp{from{opacity:0.4;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
+.d-pane{animation:dPaneIn 0.28s cubic-bezier(0.22,1,0.36,1)}
+.d-sheet{animation:dSheetUp 0.34s cubic-bezier(0.22,1,0.36,1)}
+.d-tap{transition:transform 0.18s cubic-bezier(0.22,1,0.36,1),background 0.22s ease,border-color 0.22s ease,color 0.18s ease,box-shadow 0.22s ease}.d-tap:active{transform:scale(0.95)}
 .overlay-bg{animation:overlayIn 0.2s ease}
 .modal-box{animation:modalIn 0.3s cubic-bezier(0.25,0.46,0.45,0.94)}
 .card-enter{animation:scaleIn 0.2s cubic-bezier(0.25,0.46,0.45,0.94)}
@@ -347,6 +352,102 @@ const MACRO={calories:{label:"Calories",unit:"kcal",color:"#F59E0B"},protein:{la
 // Distinct palette for per-exercise strength lines
 const EX_PALETTE=["#32D583","#0A84FF","#FF9F0A","#AF52DE","#32ADE6","#FF453A","#FFD60A","#FF2D55","#64D2FF","#BF5AF2","#30D158","#5E5CE6"];
 const defDietGoals={calories:2200,protein:160,carbs:250,fat:70,water:64,cupOz:8};
+/* ═══════════════════════ DIET v2 — nutrition tracking system ═══════════════════════ */
+/* Stable internal nutrient registry. ALL calculations key off these ids, never display names.
+   Each nutrient: id, name, short badge text, standardized unit, group index, color, display decimals. */
+const NUT_GROUPS=["Calories & Macros","Fats","Sugars & Fiber","Minerals","Vitamins","Other Nutrients"];
+const NUTRIENTS=[
+  {id:"calories",name:"Calories",short:"Cal",unit:"kcal",group:0,color:"#FF453A",dec:0},
+  {id:"protein",name:"Protein",short:"Pro",unit:"g",group:0,color:"#FF9F0A",dec:1},
+  {id:"carbs",name:"Carbs",short:"Carb",unit:"g",group:0,color:"#0A84FF",dec:1},
+  {id:"fat",name:"Total Fat",short:"Fat",unit:"g",group:0,color:"#32D583",dec:1},
+  {id:"satfat",name:"Saturated Fat",short:"Sat",unit:"g",group:1,color:"#F6C45A",dec:1},
+  {id:"transfat",name:"Trans Fat",short:"Tr",unit:"g",group:1,color:"#F6C45A",dec:1},
+  {id:"monofat",name:"Monounsaturated Fat",short:"Mono",unit:"g",group:1,color:"#F6C45A",dec:1},
+  {id:"polyfat",name:"Polyunsaturated Fat",short:"Poly",unit:"g",group:1,color:"#F6C45A",dec:1},
+  {id:"cholesterol",name:"Cholesterol",short:"Chol",unit:"mg",group:1,color:"#F6C45A",dec:0},
+  {id:"fiber",name:"Fiber",short:"Fib",unit:"g",group:2,color:"#C77DFF",dec:1},
+  {id:"sugar",name:"Total Sugar",short:"Sug",unit:"g",group:2,color:"#C77DFF",dec:1},
+  {id:"addedsugar",name:"Added Sugar",short:"+Sug",unit:"g",group:2,color:"#C77DFF",dec:1},
+  {id:"sodium",name:"Sodium",short:"Na",unit:"mg",group:3,color:"#32ADE6",dec:0},
+  {id:"potassium",name:"Potassium",short:"K",unit:"mg",group:3,color:"#32ADE6",dec:0},
+  {id:"calcium",name:"Calcium",short:"Ca",unit:"mg",group:3,color:"#32ADE6",dec:0},
+  {id:"iron",name:"Iron",short:"Fe",unit:"mg",group:3,color:"#32ADE6",dec:1},
+  {id:"magnesium",name:"Magnesium",short:"Mg",unit:"mg",group:3,color:"#32ADE6",dec:0},
+  {id:"zinc",name:"Zinc",short:"Zn",unit:"mg",group:3,color:"#32ADE6",dec:1},
+  {id:"phosphorus",name:"Phosphorus",short:"P",unit:"mg",group:3,color:"#32ADE6",dec:0},
+  {id:"selenium",name:"Selenium",short:"Se",unit:"mcg",group:3,color:"#32ADE6",dec:0},
+  {id:"copper",name:"Copper",short:"Cu",unit:"mg",group:3,color:"#32ADE6",dec:1},
+  {id:"manganese",name:"Manganese",short:"Mn",unit:"mg",group:3,color:"#32ADE6",dec:1},
+  {id:"iodine",name:"Iodine",short:"I",unit:"mcg",group:3,color:"#32ADE6",dec:0},
+  {id:"vita",name:"Vitamin A",short:"A",unit:"mcg",group:4,color:"#7C6CF0",dec:0},
+  {id:"vitb1",name:"Vitamin B1",short:"B1",unit:"mg",group:4,color:"#7C6CF0",dec:1},
+  {id:"vitb2",name:"Vitamin B2",short:"B2",unit:"mg",group:4,color:"#7C6CF0",dec:1},
+  {id:"vitb3",name:"Vitamin B3",short:"B3",unit:"mg",group:4,color:"#7C6CF0",dec:1},
+  {id:"vitb5",name:"Vitamin B5",short:"B5",unit:"mg",group:4,color:"#7C6CF0",dec:1},
+  {id:"vitb6",name:"Vitamin B6",short:"B6",unit:"mg",group:4,color:"#7C6CF0",dec:1},
+  {id:"vitb7",name:"Vitamin B7",short:"B7",unit:"mcg",group:4,color:"#7C6CF0",dec:0},
+  {id:"vitb9",name:"Vitamin B9",short:"B9",unit:"mcg",group:4,color:"#7C6CF0",dec:0},
+  {id:"vitb12",name:"Vitamin B12",short:"B12",unit:"mcg",group:4,color:"#7C6CF0",dec:1},
+  {id:"vitc",name:"Vitamin C",short:"C",unit:"mg",group:4,color:"#7C6CF0",dec:0},
+  {id:"vitd",name:"Vitamin D",short:"D",unit:"mcg",group:4,color:"#7C6CF0",dec:1},
+  {id:"vite",name:"Vitamin E",short:"E",unit:"mg",group:4,color:"#7C6CF0",dec:1},
+  {id:"vitk",name:"Vitamin K",short:"K",unit:"mcg",group:4,color:"#7C6CF0",dec:0},
+  {id:"choline",name:"Choline",short:"Chl",unit:"mg",group:5,color:"#5AC8B0",dec:0},
+  {id:"water",name:"Water",short:"H₂O",unit:"ml",group:5,color:"#32ADE6",dec:0},
+  {id:"caffeine",name:"Caffeine",short:"Caf",unit:"mg",group:5,color:"#5AC8B0",dec:0},
+  {id:"alcohol",name:"Alcohol",short:"Alc",unit:"g",group:5,color:"#5AC8B0",dec:1},
+  {id:"omega3",name:"Omega-3",short:"ω3",unit:"g",group:5,color:"#5AC8B0",dec:2},
+  {id:"omega6",name:"Omega-6",short:"ω6",unit:"g",group:5,color:"#5AC8B0",dec:2},
+];
+const NUT_BY_ID=Object.fromEntries(NUTRIENTS.map(n=>[n.id,n]));
+const DIET_MEALS=[{k:"breakfast",l:"Breakfast"},{k:"lunch",l:"Lunch"},{k:"dinner",l:"Dinner"},{k:"snacks",l:"Snacks"}];
+const DIET_DEFAULT_DASH=["calories","protein","carbs","fat","fiber","sodium"];
+const defDietTargets={calories:2200,protein:160,carbs:250,fat:70,fiber:30,sodium:2300,sugar:50,water:2500,potassium:3500,satfat:20};
+const DIET_RANGES=[{w:1,l:"1W"},{w:2,l:"2W"},{w:4,l:"4W"},{w:10,l:"10W"},{w:26,l:"26W"},{w:52,l:"52W"}];
+// Format a nutrient value for display using its decimals. Returns "" for null/undefined (NOT provided → distinct from 0).
+const nutFmt=(id,v)=>{if(v===null||v===undefined||v==="")return"";const n=NUT_BY_ID[id];const d=n?n.dec:0;const m=Math.pow(10,d);const r=Math.round((+v||0)*m)/m;return d>0?(+r).toLocaleString(undefined,{maximumFractionDigits:d}):Math.round(r).toLocaleString();};
+const nutUnit=id=>NUT_BY_ID[id]?NUT_BY_ID[id].unit:"";
+const nutName=id=>NUT_BY_ID[id]?NUT_BY_ID[id].name:id;
+const nutColor=id=>NUT_BY_ID[id]?NUT_BY_ID[id].color:"#32D583";
+// Resolve any library item (food OR recipe) into a flat per-serving form:
+// {id,kind,name,brand,servingGrams,servingLabel,nutr:{id:perServingValue}}. Recipes compute from raw ingredients.
+function resolveFood(item,lib){
+  if(!item)return null;
+  if(item.kind==="recipe"){
+    const servings=Math.max(1,+item.servings||1);
+    const byId={};(lib||[]).forEach(f=>{byId[f.id]=f;});
+    let rawGrams=0;const tot={};
+    (item.ingredients||[]).forEach(ing=>{
+      const f=byId[ing.foodId];if(!f||f.kind==="recipe")return; // ingredients are simple foods only (no double-count)
+      const g=+ing.grams||0;if(g<=0)return;rawGrams+=g;
+      const sg=+((f.serving||{}).grams)||0;if(sg<=0)return;
+      Object.keys(f.nutr||{}).forEach(k=>{const pv=f.nutr[k];if(pv===null||pv===undefined)return;tot[k]=(tot[k]||0)+pv/sg*g;});
+    });
+    const denom=(+item.cookedWeight>0)?+item.cookedWeight:rawGrams; // cooked weight sets serving proportions; nutrients come from raw
+    const servingGrams=servings>0?denom/servings:0;
+    const nutr={};Object.keys(tot).forEach(k=>{nutr[k]=Math.round(tot[k]/servings*1000)/1000;});
+    return{id:item.id,kind:"recipe",name:item.name,brand:item.brand||"",servingGrams:Math.round(servingGrams*10)/10,servingLabel:item.servingLabel||"serving",nutr};
+  }
+  return{id:item.id,kind:"food",name:item.name,brand:item.brand||"",servingGrams:+((item.serving||{}).grams)||0,servingLabel:(item.serving||{}).label||"serving",nutr:item.nutr||{}};
+}
+// Seed library — a handful of real foods + drinks so search/library/analytics aren't empty on first run.
+const DIET_SEED_FOODS=[
+  {id:"seed_chicken",kind:"food",name:"Chicken Breast (Skinless)",brand:"",category:"food",serving:{label:"80 g",grams:80},nutr:{calories:115,protein:22,carbs:0,fat:3,satfat:0.9,cholesterol:62,sodium:45,potassium:220,phosphorus:140},seeded:true},
+  {id:"seed_rice",kind:"food",name:"White Rice (cooked)",brand:"",category:"food",serving:{label:"1 cup",grams:158},nutr:{calories:205,protein:4,carbs:45,fat:0.4,fiber:0.6,sodium:2,magnesium:19},seeded:true},
+  {id:"seed_eggs",kind:"food",name:"Eggs (2 large)",brand:"",category:"food",serving:{label:"2 large",grams:100},nutr:{calories:143,protein:13,carbs:0.7,fat:10,satfat:3.1,cholesterol:372,choline:294,vitd:2,vitb12:0.9,sodium:142},seeded:true},
+  {id:"seed_yogurt",kind:"food",name:"Greek Yogurt (plain, nonfat)",brand:"",category:"food",serving:{label:"170 g",grams:170},nutr:{calories:100,protein:17,carbs:6,fat:0.7,sugar:6,calcium:187,potassium:240},seeded:true},
+  {id:"seed_banana",kind:"food",name:"Banana",brand:"",category:"food",serving:{label:"1 medium",grams:118},nutr:{calories:105,protein:1.3,carbs:27,fat:0.4,fiber:3.1,sugar:14,potassium:422,vitb6:0.4,vitc:10},seeded:true},
+  {id:"seed_almonds",kind:"food",name:"Almonds",brand:"",category:"food",serving:{label:"1 oz (28 g)",grams:28},nutr:{calories:164,protein:6,carbs:6,fat:14,satfat:1.1,monofat:8.6,fiber:3.5,magnesium:76,vite:7.3,calcium:76},seeded:true},
+  {id:"seed_oats",kind:"food",name:"Oats (dry)",brand:"",category:"food",serving:{label:"40 g",grams:40},nutr:{calories:150,protein:5,carbs:27,fat:3,fiber:4,iron:1.8,magnesium:56,zinc:1.5},seeded:true},
+  {id:"seed_oliveoil",kind:"food",name:"Olive Oil",brand:"",category:"food",serving:{label:"1 tbsp",grams:14},nutr:{calories:119,protein:0,carbs:0,fat:14,satfat:1.9,monofat:10,polyfat:1.4,vitk:8.1,vite:1.9},seeded:true},
+  {id:"seed_salmon",kind:"food",name:"Salmon (Atlantic)",brand:"",category:"food",serving:{label:"100 g",grams:100},nutr:{calories:208,protein:20,carbs:0,fat:13,satfat:3.1,omega3:2.3,cholesterol:55,vitd:11,vitb12:3.2,potassium:363},seeded:true},
+  {id:"seed_broccoli",kind:"food",name:"Broccoli (cooked)",brand:"",category:"food",serving:{label:"1 cup",grams:156},nutr:{calories:55,protein:4,carbs:11,fat:0.6,fiber:5,vitc:101,vitk:220,calcium:62,potassium:457,vitb9:168},seeded:true},
+  {id:"seed_water",kind:"food",name:"Water (16 oz)",brand:"",category:"drink",serving:{label:"16 fl oz",grams:473},nutr:{calories:0,water:473},seeded:true},
+  {id:"seed_coffee",kind:"food",name:"Black Coffee",brand:"",category:"drink",serving:{label:"1 cup",grams:237},nutr:{calories:2,caffeine:95,water:237,potassium:116},seeded:true},
+  {id:"seed_oj",kind:"food",name:"Orange Juice",brand:"",category:"drink",serving:{label:"1 cup",grams:248},nutr:{calories:112,protein:1.7,carbs:26,fat:0.5,sugar:21,vitc:124,water:218,potassium:496},seeded:true},
+];
+
 // Circular progress ring (SVG). Center content passed as children.
 function Ring({value,goal,size=120,stroke=12,color,children}){
   const r=(size-stroke)/2,c=2*Math.PI*r,pct=goal>0?Math.max(0,Math.min(1,value/goal)):0;
@@ -1014,6 +1115,7 @@ const MUSCLE_LABELS={chest:"Chest",frontDelts:"Front Delts",sideDelts:"Side Delt
 const DumbbellIcon=({size=20,color="currentColor"})=>(<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/></svg>);
 
 const Icons={
+  diet:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>,
   today:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>,
   groups:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   analytics:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
@@ -1176,6 +1278,27 @@ export default function Dashboard(){
   const[dietSub,setDietSub]=useState("today"); // today (log) | trends (analytics)
   const[showFoodDB,setShowFoodDB]=useState(false); // Food Database drawer (was its own tab)
   const[showDietGoals,setShowDietGoals]=useState(false);
+  // ─── DIET v2 (top-level Diet tab): clean FoodNoms-style system, separate from the legacy Health→Diet data ───
+  const[foodLib,setFoodLib]=useState(DIET_SEED_FOODS);      // reusable foods + recipes (the library)
+  const[dietLog,setDietLog]=useState([]);                    // food-log entries: {id,date,meal,srcId,srcKind,name,brand,servingLabel,servingGrams,qty,nutr(SNAPSHOT per serving),t}
+  const[dietTargets,setDietTargets]=useState(defDietTargets);// per-day nutritional targets {id:number}
+  const[dietDashVars,setDietDashVars]=useState(DIET_DEFAULT_DASH); // which metric boxes show on Today
+  const[dietAnalyticsVars,setDietAnalyticsVars]=useState(["calories","protein","carbs","fiber"]); // up to 4 avg cards
+  const[dietAnalyticsRange,setDietAnalyticsRange]=useState(4); // weeks: 1|2|4|10|26|52
+  const[dietTrendVar,setDietTrendVar]=useState("calories");  // variable shown in the Analytics trend chart
+  const[dietPane,setDietPane]=useState("today");             // today | analytics
+  // Diet UI state
+  const[libModal,setLibModal]=useState(null);   // {meal} food-library sheet (meal may be null when opened from Analytics)
+  const[libBottom,setLibBottom]=useState("add");// add | library | drinks
+  const[libSearch,setLibSearch]=useState("");
+  const[logDetail,setLogDetail]=useState(null);  // {resolved,meal,editId?} serving/qty chooser
+  const[foodEditor,setFoodEditor]=useState(null);// {mode:"food"|"recipe",draft}
+  const[dietVarPicker,setDietVarPicker]=useState(false);
+  const[dietVarSearch,setDietVarSearch]=useState("");
+  const[anCardCfg,setAnCardCfg]=useState(null);  // index of analytics card being configured, or "new"
+  const[showDietTargets,setShowDietTargets]=useState(false);
+  const[dietTrendPick,setDietTrendPick]=useState(false);
+  const[dietConfirm,setDietConfirm]=useState(null); // {msg,label,onYes}
   const[dietAdd,setDietAdd]=useState({name:"",grams:"",calories:"",protein:"",carbs:"",fat:"",unit:"g",servings:"",servingSize:"",servingLabel:"serving"}); // quick-add buffer
   // ─── HEALTH: Progress filters ───
   const[strExSel,setStrExSel]=useState(null); // null = all exercises; otherwise array of names
@@ -2356,6 +2479,7 @@ ${body}
       if(d.reflectDismissed)setReflectDismissed(d.reflectDismissed);if(d.reviewDismissed)setReviewDismissed(d.reviewDismissed);if(d.launchDismissed)setLaunchDismissed(d.launchDismissed);if(d.eveningClosed)setEveningClosed(d.eveningClosed);if(d.intentionPromptDismissed)setIntentionPromptDismissed(d.intentionPromptDismissed);
       if(d.completionLog)setCompletionLog(d.completionLog);if(d.activeSession)setActiveSession(d.activeSession);
       if(d.diet)setDiet(d.diet);if(d.dietGoals)setDietGoals({...defDietGoals,...d.dietGoals});if(d.foodDB)setFoodDB(d.foodDB);if(d.favFoods)setFavFoods(d.favFoods);if(d.meals)setMeals(d.meals);
+      if(d.foodLib)setFoodLib(d.foodLib);if(d.dietLog)setDietLog(d.dietLog);if(d.dietTargets)setDietTargets({...defDietTargets,...d.dietTargets});if(d.dietDashVars)setDietDashVars(d.dietDashVars);if(d.dietAnalyticsVars)setDietAnalyticsVars(d.dietAnalyticsVars);if(typeof d.dietAnalyticsRange==="number")setDietAnalyticsRange(d.dietAnalyticsRange);if(d.dietTrendVar)setDietTrendVar(d.dietTrendVar);
       if(d.aspirations)setAspirations(d.aspirations);
       if(d.videoJournal)setVideoJournal(d.videoJournal);if(d.writtenJournal)setWrittenJournal(d.writtenJournal);
       if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",credit:"",...d.accounts});
@@ -2435,10 +2559,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -2549,6 +2673,37 @@ ${body}
   const sessionElapsed=activeSession?Math.floor((Date.now()-activeSession.startTime)/1000):0;
 
   /* ─── HEALTH: Diet helpers ─── */
+  /* ═══ DIET v2 helpers ═══ */
+  // Nutrient badge (consistent circular identity used everywhere).
+  const nutBadge=(id,size)=>{const s=size||30;const n=NUT_BY_ID[id];return(<span style={{width:s,height:s,borderRadius:8,flexShrink:0,background:(n?n.color:C.accent)+"26",color:n?n.color:C.accent,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:s<=24?9:10.5,fontWeight:800,fontFamily:FN.b,letterSpacing:"-0.02em"}}>{n?n.short:"?"}</span>);};
+  const dietInp={width:"100%",boxSizing:"border-box",background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:10,padding:"11px 12px",color:C.text,fontSize:14,fontFamily:FN.b,outline:"none"};
+  // contribution of ONE log entry to a nutrient = snapshot per-serving value × quantity
+  const entryTotal=(e,id)=>{const v=e.nutr&&e.nutr[id];return(v===null||v===undefined?0:v)*(+e.qty||0);};
+  // entries for the currently-selected date, grouped by meal
+  const dietDayByMeal=useMemo(()=>{const m={breakfast:[],lunch:[],dinner:[],snacks:[]};dietLog.forEach(e=>{if(e.date===dietDate&&m[e.meal])m[e.meal].push(e);});Object.values(m).forEach(a=>a.sort((x,y)=>(x.t||0)-(y.t||0)));return m;},[dietLog,dietDate]);
+  // daily totals for the selected date (only nutrients actually recorded contribute)
+  const dietDayTotals=useMemo(()=>{const t={};dietLog.forEach(e=>{if(e.date!==dietDate)return;Object.keys(e.nutr||{}).forEach(k=>{const v=e.nutr[k];if(v===null||v===undefined)return;t[k]=(t[k]||0)+v*(+e.qty||0);});});return t;},[dietLog,dietDate]);
+  // library mutations
+  const dietSaveFood=(item)=>setFoodLib(prev=>{const i=prev.findIndex(f=>f.id===item.id);if(i<0)return[...prev,item];const c=[...prev];c[i]={...item,updatedAt:Date.now()};return c;});
+  const dietDeleteFood=(id)=>setFoodLib(prev=>prev.filter(f=>f.id!==id));
+  // logging (snapshots nutrients at log time so later edits to the library don't rewrite history)
+  const dietLogFood=(resolved,meal,qty)=>{const q=+qty||1;const entry={id:uid(),date:dietDate,meal,srcId:resolved.id||null,srcKind:resolved.kind||"food",name:resolved.name,brand:resolved.brand||"",servingLabel:resolved.servingLabel,servingGrams:resolved.servingGrams,qty:q,nutr:{...resolved.nutr},t:Date.now()};setDietLog(prev=>[...prev,entry]);};
+  const dietUpdEntry=(id,patch)=>setDietLog(prev=>prev.map(e=>e.id===id?{...e,...patch}:e));
+  const dietDelEntry=(id)=>setDietLog(prev=>prev.filter(e=>e.id!==id));
+  const dietLogWater=(ml,meal)=>{const entry={id:uid(),date:dietDate,meal:meal||"snacks",srcId:null,srcKind:"water",name:"Water",brand:"",servingLabel:ml+" ml",servingGrams:ml,qty:1,nutr:{water:ml},t:Date.now()};setDietLog(prev=>[...prev,entry]);};
+  // recent + search over the library
+  const dietRecentFoods=useMemo(()=>{const seen=new Set(),out=[];[...dietLog].sort((a,b)=>(b.t||0)-(a.t||0)).forEach(e=>{if(e.srcId&&!seen.has(e.srcId)){seen.add(e.srcId);const f=foodLib.find(x=>x.id===e.srcId);if(f)out.push(f);}});return out.slice(0,8);},[dietLog,foodLib]);
+  const dietLibMatches=useMemo(()=>{const q=libSearch.trim().toLowerCase();let list=foodLib;if(libBottom==="drinks")list=foodLib.filter(f=>f.category==="drink");if(!q)return list;return list.filter(f=>f.name.toLowerCase().includes(q)||(f.brand||"").toLowerCase().includes(q));},[foodLib,libSearch,libBottom]);
+  // ── Analytics: day-key range ending today (no future), per-day totals, averages over days ACTUALLY recorded ──
+  const dietRangeKeys=useMemo(()=>{const n=dietAnalyticsRange*7;const arr=[];const base=new Date();base.setHours(0,0,0,0);for(let i=0;i<n;i++){const d=new Date(base);d.setDate(d.getDate()-i);arr.push(dk(d));}return arr;},[dietAnalyticsRange]);
+  const dietRangeData=useMemo(()=>{const keySet=new Set(dietRangeKeys);const byDay={};dietLog.forEach(e=>{if(!keySet.has(e.date))return;const day=byDay[e.date]||(byDay[e.date]={});Object.keys(e.nutr||{}).forEach(k=>{const v=e.nutr[k];if(v===null||v===undefined)return;day[k]=(day[k]||0)+v*(+e.qty||0);});});return byDay;},[dietLog,dietRangeKeys]);
+  const dietLoggedDays=useMemo(()=>Object.keys(dietRangeData).length,[dietRangeData]);
+  const dietAvg=(id)=>{const vals=Object.values(dietRangeData).filter(d=>d[id]!==undefined);if(!vals.length)return{avg:null,n:0};return{avg:vals.reduce((s,d)=>s+d[id],0)/vals.length,n:vals.length};};
+  const dietTrendSeries=useMemo(()=>{const keys=[...dietRangeKeys].reverse();return keys.map(k=>{const d=dietRangeData[k];const v=d&&d[dietTrendVar]!==undefined?d[dietTrendVar]:null;const dt=pd(k);return{day:`${dt.getMonth()+1}/${dt.getDate()}`,date:k,v:v===null?null:Math.round(v*10)/10};});},[dietRangeKeys,dietRangeData,dietTrendVar]);
+  const dietTrendMax=useMemo(()=>{let mx=0;dietTrendSeries.forEach(p=>{if(p.v!==null&&p.v>mx)mx=p.v;});const tg=dietTargets[dietTrendVar];if(tg>mx)mx=tg;return mx;},[dietTrendSeries,dietTargets,dietTrendVar]);
+  // Build editor drafts (strings for inputs; blank = not provided).
+  const makeFoodDraft=(f)=>{const nutr={};if(f&&f.nutr)Object.keys(f.nutr).forEach(k=>{nutr[k]=String(f.nutr[k]);});return{mode:"food",id:f?f.id:null,name:f?f.name:"",brand:f?(f.brand||""):"",category:f?(f.category||"food"):"food",serving:{label:f?((f.serving||{}).label||""):"",grams:f?String((f.serving||{}).grams||""):""},nutr,expand:{0:true},createdAt:f?f.createdAt:null};};
+  const makeRecipeDraft=(f)=>({mode:"recipe",id:f?f.id:null,name:f?f.name:"",brand:f?(f.brand||""):"",ingredients:f&&f.ingredients?f.ingredients.map(i=>({foodId:i.foodId,grams:String(i.grams)})):[{foodId:"",grams:""}],servings:f?String(f.servings||1):"1",cookedWeight:f&&f.cookedWeight?String(f.cookedWeight):"",servingLabel:f?(f.servingLabel||"serving"):"serving",createdAt:f?f.createdAt:null});
   const dietDay=diet[dietDate]||{calories:0,protein:0,carbs:0,fat:0,water:0};
   const setDietMetric=(key,val)=>setDiet(p=>({...p,[dietDate]:{calories:0,protein:0,carbs:0,fat:0,water:0,...(p[dietDate]||{}),[key]:Math.max(0,val)}}));
   const addDietMetric=(key,delta)=>setDietMetric(key,(dietDay[key]||0)+delta);
@@ -3487,7 +3642,7 @@ ${body}
   const deleteGoalEdit=()=>{if(!editGoal)return;const{kind,goal}=editGoal;if(kind==="weekly")setWGoals(p=>p.filter(g=>g.id!==goal.id));else removeGoal(goal.id);setEditGoal(null);};
 
   /* ─── Footer page navigation with swipe ─── */
-  const pageOrder=["today","groups","analytics","goals","career","workout","budget"];
+  const pageOrder=["today","groups","analytics","goals","career","diet","workout","budget"];
   const curPage=menuTab||tab||"today";
   const goPage=(key)=>{
     const from=pageOrder.indexOf(curPage),to=pageOrder.indexOf(key);
@@ -3895,7 +4050,7 @@ ${body}
     </div>);
   };
 
-  const mainTabs=[{k:"today",l:"Today",i:Icons.today},{k:"groups",l:"Journal",i:Icons.journal},{k:"analytics",l:"Analytics",i:Icons.analytics},{k:"goals",l:"Goals",i:Icons.goals},{k:"career",l:"Career",i:Icons.career},{k:"workout",l:"Health",i:Icons.workout},{k:"budget",l:"Budget",i:Icons.budget}];
+  const mainTabs=[{k:"today",l:"Today",i:Icons.today},{k:"groups",l:"Journal",i:Icons.journal},{k:"analytics",l:"Analytics",i:Icons.analytics},{k:"goals",l:"Goals",i:Icons.goals},{k:"career",l:"Career",i:Icons.career},{k:"diet",l:"Diet",i:Icons.diet},{k:"workout",l:"Health",i:Icons.workout},{k:"budget",l:"Budget",i:Icons.budget}];
 
   /* ─── Analytics: on-graph value labels (declutters automatically on longer ranges) ─── */
   const anLabel=(count,unit,color)=>(props)=>{const {x,y,value,index}=props;if(value==null||x==null||y==null)return null;const step=count<=8?1:count<=16?2:count<=31?3:Math.ceil(count/9);if(index%step!==0&&index!==count-1)return null;return <text x={x} y={y-7} textAnchor="middle" fontSize={9} fontWeight={700} fill={color}>{value}{unit||""}</text>;};
@@ -5801,6 +5956,398 @@ ${body}
           })()}
         </Overlay>
 
+        {tab==="diet"&&<div className="tab-content">
+          {/* ═══ DIET HEADER ═══ */}
+          <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:14}}>
+            <div style={{fontSize:23,fontWeight:800,fontFamily:FN.h,color:C.text,letterSpacing:"-0.01em"}}>Diet</div>
+            <div style={{display:"flex",gap:8}}>
+              <button className="press" title="Food Library" onClick={()=>{setLibModal({meal:null});setLibBottom("library");setLibSearch("");}} style={{width:38,height:38,borderRadius:10,background:C.surface,border:`1px solid ${C.hairline}`,color:C.accent,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              </button>
+            </div>
+          </div>
+          {/* internal Today / Analytics tabs */}
+          <div style={{display:"flex",gap:8,marginBottom:18,background:C.surfaceDim,borderRadius:12,padding:4,border:`1px solid ${C.hairline}`}}>
+            {[{k:"today",l:"Today"},{k:"analytics",l:"Analytics"}].map(p=>{const on=dietPane===p.k;return(<button key={p.k} onClick={()=>setDietPane(p.k)} className="press" style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer",textTransform:"uppercase",letterSpacing:"0.05em",transition:"all 0.2s ease"}}>{p.l}</button>);})}
+          </div>
+
+          {/* ══════════════ TODAY PANE ══════════════ */}
+          {dietPane==="today"&&(()=>{
+            const today=dk(new Date());const isToday=dietDate===today;const sel=pd(dietDate);
+            const stepDay=(delta)=>{const d=pd(dietDate);d.setDate(d.getDate()+delta);const nk=dk(d);if(nk>today)return;setDietDate(nk);};
+            const days=[];{const base=new Date();base.setHours(0,0,0,0);for(let i=59;i>=0;i--){const d=new Date(base);d.setDate(d.getDate()-i);days.push(d);}}
+            const WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+            return(<div key="d-today" className="d-pane">
+              {/* date header + chevrons */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                <button className="press" onClick={()=>stepDay(-1)} style={{background:"transparent",border:"none",color:C.textSec,fontSize:24,lineHeight:1,cursor:"pointer",padding:"0 6px"}}>‹</button>
+                <div style={{textAlign:"center"}}>
+                  <div style={{fontSize:14.5,fontWeight:800,color:C.text,fontFamily:FN.h}}>{isToday?"Today":sel.toLocaleDateString(undefined,{weekday:"long"})}</div>
+                  <div style={{fontSize:11,color:C.textDim,fontWeight:600,fontFamily:FN.m}}>{sel.toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}</div>
+                </div>
+                <button className="press" onClick={()=>stepDay(1)} disabled={isToday} style={{background:"transparent",border:"none",color:isToday?C.hairline:C.textSec,fontSize:24,lineHeight:1,cursor:isToday?"default":"pointer",padding:"0 6px"}}>›</button>
+              </div>
+              {/* scrollable day strip */}
+              <div ref={el=>{if(el&&!el._diInit){el._diInit=1;el.scrollLeft=el.scrollWidth;}}} className="hide-scroll" style={{display:"flex",gap:5,overflowX:"auto",padding:"2px 0 10px"}}>
+                {days.map(d=>{const kk=dk(d);const on=kk===dietDate;const td=kk===today;return(
+                  <button key={kk} onClick={()=>setDietDate(kk)} className="press" style={{flex:"0 0 auto",width:44,padding:"7px 0",borderRadius:11,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:C.surface,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                    <span style={{fontSize:9,fontWeight:700,color:on?C.btnText:C.textDim,fontFamily:FN.b,textTransform:"uppercase"}}>{WD[d.getDay()]}</span>
+                    <span style={{fontSize:15,fontWeight:800,color:on?C.btnText:C.text,fontFamily:FN.h,lineHeight:1}}>{d.getDate()}</span>
+                    <span style={{width:4,height:4,borderRadius:"50%",background:td?(on?C.btnText:C.accent):"transparent"}}/>
+                  </button>);})}
+              </div>
+
+              {/* ── nutrition dashboard (horizontal scroll) ── */}
+              <div className="hide-scroll" style={{display:"flex",gap:10,overflowX:"auto",padding:"2px 0 4px",marginBottom:16}}>
+                {dietDashVars.length===0&&<div style={{flex:1,padding:"20px 16px",textAlign:"center",color:C.textDim,fontSize:12,border:`1px dashed ${C.hairline}`,borderRadius:14}}>No metrics selected — tap the gear to choose what to track.</div>}
+                {dietDashVars.map(id=>{const n=NUT_BY_ID[id];if(!n)return null;const cons=dietDayTotals[id]||0;const tgt=dietTargets[id];const has=tgt>0;const pct=has?Math.min(100,Math.round(cons/tgt*100)):0;const left=has?tgt-cons:0;return(
+                  <div key={id} style={{flex:"0 0 auto",width:152,background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:15,padding:"13px 14px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:9}}>{nutBadge(id,24)}<span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:FN.b,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{n.name}</span></div>
+                    <div style={{display:"flex",alignItems:"baseline",gap:4,marginBottom:3}}><span style={{fontSize:22,fontWeight:800,color:n.color,fontFamily:FN.h,lineHeight:1}}>{nutFmt(id,cons)||"0"}</span><span style={{fontSize:10,color:C.textDim,fontWeight:700}}>{n.unit}</span></div>
+                    {has?<>
+                      <div style={{fontSize:9.5,color:C.textDim,fontWeight:600,marginBottom:7,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{left>=0?`${nutFmt(id,left)} ${n.unit} left`:`${nutFmt(id,-left)} over`} · {pct}%</div>
+                      <div style={{height:4,borderRadius:3,background:C.surfaceDim,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:n.color,borderRadius:3,transition:"width 0.3s ease"}}/></div>
+                    </>:<div style={{fontSize:9.5,color:C.textDim,fontWeight:600,marginTop:4}}>No target</div>}
+                  </div>);})}
+                <button className="press" onClick={()=>{setDietVarPicker(true);setDietVarSearch("");}} title="Customize metrics" style={{flex:"0 0 auto",width:52,background:C.surfaceDim,border:`1px dashed ${C.hairline}`,borderRadius:15,color:C.textDim,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4}}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
+              </div>
+
+              {/* ── meal sections ── */}
+              {DIET_MEALS.map(m=>{const items=dietDayByMeal[m.k];const mcal=items.reduce((s,e)=>s+entryTotal(e,"calories"),0);return(
+                <div key={m.k} style={{marginBottom:12,background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:15,overflow:"hidden"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 15px 10px"}}>
+                    <span style={{fontSize:15.5,fontWeight:800,color:C.text,fontFamily:FN.h}}>{m.l}</span>
+                    {mcal>0&&<span style={{fontSize:11,color:C.textDim,fontWeight:700,fontFamily:FN.m}}>{Math.round(mcal)} kcal</span>}
+                  </div>
+                  {items.map(e=>{const grams=Math.round((e.servingGrams||0)*(+e.qty||0));return(
+                    <div key={e.id} onClick={()=>setLogDetail({resolved:{id:e.srcId,kind:e.srcKind,name:e.name,brand:e.brand,servingGrams:e.servingGrams,servingLabel:e.servingLabel,nutr:e.nutr},meal:e.meal,editId:e.id,qty:e.qty})} className="press" style={{display:"flex",alignItems:"center",gap:10,padding:"10px 15px",borderTop:`1px solid ${C.hairline}`,cursor:"pointer"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13.5,fontWeight:600,color:C.text,fontFamily:FN.b,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.name}{e.brand?<span style={{color:C.textDim,fontWeight:500}}> · {e.brand}</span>:null}</div>
+                        <div style={{fontSize:10.5,color:C.textDim,fontWeight:600,fontFamily:FN.m,marginTop:2}}>{(+e.qty||0)===1?"1 serving":`${(+e.qty||0)} × ${e.servingLabel}`}{grams>0?` · ${grams} g`:""}</div>
+                      </div>
+                      <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+                        <span style={{fontSize:13,fontWeight:800,color:NUT_BY_ID.calories.color,fontFamily:FN.h}}>{Math.round(entryTotal(e,"calories"))}</span>
+                        <span style={{fontSize:9,color:C.textDim,fontWeight:700}}>kcal</span>
+                        <button onClick={ev=>{ev.stopPropagation();dietDelEntry(e.id);}} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",fontSize:16,padding:"0 2px",lineHeight:1}}>×</button>
+                      </div>
+                    </div>);})}
+                  <button className="press" onClick={()=>{setLibModal({meal:m.k});setLibBottom("add");setLibSearch("");}} style={{display:"flex",alignItems:"center",gap:7,width:"100%",padding:"11px 15px",background:"transparent",border:"none",borderTop:`1px solid ${C.hairline}`,color:C.accent,fontSize:12.5,fontWeight:700,fontFamily:FN.b,cursor:"pointer"}}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg> Add Food
+                  </button>
+                </div>);})}
+            </div>);})()}
+
+          {/* ══════════════ ANALYTICS PANE ══════════════ */}
+          {dietPane==="analytics"&&(()=>{
+            const rangeL=DIET_RANGES.find(r=>r.w===dietAnalyticsRange);const first=pd(dietRangeKeys[dietRangeKeys.length-1]),last=pd(dietRangeKeys[0]);
+            const fmtShort=d=>d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
+            return(<div key="d-an" className="d-pane">
+              {/* range selector */}
+              <div className="hide-scroll" style={{display:"flex",gap:7,overflowX:"auto",marginBottom:10,paddingBottom:2}}>
+                {DIET_RANGES.map(r=>{const on=r.w===dietAnalyticsRange;return(<button key={r.w} onClick={()=>setDietAnalyticsRange(r.w)} className="press" style={{flex:"0 0 auto",padding:"8px 15px",borderRadius:20,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:11.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{r.l}</button>);})}
+              </div>
+              <div style={{fontSize:10.5,color:C.textDim,fontWeight:600,fontFamily:FN.m,marginBottom:16}}>{fmtShort(first)} – {fmtShort(last)} · averages from {dietLoggedDays} logged {dietLoggedDays===1?"day":"days"}</div>
+
+              {/* up to 4 avg metric cards */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
+                {dietAnalyticsVars.map((id,i)=>{const n=NUT_BY_ID[id];if(!n)return null;const{avg,n:nd}=dietAvg(id);const tgt=dietTargets[id];return(
+                  <div key={i} onClick={()=>setAnCardCfg(i)} className="press" style={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:15,padding:"14px 15px",cursor:"pointer",position:"relative"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10}}>{nutBadge(id,22)}<span style={{fontSize:11,fontWeight:700,color:C.textSec,fontFamily:FN.b,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{n.name}</span></div>
+                    <div style={{display:"flex",alignItems:"baseline",gap:4}}><span style={{fontSize:25,fontWeight:800,color:C.text,fontFamily:FN.h,lineHeight:1}}>{avg===null?"—":nutFmt(id,avg)}</span><span style={{fontSize:11,color:C.textDim,fontWeight:700}}>{n.unit}</span></div>
+                    <div style={{fontSize:9.5,color:C.textDim,fontWeight:600,marginTop:6}}>avg/day · {nd} {nd===1?"day":"days"}{tgt>0&&avg!==null?` · goal ${nutFmt(id,tgt)}`:""}</div>
+                  </div>);})}
+                {dietAnalyticsVars.length<4&&<button onClick={()=>setAnCardCfg("new")} className="press" style={{background:C.surfaceDim,border:`1px dashed ${C.hairline}`,borderRadius:15,padding:"14px 15px",color:C.textDim,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:FN.b,minHeight:92,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>+ Add metric</button>}
+              </div>
+
+              {/* trend chart */}
+              <div style={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:15,padding:"15px 14px 10px",marginBottom:18}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:12.5,fontWeight:800,color:C.text,fontFamily:FN.b}}>Daily Trend</span>
+                  <button onClick={()=>setDietTrendPick(true)} className="press" style={{display:"flex",alignItems:"center",gap:6,background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:9,padding:"6px 10px",cursor:"pointer"}}>{nutBadge(dietTrendVar,18)}<span style={{fontSize:11.5,fontWeight:700,color:C.text,fontFamily:FN.b}}>{nutName(dietTrendVar)}</span><span style={{color:C.textDim,fontSize:10}}>▾</span></button>
+                </div>
+                <div style={{fontSize:10,color:C.textDim,fontWeight:600,marginBottom:10}}>{nutUnit(dietTrendVar)} per day</div>
+                <ResponsiveContainer width="100%" height={190}>
+                  <LineChart data={dietTrendSeries} margin={{top:8,right:8,left:-14,bottom:0}}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={C.hairline} vertical={false}/>
+                    <XAxis dataKey="day" tick={{fontSize:9,fill:C.textDim}} interval={Math.max(0,Math.floor(dietTrendSeries.length/7))} axisLine={{stroke:C.hairline}} tickLine={false}/>
+                    <YAxis domain={[0,Math.ceil((dietTrendMax||10)*1.15)]} tick={{fontSize:9,fill:C.textDim}} axisLine={false} tickLine={false} width={38}/>
+                    <Tooltip contentStyle={{background:C.surfaceHi,border:`1px solid ${C.hairline}`,borderRadius:10,fontSize:11,color:C.text}} labelStyle={{color:C.textDim}} formatter={v=>[`${nutFmt(dietTrendVar,v)} ${nutUnit(dietTrendVar)}`,nutName(dietTrendVar)]}/>
+                    {dietTargets[dietTrendVar]>0&&<ReferenceLine y={dietTargets[dietTrendVar]} stroke={C.accent} strokeDasharray="4 4" strokeOpacity={0.7}/>}
+                    <Line type="monotone" dataKey="v" stroke={nutColor(dietTrendVar)} strokeWidth={2.4} dot={{r:2.5,fill:nutColor(dietTrendVar)}} activeDot={{r:5}} connectNulls={false}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* progress toward targets */}
+              {(()=>{const rows=dietDashVars.filter(id=>dietTargets[id]>0);if(!rows.length)return null;return(
+                <div style={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:15,padding:"15px 15px 7px",marginBottom:18}}>
+                  <div style={{fontSize:12.5,fontWeight:800,color:C.text,fontFamily:FN.b,marginBottom:12}}>Average vs Target</div>
+                  {rows.map(id=>{const n=NUT_BY_ID[id];const{avg}=dietAvg(id);const tgt=dietTargets[id];const pct=avg===null?0:Math.min(100,Math.round(avg/tgt*100));return(
+                    <div key={id} style={{marginBottom:11}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:11,fontWeight:700,color:C.textSec,fontFamily:FN.b}}>{n.name}</span><span style={{fontSize:10.5,fontWeight:700,color:C.textDim,fontFamily:FN.m}}>{avg===null?"—":nutFmt(id,avg)} / {nutFmt(id,tgt)} {n.unit}</span></div>
+                      <div style={{height:5,borderRadius:3,background:C.surfaceDim,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:n.color,borderRadius:3}}/></div>
+                    </div>);})}
+                </div>);})()}
+
+              <button className="press" onClick={()=>{setLibModal({meal:null});setLibBottom("library");setLibSearch("");}} style={{...btnG,width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:6}}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> Open Food Library
+              </button>
+              <button className="press" onClick={()=>setShowDietTargets(true)} style={{...btnG,width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Edit Daily Targets</button>
+            </div>);})()}
+
+          {/* ═══════════ FOOD LIBRARY SHEET ═══════════ */}
+          {libModal&&(()=>{const meal=libModal.meal;const mealL=meal?(DIET_MEALS.find(x=>x.k===meal)||{}).l:"Food Library";
+            const openLog=f=>{const r=resolveFood(f,foodLib);if(meal)setLogDetail({resolved:r,meal,qty:1});else setFoodEditor(f.kind==="recipe"?makeRecipeDraft(f):makeFoodDraft(f));};
+            const waters=[{l:"8 oz",ml:237},{l:"12 oz",ml:355},{l:"16 oz",ml:473},{l:"24 oz",ml:710}];
+            return(<div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setLibModal(null)}>
+              <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.72)",backdropFilter:"blur(8px)"}}/>
+              <div onClick={e=>e.stopPropagation()} className="d-sheet" style={{position:"relative",background:C.bg,width:"100%",maxWidth:560,height:"90vh",borderTopLeftRadius:22,borderTopRightRadius:22,border:`1px solid ${C.hairline}`,borderBottom:"none",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+                {/* header */}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px 12px"}}>
+                  <span style={{fontSize:16,fontWeight:800,color:C.text,fontFamily:FN.h}}>{meal?`Log ${mealL}`:"Food Library"}</span>
+                  <button className="press" onClick={()=>setLibModal(null)} style={{background:"transparent",border:"none",color:C.accent,fontSize:14,fontWeight:700,fontFamily:FN.b,cursor:"pointer"}}>Cancel</button>
+                </div>
+                {/* search */}
+                <div style={{padding:"0 18px 12px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:9,background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:11,padding:"11px 13px"}}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    <input value={libSearch} onChange={e=>setLibSearch(e.target.value)} placeholder="Search for any food or brand" style={{flex:1,background:"transparent",border:"none",outline:"none",color:C.text,fontSize:14,fontFamily:FN.b}}/>
+                    {libSearch&&<button onClick={()=>setLibSearch("")} style={{background:"transparent",border:"none",color:C.textDim,fontSize:16,cursor:"pointer"}}>×</button>}
+                  </div>
+                </div>
+                {/* body */}
+                <div className="hide-scroll" style={{flex:1,overflowY:"auto",padding:"0 18px 16px"}}>
+                  {libBottom==="drinks"&&<div style={{marginBottom:16}}>
+                    <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",margin:"6px 0 10px"}}>Quick Water</div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{waters.map(w=>(<button key={w.ml} className="press" onClick={()=>{dietLogWater(w.ml,meal);setLibModal(null);}} style={{flex:"1 0 40%",padding:"13px 0",borderRadius:12,border:`1px solid ${C.hairline}`,background:C.surface,color:C.text,fontSize:13,fontWeight:700,fontFamily:FN.b,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}><span style={{color:NUT_BY_ID.water.color,fontSize:15,fontWeight:800}}>{w.l}</span><span style={{fontSize:9.5,color:C.textDim}}>{w.ml} ml</span></button>))}</div>
+                    <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",margin:"18px 0 10px"}}>Beverages</div>
+                  </div>}
+                  {libBottom!=="drinks"&&!libSearch&&dietRecentFoods.length>0&&<div style={{marginBottom:18}}>
+                    <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",margin:"6px 0 10px"}}>Recent</div>
+                    <div className="hide-scroll" style={{display:"flex",gap:9,overflowX:"auto",paddingBottom:2}}>{dietRecentFoods.map(f=>(<button key={f.id} className="press" onClick={()=>openLog(f)} style={{flex:"0 0 auto",width:84,padding:"12px 8px",borderRadius:13,border:`1px solid ${C.hairline}`,background:C.surface,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:7}}><span style={{width:34,height:34,borderRadius:"50%",background:C.accentSoft,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{f.category==="drink"?<><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></>:<><path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 0 0 2-2V2M5 2v20M19 2v20M13 11V2a4 4 0 0 1 4 4v5a4 4 0 0 1-4 0Z"/></>}</svg></span><span style={{fontSize:10,fontWeight:600,color:C.text,fontFamily:FN.b,textAlign:"center",lineHeight:1.2,maxHeight:24,overflow:"hidden"}}>{f.name.length>16?f.name.slice(0,15)+"…":f.name}</span></button>))}</div>
+                  </div>}
+                  <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",margin:"6px 0 10px"}}>{libSearch?"Results":libBottom==="library"?"All Foods & Recipes":libBottom==="drinks"?"":"Suggestions"}</div>
+                  {dietLibMatches.length===0&&<div style={{textAlign:"center",color:C.textDim,fontSize:12.5,padding:"26px 10px"}}>{libSearch?`No matches for “${libSearch}”.`:"Nothing here yet."}<div style={{marginTop:12}}><button className="press" onClick={()=>setFoodEditor(makeFoodDraft())} style={{...btnB,fontSize:12,padding:"10px 18px"}}>+ Create a food</button></div></div>}
+                  {dietLibMatches.map(f=>{const r=resolveFood(f,foodLib);const cal=Math.round((r.nutr.calories||0));return(
+                    <div key={f.id} style={{display:"flex",alignItems:"center",gap:11,padding:"11px 2px",borderBottom:`1px solid ${C.hairline}`}}>
+                      <div onClick={()=>openLog(f)} className="press" style={{flex:1,minWidth:0,cursor:"pointer"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:13.5,fontWeight:600,color:C.text,fontFamily:FN.b,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name}</span>{f.kind==="recipe"&&<span style={{fontSize:8.5,fontWeight:800,color:C.purple,background:C.purpleSoft,borderRadius:5,padding:"2px 5px",textTransform:"uppercase"}}>Recipe</span>}</div>
+                        <div style={{fontSize:10.5,color:C.textDim,fontWeight:600,fontFamily:FN.m,marginTop:2}}>{r.servingLabel}{r.servingGrams?` · ${Math.round(r.servingGrams)} g`:""}{f.brand?` · ${f.brand}`:""}</div>
+                        <div style={{display:"flex",gap:10,marginTop:5}}>{["calories","carbs","fat","protein"].map(k=>{const v=r.nutr[k];if(v===null||v===undefined)return null;return(<span key={k} style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:10,fontWeight:700,color:C.textSec,fontFamily:FN.m}}><span style={{width:6,height:6,borderRadius:"50%",background:NUT_BY_ID[k].color}}/>{nutFmt(k,v)}{k==="calories"?"":"g"}</span>);})}</div>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
+                        <button className="press" onClick={()=>setFoodEditor(f.kind==="recipe"?makeRecipeDraft(f):makeFoodDraft(f))} title="Edit" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",padding:2}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                        {!f.seeded&&<button className="press" onClick={()=>setDietConfirm({msg:`Delete “${f.name}” from your library? Past log entries keep their data.`,label:"Delete",onYes:()=>dietDeleteFood(f.id)})} title="Delete" style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",padding:2,opacity:0.8}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>}
+                      </div>
+                    </div>);})}
+                </div>
+                {/* bottom bar */}
+                <div style={{display:"flex",borderTop:`1px solid ${C.hairline}`,background:C.surface}}>
+                  {[{k:"create",l:"Create",ic:<path d="M12 5v14M5 12h14"/>},{k:"library",l:"Library",ic:<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></>},{k:"drinks",l:"Drinks",ic:<><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4Z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></>}].map(b=>{const active=b.k!=="create"&&libBottom===b.k;return(
+                    <button key={b.k} className="press" onClick={()=>{if(b.k==="create")setFoodEditor(makeFoodDraft());else setLibBottom(active?"add":b.k);}} style={{flex:1,padding:"13px 0 15px",background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,color:active?C.accent:C.textDim}}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{b.ic}</svg>
+                      <span style={{fontSize:10,fontWeight:700,fontFamily:FN.b}}>{b.l}</span>
+                    </button>);})}
+                </div>
+              </div>
+            </div>);})()}
+
+          {/* ═══════════ LOG DETAIL (serving / quantity chooser) ═══════════ */}
+          {logDetail&&(()=>{const r=logDetail.resolved;const sg=r.servingGrams||0;const canG=sg>0;const mode=(logDetail.mode==="grams"&&canG)?"grams":"serving";
+            const qty=+logDetail.qty||0;const grams=Math.round(sg*qty);
+            const gStr=logDetail.g!==undefined?logDetail.g:(grams>0?String(grams):"");
+            const curG=gStr===""?0:+gStr;
+            const setServ=q=>setLogDetail(d=>({...d,qty:q===""?"":Math.max(0,Math.round((+q)*100)/100),g:undefined}));
+            const setGrm=g=>setLogDetail(d=>({...d,g:g===""?"":g,qty:(g===""||sg<=0)?"":Math.max(0,Math.round(((+g)/sg)*1000)/1000)}));
+            const toMode=m=>setLogDetail(d=>({...d,mode:m,g:m==="grams"?(Math.round(sg*(+d.qty||0))>0?String(Math.round(sg*(+d.qty||0))):""):undefined}));
+            const seg=(m,l)=>{const on=mode===m;return(<button key={m} className="d-tap" onClick={()=>toMode(m)} style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{l}</button>);};
+            return(<div style={{position:"fixed",inset:0,zIndex:560,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setLogDetail(null)}>
+              <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.75)",backdropFilter:"blur(8px)"}}/>
+              <div onClick={e=>e.stopPropagation()} className="d-sheet" style={{position:"relative",background:C.bg,width:"100%",maxWidth:460,borderTopLeftRadius:22,borderTopRightRadius:22,border:`1px solid ${C.hairline}`,padding:"20px 20px 24px"}}>
+                <div style={{fontSize:17,fontWeight:800,color:C.text,fontFamily:FN.h,marginBottom:2}}>{r.name}</div>
+                <div style={{fontSize:11.5,color:C.textDim,fontWeight:600,marginBottom:16}}>{r.servingLabel}{sg?` · ${Math.round(sg)} g per serving`:""}{r.brand?` · ${r.brand}`:""}</div>
+                {/* serving / grams toggle */}
+                {canG&&<div style={{display:"flex",gap:6,marginBottom:14,background:C.surfaceDim,borderRadius:11,padding:4,border:`1px solid ${C.hairline}`}}>{seg("serving","Servings")}{seg("grams","Grams")}</div>}
+                {/* stepper */}
+                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+                  <button className="press" onClick={()=>mode==="grams"?setGrm(String(Math.max(0,curG-10))):setServ(Math.max(0,qty-0.5))} style={{width:44,height:44,borderRadius:12,border:`1px solid ${C.hairline}`,background:C.surface,color:C.text,fontSize:22,cursor:"pointer"}}>−</button>
+                  <div style={{flex:1,textAlign:"center"}}>
+                    {mode==="grams"
+                      ? <input type="number" inputMode="decimal" value={gStr} onChange={e=>setGrm(e.target.value)} style={{width:"100%",textAlign:"center",background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:12,padding:"10px 0",color:C.text,fontSize:22,fontWeight:800,fontFamily:FN.h,outline:"none"}}/>
+                      : <input type="number" inputMode="decimal" value={logDetail.qty} onChange={e=>setServ(e.target.value)} style={{width:"100%",textAlign:"center",background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:12,padding:"10px 0",color:C.text,fontSize:22,fontWeight:800,fontFamily:FN.h,outline:"none"}}/>}
+                    <div style={{fontSize:10,color:C.textDim,fontWeight:600,marginTop:4}}>{mode==="grams"?`grams · ${qty?Math.round(qty*100)/100:0} ${qty===1?"serving":"servings"}`:`servings${grams>0?` · ${grams} g total`:""}`}</div>
+                  </div>
+                  <button className="press" onClick={()=>mode==="grams"?setGrm(String(curG+10)):setServ(qty+0.5)} style={{width:44,height:44,borderRadius:12,border:`1px solid ${C.hairline}`,background:C.surface,color:C.text,fontSize:22,cursor:"pointer"}}>+</button>
+                </div>
+                {/* macro preview */}
+                <div style={{display:"flex",gap:8,marginBottom:18}}>{["calories","protein","carbs","fat"].map(k=>{const v=r.nutr[k];const tot=(v===null||v===undefined?0:v)*qty;return(<div key={k} style={{flex:1,textAlign:"center",background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:11,padding:"10px 4px"}}><div style={{fontSize:16,fontWeight:800,color:NUT_BY_ID[k].color,fontFamily:FN.h}}>{v===null||v===undefined?"—":nutFmt(k,tot)}</div><div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",marginTop:2}}>{NUT_BY_ID[k].short}</div></div>);})}</div>
+                <button className="press" onClick={()=>{const q=+logDetail.qty||0;if(q<=0){setLogDetail(null);return;}if(logDetail.editId)dietUpdEntry(logDetail.editId,{qty:q});else dietLogFood(r,logDetail.meal,q);setLogDetail(null);setLibModal(null);}} style={{...btnB,width:"100%"}}>{logDetail.editId?"Save changes":`Add to ${(DIET_MEALS.find(x=>x.k===logDetail.meal)||{}).l||"log"}`}</button>
+                {logDetail.editId&&<button className="press" onClick={()=>{dietDelEntry(logDetail.editId);setLogDetail(null);}} style={{...btnG,width:"100%",marginTop:8,color:C.red,borderColor:C.red+"55"}}>Remove from log</button>}
+              </div>
+            </div>);})()}
+
+          {/* ═══════════ FOOD / RECIPE EDITOR ═══════════ */}
+          {foodEditor&&(()=>{const d=foodEditor;const set=patch=>setFoodEditor(f=>({...f,...patch}));
+            const isRecipe=d.mode==="recipe";
+            const toggleGroup=gi=>setFoodEditor(f=>({...f,expand:{...f.expand,[gi]:!(f.expand||{})[gi]}}));
+            const setNutr=(id,val)=>setFoodEditor(f=>({...f,nutr:{...f.nutr,[id]:val}}));
+            // recipe live preview
+            const recipePrev=isRecipe?resolveFood({kind:"recipe",ingredients:d.ingredients,servings:d.servings,cookedWeight:d.cookedWeight,servingLabel:d.servingLabel,name:d.name},foodLib):null;
+            const canSave=d.name.trim()&&(isRecipe?(d.ingredients||[]).some(i=>i.foodId&&+i.grams>0)&&+d.servings>0:+((d.serving||{}).grams)>0);
+            const saveFood=()=>{
+              if(isRecipe){const item={id:d.id||uid(),kind:"recipe",name:d.name.trim(),brand:d.brand.trim(),ingredients:(d.ingredients||[]).filter(i=>i.foodId&&+i.grams>0).map(i=>({foodId:i.foodId,grams:+i.grams})),servings:Math.max(1,+d.servings||1),cookedWeight:+d.cookedWeight>0?+d.cookedWeight:null,servingLabel:d.servingLabel||"serving",createdAt:d.createdAt||Date.now()};dietSaveFood(item);}
+              else{const nutr={};Object.keys(d.nutr||{}).forEach(k=>{const raw=d.nutr[k];if(raw===""||raw===null||raw===undefined)return;const v=+raw;if(isNaN(v)||v<0)return;nutr[k]=v;});const item={id:d.id||uid(),kind:"food",name:d.name.trim(),brand:d.brand.trim(),category:d.category||"food",serving:{label:(d.serving.label||"").trim()||"serving",grams:+d.serving.grams},nutr,createdAt:d.createdAt||Date.now()};dietSaveFood(item);}
+              setFoodEditor(null);
+            };
+            return(<div style={{position:"fixed",inset:0,zIndex:580,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setFoodEditor(null)}>
+              <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.75)",backdropFilter:"blur(8px)"}}/>
+              <div onClick={e=>e.stopPropagation()} className="d-sheet" style={{position:"relative",background:C.bg,width:"100%",maxWidth:560,height:"92vh",borderTopLeftRadius:22,borderTopRightRadius:22,border:`1px solid ${C.hairline}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px 12px",borderBottom:`1px solid ${C.hairline}`}}>
+                  <button className="press" onClick={()=>setFoodEditor(null)} style={{background:"transparent",border:"none",color:C.textDim,fontSize:14,fontWeight:600,fontFamily:FN.b,cursor:"pointer"}}>Cancel</button>
+                  <span style={{fontSize:14.5,fontWeight:800,color:C.text,fontFamily:FN.h}}>{d.id?"Edit":"Create"} {isRecipe?"Recipe":"Food"}</span>
+                  <button className="press" onClick={saveFood} disabled={!canSave} style={{background:"transparent",border:"none",color:canSave?C.accent:C.textDim,fontSize:14,fontWeight:800,fontFamily:FN.b,cursor:canSave?"pointer":"default",opacity:canSave?1:0.5}}>Save</button>
+                </div>
+                <div className="hide-scroll" style={{flex:1,overflowY:"auto",padding:"16px 18px 24px"}}>
+                  {!d.id&&<div style={{display:"flex",gap:8,marginBottom:18,background:C.surfaceDim,borderRadius:11,padding:4,border:`1px solid ${C.hairline}`}}>{[{k:"food",l:"Single Food"},{k:"recipe",l:"Recipe"}].map(t=>{const on=d.mode===t.k;return(<button key={t.k} className="press" onClick={()=>setFoodEditor(t.k==="recipe"?makeRecipeDraft():makeFoodDraft())} style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{t.l}</button>);})}</div>}
+                  {/* name + brand */}
+                  <label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:6}}>Name</label>
+                  <input value={d.name} onChange={e=>set({name:e.target.value})} placeholder={isRecipe?"e.g. Chicken & Rice Bowl":"e.g. Grilled Chicken"} style={{...dietInp,marginBottom:12}}/>
+                  <label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:6}}>Brand <span style={{textTransform:"none",fontWeight:500}}>(optional)</span></label>
+                  <input value={d.brand} onChange={e=>set({brand:e.target.value})} placeholder="Brand" style={{...dietInp,marginBottom:16}}/>
+
+                  {isRecipe?<>
+                    {/* ingredients */}
+                    <div style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Ingredients</div>
+                    {(d.ingredients||[]).map((ing,i)=>{const f=foodLib.find(x=>x.id===ing.foodId);return(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <select value={ing.foodId} onChange={e=>{const v=e.target.value;setFoodEditor(ff=>({...ff,ingredients:ff.ingredients.map((x,xi)=>xi===i?{...x,foodId:v}:x)}));}} style={{...dietInp,flex:1,padding:"10px 10px"}}>
+                          <option value="">Select food…</option>
+                          {foodLib.filter(x=>x.kind!=="recipe").map(x=>(<option key={x.id} value={x.id}>{x.name}</option>))}
+                        </select>
+                        <input type="number" inputMode="decimal" value={ing.grams} onChange={e=>{const v=e.target.value;setFoodEditor(ff=>({...ff,ingredients:ff.ingredients.map((x,xi)=>xi===i?{...x,grams:v}:x)}));}} placeholder="g" style={{...dietInp,width:68,textAlign:"center",padding:"10px 6px"}}/>
+                        <button className="press" onClick={()=>setFoodEditor(ff=>({...ff,ingredients:ff.ingredients.filter((_,xi)=>xi!==i)}))} style={{background:"transparent",border:"none",color:C.textDim,fontSize:18,cursor:"pointer"}}>×</button>
+                      </div>);})}
+                    <button className="press" onClick={()=>setFoodEditor(ff=>({...ff,ingredients:[...(ff.ingredients||[]),{foodId:"",grams:""}]}))} style={{...btnG,width:"100%",fontSize:12,marginBottom:16}}>+ Add ingredient</button>
+                    <div style={{display:"flex",gap:10,marginBottom:8}}>
+                      <div style={{flex:1}}><label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",display:"block",marginBottom:6}}>Servings</label><input type="number" inputMode="decimal" value={d.servings} onChange={e=>set({servings:e.target.value})} style={dietInp}/></div>
+                      <div style={{flex:1}}><label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",display:"block",marginBottom:6}}>Cooked wt (g)</label><input type="number" inputMode="decimal" value={d.cookedWeight} onChange={e=>set({cookedWeight:e.target.value})} placeholder="optional" style={dietInp}/></div>
+                    </div>
+                    <div style={{fontSize:10,color:C.textDim,fontWeight:500,marginBottom:16,lineHeight:1.5}}>Nutrition is summed from the raw ingredients. Cooked weight (optional) sets the per-serving portion size — it never changes the totals.</div>
+                    {recipePrev&&<div style={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:13,padding:"13px 15px"}}>
+                      <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Per serving · {Math.round(recipePrev.servingGrams||0)} g</div>
+                      <div style={{display:"flex",gap:8}}>{["calories","protein","carbs","fat"].map(k=>(<div key={k} style={{flex:1,textAlign:"center"}}><div style={{fontSize:17,fontWeight:800,color:NUT_BY_ID[k].color,fontFamily:FN.h}}>{nutFmt(k,recipePrev.nutr[k]||0)||"0"}</div><div style={{fontSize:9,color:C.textDim,fontWeight:700,textTransform:"uppercase",marginTop:2}}>{NUT_BY_ID[k].short}</div></div>))}</div>
+                    </div>}
+                  </>:<>
+                    {/* serving */}
+                    <div style={{display:"flex",gap:10,marginBottom:18}}>
+                      <div style={{flex:1.4}}><label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",display:"block",marginBottom:6}}>Serving name</label><input value={d.serving.label} onChange={e=>set({serving:{...d.serving,label:e.target.value}})} placeholder="1 cup, 2 pieces…" style={dietInp}/></div>
+                      <div style={{flex:1}}><label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",display:"block",marginBottom:6}}>Weight (g)</label><input type="number" inputMode="decimal" value={d.serving.grams} onChange={e=>set({serving:{...d.serving,grams:e.target.value}})} placeholder="grams" style={{...dietInp,borderColor:(+d.serving.grams>0||d.serving.grams==="")?C.hairline:C.red}}/></div>
+                    </div>
+                    {/* nutrient groups (expandable) */}
+                    {NUT_GROUPS.map((gname,gi)=>{const nuts=NUTRIENTS.filter(n=>n.group===gi);const open=(d.expand||{})[gi];const filled=nuts.filter(n=>{const v=(d.nutr||{})[n.id];return v!==""&&v!==null&&v!==undefined;}).length;return(
+                      <div key={gi} style={{border:`1px solid ${C.hairline}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
+                        <button className="press" onClick={()=>toggleGroup(gi)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",background:C.surface,border:"none",cursor:"pointer"}}>
+                          <span style={{fontSize:12.5,fontWeight:800,color:C.text,fontFamily:FN.b}}>{gname}</span>
+                          <span style={{display:"flex",alignItems:"center",gap:8}}>{filled>0&&<span style={{fontSize:9.5,fontWeight:800,color:C.accent,background:C.accentSoft,borderRadius:6,padding:"2px 7px"}}>{filled}</span>}<span style={{color:C.textDim,fontSize:12,transform:open?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▾</span></span>
+                        </button>
+                        {open&&<div style={{padding:"4px 14px 14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:9}}>{nuts.map(n=>(
+                          <div key={n.id}>
+                            <label style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>{nutBadge(n.id,20)}<span style={{fontSize:10.5,fontWeight:600,color:C.textSec,fontFamily:FN.b,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{n.name}</span></label>
+                            <div style={{display:"flex",alignItems:"center",gap:5}}>
+                              <input type="number" inputMode="decimal" value={(d.nutr||{})[n.id]??""} onChange={e=>setNutr(n.id,e.target.value)} placeholder="—" style={{...dietInp,padding:"9px 10px",fontSize:13}}/>
+                              <span style={{fontSize:9.5,color:C.textDim,fontWeight:700,minWidth:26}}>{n.unit}</span>
+                            </div>
+                          </div>))}</div>}
+                      </div>);})}
+                    <div style={{fontSize:10,color:C.textDim,fontWeight:500,marginTop:6,lineHeight:1.5}}>Leave a field blank if unknown — blanks are treated as “not provided”, not zero. Enter 0 only when a value is genuinely zero.</div>
+                  </>}
+                </div>
+              </div>
+            </div>);})()}
+
+          {/* ═══════════ DASHBOARD VARIABLE PICKER ═══════════ */}
+          <Overlay open={dietVarPicker} onClose={()=>setDietVarPicker(false)} title="Customize Dashboard" wide>
+            <div style={{display:"flex",gap:9,marginBottom:14}}>
+              <input value={dietVarSearch} onChange={e=>setDietVarSearch(e.target.value)} placeholder="Search nutrients…" style={{...dietInp,flex:1}}/>
+              <button className="press" onClick={()=>setDietDashVars(NUTRIENTS.map(n=>n.id))} style={{...btnG,fontSize:11,whiteSpace:"nowrap"}}>All</button>
+              <button className="press" onClick={()=>setDietDashVars([])} style={{...btnG,fontSize:11,whiteSpace:"nowrap"}}>None</button>
+            </div>
+            <div style={{maxHeight:"52vh",overflowY:"auto"}} className="hide-scroll">
+              {NUT_GROUPS.map((gname,gi)=>{const q=dietVarSearch.trim().toLowerCase();const nuts=NUTRIENTS.filter(n=>n.group===gi&&(!q||n.name.toLowerCase().includes(q)));if(!nuts.length)return null;return(
+                <div key={gi} style={{marginBottom:14}}>
+                  <div style={{fontSize:10.5,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{gname}</div>
+                  {nuts.map(n=>{const on=dietDashVars.includes(n.id);return(
+                    <div key={n.id} onClick={()=>setDietDashVars(prev=>on?prev.filter(x=>x!==n.id):[...prev,n.id])} className="press" style={{display:"flex",alignItems:"center",gap:11,padding:"9px 4px",cursor:"pointer",borderBottom:`1px solid ${C.hairline}`}}>
+                      {nutBadge(n.id,26)}
+                      <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:C.text,fontFamily:FN.b}}>{n.name}</div><div style={{fontSize:10,color:C.textDim,fontWeight:600}}>{n.unit}</div></div>
+                      <div style={{width:22,height:22,borderRadius:6,border:on?"none":`2px solid ${C.textDim}`,background:on?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>{on&&<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.btnText} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>}</div>
+                    </div>);})}
+                </div>);})}
+            </div>
+          </Overlay>
+
+          {/* ═══════════ ANALYTICS METRIC CONFIG ═══════════ */}
+          <Overlay open={anCardCfg!==null} onClose={()=>setAnCardCfg(null)} title={anCardCfg==="new"?"Add Metric":"Change Metric"} wide>
+            <div style={{maxHeight:"58vh",overflowY:"auto"}} className="hide-scroll">
+              {NUT_GROUPS.map((gname,gi)=>{const nuts=NUTRIENTS.filter(n=>n.group===gi);return(
+                <div key={gi} style={{marginBottom:12}}>
+                  <div style={{fontSize:10.5,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{gname}</div>
+                  {nuts.map(n=>{const chosen=anCardCfg!=="new"&&dietAnalyticsVars[anCardCfg]===n.id;const used=dietAnalyticsVars.includes(n.id);return(
+                    <div key={n.id} onClick={()=>{setDietAnalyticsVars(prev=>{if(anCardCfg==="new"){if(prev.length>=4||prev.includes(n.id))return prev;return[...prev,n.id];}const c=[...prev];c[anCardCfg]=n.id;return c;});setAnCardCfg(null);}} className="press" style={{display:"flex",alignItems:"center",gap:11,padding:"9px 4px",cursor:"pointer",borderBottom:`1px solid ${C.hairline}`,opacity:(anCardCfg==="new"&&used)?0.4:1}}>
+                      {nutBadge(n.id,26)}<div style={{flex:1,fontSize:13,fontWeight:600,color:C.text,fontFamily:FN.b}}>{n.name}</div>{chosen&&<span style={{fontSize:10,color:C.accent,fontWeight:800}}>Current</span>}{anCardCfg==="new"&&used&&<span style={{fontSize:10,color:C.textDim,fontWeight:700}}>Added</span>}
+                    </div>);})}
+                </div>);})}
+            </div>
+            {anCardCfg!=="new"&&<button className="press" onClick={()=>{setDietAnalyticsVars(prev=>prev.filter((_,i)=>i!==anCardCfg));setAnCardCfg(null);}} style={{...btnG,width:"100%",marginTop:8,color:C.red,borderColor:C.red+"55"}}>Remove this metric</button>}
+          </Overlay>
+
+          {/* ═══════════ TREND VARIABLE PICKER ═══════════ */}
+          <Overlay open={dietTrendPick} onClose={()=>setDietTrendPick(false)} title="Trend Variable" wide>
+            <div style={{maxHeight:"62vh",overflowY:"auto"}} className="hide-scroll">
+              {NUT_GROUPS.map((gname,gi)=>{const nuts=NUTRIENTS.filter(n=>n.group===gi);return(
+                <div key={gi} style={{marginBottom:12}}>
+                  <div style={{fontSize:10.5,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{gname}</div>
+                  {nuts.map(n=>{const on=dietTrendVar===n.id;return(<div key={n.id} onClick={()=>{setDietTrendVar(n.id);setDietTrendPick(false);}} className="press" style={{display:"flex",alignItems:"center",gap:11,padding:"9px 4px",cursor:"pointer",borderBottom:`1px solid ${C.hairline}`}}>{nutBadge(n.id,26)}<div style={{flex:1,fontSize:13,fontWeight:600,color:C.text,fontFamily:FN.b}}>{n.name}</div>{on&&<span style={{fontSize:10,color:C.accent,fontWeight:800}}>Shown</span>}</div>);})}
+                </div>);})}
+            </div>
+          </Overlay>
+
+          {/* ═══════════ DAILY TARGETS ═══════════ */}
+          <Overlay open={showDietTargets} onClose={()=>setShowDietTargets(false)} title="Daily Targets" wide>
+            <div style={{fontSize:11.5,color:C.textDim,fontWeight:500,marginBottom:16,lineHeight:1.5}}>Set the daily goals you want to track against. Blank = no target (the metric still logs, it just won't show progress). Changing a target never alters past entries.</div>
+            <div style={{maxHeight:"56vh",overflowY:"auto"}} className="hide-scroll">
+              {(()=>{const ids=Array.from(new Set([...dietDashVars,...Object.keys(dietTargets)]));ids.sort((a,b)=>NUTRIENTS.findIndex(n=>n.id===a)-NUTRIENTS.findIndex(n=>n.id===b));return ids.map(id=>{const n=NUT_BY_ID[id];if(!n)return null;return(
+                <div key={id} style={{display:"flex",alignItems:"center",gap:11,padding:"8px 2px",borderBottom:`1px solid ${C.hairline}`}}>
+                  {nutBadge(id,26)}<div style={{flex:1,fontSize:13,fontWeight:600,color:C.text,fontFamily:FN.b}}>{n.name}</div>
+                  <input type="number" inputMode="decimal" value={dietTargets[id]??""} onChange={e=>{const v=e.target.value;setDietTargets(prev=>{const c={...prev};if(v==="")delete c[id];else c[id]=Math.max(0,+v||0);return c;});}} placeholder="—" style={{...dietInp,width:92,textAlign:"center",padding:"9px 8px"}}/>
+                  <span style={{fontSize:10,color:C.textDim,fontWeight:700,minWidth:30}}>{n.unit}</span>
+                </div>);});})()}
+            </div>
+            <div style={{marginTop:14}}>
+              <label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:7}}>Add another target</label>
+              <select value="" onChange={e=>{const id=e.target.value;if(id)setDietTargets(prev=>({...prev,[id]:defDietTargets[id]||0}));}} style={dietInp}>
+                <option value="">Choose a nutrient…</option>
+                {NUTRIENTS.filter(n=>dietTargets[n.id]===undefined&&!dietDashVars.includes(n.id)).map(n=>(<option key={n.id} value={n.id}>{n.name}</option>))}
+              </select>
+            </div>
+          </Overlay>
+
+          {/* ═══════════ CONFIRM ═══════════ */}
+          {dietConfirm&&<div style={{position:"fixed",inset:0,zIndex:620,display:"flex",alignItems:"center",justifyContent:"center",padding:24}} onClick={()=>setDietConfirm(null)}>
+            <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.75)",backdropFilter:"blur(8px)"}}/>
+            <div onClick={e=>e.stopPropagation()} style={{position:"relative",background:C.surface,borderRadius:18,padding:24,maxWidth:360,border:`1px solid ${C.hairline}`}}>
+              <div style={{fontSize:14,fontWeight:600,color:C.text,fontFamily:FN.b,lineHeight:1.5,marginBottom:20}}>{dietConfirm.msg}</div>
+              <div style={{display:"flex",gap:10}}>
+                <button className="press" onClick={()=>setDietConfirm(null)} style={{...btnG,flex:1}}>Cancel</button>
+                <button className="press" onClick={()=>{dietConfirm.onYes&&dietConfirm.onYes();setDietConfirm(null);}} style={{...btnB,flex:1,background:C.red,color:"#fff"}}>{dietConfirm.label||"Confirm"}</button>
+              </div>
+            </div>
+          </div>}
+
+        </div>}
+
         {menuTab==="workout"&&<div className="tab-content">
           {/* ═══ HEALTH SUB-NAV ═══ */}
           {/* Health nav — two primary tabs (Sleep folded into Progress), large, centered, evenly spread */}
@@ -6989,9 +7536,9 @@ ${body}
         </button>
       </div>
 
-      <div className="footer-nav" style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 6px",gap:2}}>
+      <div className="footer-nav hide-scroll" style={{position:"sticky",bottom:0,zIndex:100,background:C.surface,borderTop:`1px solid ${C.hairline}`,display:"flex",padding:"10px 6px",gap:2,overflowX:"auto"}}>
         {mainTabs.map(t=>{const on=curPage===t.k;return(
-          <button key={t.k} onClick={()=>goPage(t.k)} className="press" style={{flex:1,minWidth:0,border:"none",borderRadius:12,padding:"7px 0 6px",cursor:"pointer",textAlign:"center",background:on?C.accentSoft:"transparent",color:on?C.accent:C.textDim,fontSize:9.5,fontFamily:FN.b,fontWeight:on?800:600,textTransform:"uppercase",letterSpacing:"0.03em",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+          <button key={t.k} onClick={()=>goPage(t.k)} className="press" style={{flex:"1 0 auto",minWidth:62,border:"none",borderRadius:12,padding:"7px 2px 6px",cursor:"pointer",textAlign:"center",background:on?C.accentSoft:"transparent",color:on?C.accent:C.textDim,fontSize:9.5,fontFamily:FN.b,fontWeight:on?800:600,textTransform:"uppercase",letterSpacing:"0.03em",transition:"all 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"center",transform:on?"translateY(-1px)":"none",transition:"transform 0.2s ease"}}>{t.i}</span>
             <span style={{whiteSpace:"nowrap"}}>{t.l}</span>
           </button>
