@@ -293,6 +293,10 @@ const CSS=`
 @keyframes dSheetUp{from{opacity:0.4;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
 .d-pane{animation:dPaneIn 0.28s cubic-bezier(0.22,1,0.36,1)}
 .d-sheet{animation:dSheetUp 0.34s cubic-bezier(0.22,1,0.36,1)}
+@keyframes scanSweep{0%{top:5%}50%{top:90%}100%{top:5%}}
+@keyframes scanPulse{0%,100%{opacity:0.5}50%{opacity:1}}
+.scan-line{animation:scanSweep 1.5s ease-in-out infinite}
+.scan-dot{animation:scanPulse 1.1s ease-in-out infinite}
 .d-tap{transition:transform 0.18s cubic-bezier(0.22,1,0.36,1),background 0.22s ease,border-color 0.22s ease,color 0.18s ease,box-shadow 0.22s ease}.d-tap:active{transform:scale(0.95)}
 .overlay-bg{animation:overlayIn 0.2s ease}
 .modal-box{animation:modalIn 0.3s cubic-bezier(0.25,0.46,0.45,0.94)}
@@ -352,6 +356,8 @@ const MACRO={calories:{label:"Calories",unit:"kcal",color:"#F59E0B"},protein:{la
 // Distinct palette for per-exercise strength lines
 const EX_PALETTE=["#32D583","#0A84FF","#FF9F0A","#AF52DE","#32ADE6","#FF453A","#FFD60A","#FF2D55","#64D2FF","#BF5AF2","#30D158","#5E5CE6"];
 const defDietGoals={calories:2200,protein:160,carbs:250,fat:70,water:64,cupOz:8};
+// A workout draft counts as "actively being logged" when it has at least one non-zero set / cardio value entered.
+const wkHasUnsaved=ws=>!!(ws&&ws.exercises&&ws.exercises.some(ex=>ex&&(ex.kind==="cardio"?((+ex.distance>0)||(+ex.timeMin>0)):(ex.sets||[]).some(s=>(+s.w>0)||(+s.r>0)))));
 /* ═══════════════════════ DIET v2 — nutrition tracking system ═══════════════════════ */
 /* Stable internal nutrient registry. ALL calculations key off these ids, never display names.
    Each nutrient: id, name, short badge text, standardized unit, group index, color, display decimals. */
@@ -427,9 +433,9 @@ function resolveFood(item,lib){
     const denom=(+item.cookedWeight>0)?+item.cookedWeight:rawGrams; // cooked weight sets serving proportions; nutrients come from raw
     const servingGrams=servings>0?denom/servings:0;
     const nutr={};Object.keys(tot).forEach(k=>{nutr[k]=Math.round(tot[k]/servings*1000)/1000;});
-    return{id:item.id,kind:"recipe",name:item.name,brand:item.brand||"",servingGrams:Math.round(servingGrams*10)/10,servingLabel:item.servingLabel||"serving",nutr};
+    return{id:item.id,kind:"recipe",name:item.name,brand:item.brand||"",servingGrams:Math.round(servingGrams*10)/10,servingLabel:item.servingLabel||"serving",nutr,illo:item.illo};
   }
-  return{id:item.id,kind:"food",name:item.name,brand:item.brand||"",servingGrams:+((item.serving||{}).grams)||0,servingLabel:(item.serving||{}).label||"serving",nutr:item.nutr||{}};
+  return{id:item.id,kind:"food",name:item.name,brand:item.brand||"",servingGrams:+((item.serving||{}).grams)||0,servingLabel:(item.serving||{}).label||"serving",nutr:item.nutr||{},illo:item.illo};
 }
 // Seed library — a handful of real foods + drinks so search/library/analytics aren't empty on first run.
 const DIET_SEED_FOODS=[
@@ -447,6 +453,98 @@ const DIET_SEED_FOODS=[
   {id:"seed_coffee",kind:"food",name:"Black Coffee",brand:"",category:"drink",serving:{label:"1 cup",grams:237},nutr:{calories:2,caffeine:95,water:237,potassium:116},seeded:true},
   {id:"seed_oj",kind:"food",name:"Orange Juice",brand:"",category:"drink",serving:{label:"1 cup",grams:248},nutr:{calories:112,protein:1.7,carbs:26,fat:0.5,sugar:21,vitc:124,water:218,potassium:496},seeded:true},
 ];
+/* ═══════════ DIET v2 — food illustrations, matcher & label parser ═══════════ */
+// Custom flat 2D illustrations drawn specifically for PROGRESS. Each is (size)=>JSX on a 48×48 grid.
+const ILLO={
+  water:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#D6F0FA"/><path d="M17 15h14l-1.6 18a2 2 0 0 1-2 1.8h-6.8a2 2 0 0 1-2-1.8Z" fill="#fff"/><path d="M16.4 24.5h15.2l-1 11a2 2 0 0 1-2 1.8h-6.8a2 2 0 0 1-2-1.8Z" fill="#32ADE6"/></svg>),
+  coffee:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#E7D7C6"/><path d="M15 19h16v9a7 7 0 0 1-7 7h-2a7 7 0 0 1-7-7Z" fill="#fff"/><path d="M15 19h16v3a7 7 0 0 1-7 7h-2a7 7 0 0 1-7-7Z" fill="#8A5A33"/><path d="M31 21h2.5a3 3 0 0 1 0 6H31" fill="none" stroke="#fff" strokeWidth="2.4"/><path d="M20 11c-1 1.6-1 3 0 4.5M25 11c-1 1.6-1 3 0 4.5" stroke="#B08968" strokeWidth="1.8" fill="none" strokeLinecap="round"/></svg>),
+  drink:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#FBD9E7"/><path d="M17 17h14l-1.4 16a2 2 0 0 1-2 1.8h-7.2a2 2 0 0 1-2-1.8Z" fill="#fff"/><path d="M17.5 22h13l-1 11a2 2 0 0 1-2 1.8h-7a2 2 0 0 1-2-1.8Z" fill="#FF6FA5"/><path d="M27 9l-3 8" stroke="#FF6FA5" strokeWidth="2.2" strokeLinecap="round"/></svg>),
+  smoothie:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#E9DCF8"/><path d="M17 20h14l-1.4 13a2 2 0 0 1-2 1.8h-7.2a2 2 0 0 1-2-1.8Z" fill="#fff"/><path d="M17.4 24h13.2l-1 9a2 2 0 0 1-2 1.8h-7.2a2 2 0 0 1-2-1.8Z" fill="#AF7BE8"/><path d="M17.5 20c2-3 11-3 13 0Z" fill="#C9A9F0"/><path d="M28 10l-3 10" stroke="#8E5BD0" strokeWidth="2.2" strokeLinecap="round"/></svg>),
+  eggs:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#FDEFC2"/><path d="M15 27c-2-7 4-12 9-11s9 5 8 10c-1 5-6 6-9 6s-7 0-8-5Z" fill="#fff"/><circle cx="25" cy="24" r="5" fill="#FFC53D"/></svg>),
+  pancakes:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#F0DCBE"/><ellipse cx="24" cy="30" rx="12" ry="3.4" fill="#C98A4B"/><ellipse cx="24" cy="26" rx="12" ry="3.4" fill="#E0A964"/><ellipse cx="24" cy="22" rx="12" ry="3.4" fill="#C98A4B"/><path d="M19 20c2 2 8 2 10 0l1 4c-2 2-9 2-11 0Z" fill="#F6C45A"/><rect x="21" y="16" width="6" height="4" rx="1" fill="#FFE08A"/></svg>),
+  oats:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#EFE6D2"/><path d="M13 23h22a11 11 0 0 1-11 10 11 11 0 0 1-11-10Z" fill="#fff"/><path d="M15 23h18a9 9 0 0 1-9 8 9 9 0 0 1-9-8Z" fill="#D8B987"/><circle cx="20" cy="27" r="1.3" fill="#B2905E"/><circle cx="25" cy="29" r="1.3" fill="#B2905E"/><circle cx="28" cy="26" r="1.3" fill="#B2905E"/></svg>),
+  yogurt:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#E7F6EE"/><path d="M14 22h20a10 10 0 0 1-10 11 10 10 0 0 1-10-11Z" fill="#fff"/><path d="M14 22h20v2H14Z" fill="#EDEFF3"/><circle cx="20" cy="20" r="2.4" fill="#7C6CF0"/><circle cx="26" cy="19" r="2.4" fill="#AF7BE8"/><circle cx="23" cy="22" r="2.2" fill="#FF6FA5"/></svg>),
+  toast:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#F1E0C4"/><path d="M15 20c0-4 3-6 9-6s9 2 9 6v12a2 2 0 0 1-2 2H17a2 2 0 0 1-2-2Z" fill="#E6B873"/><path d="M19 23h10v7H19Z" fill="#B5793C"/></svg>),
+  pasta:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#FBDAD2"/><path d="M12 24h24a12 12 0 0 1-12 11 12 12 0 0 1-12-11Z" fill="#fff"/><path d="M14 24h20a10 10 0 0 1-10 9 10 10 0 0 1-10-9Z" fill="#F6C45A"/><path d="M16 25c3-1 5 1 8 0s5-1 8 0" stroke="#E0A030" strokeWidth="1.6" fill="none"/><circle cx="21" cy="28" r="2.2" fill="#FF5A4D"/><circle cx="28" cy="29" r="2.2" fill="#FF5A4D"/></svg>),
+  pizza:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#FCE0C0"/><path d="M24 13l11 20a2 2 0 0 1-1.8 3H14.8a2 2 0 0 1-1.8-3Z" fill="#F6C45A"/><path d="M24 15l9.5 17.3a1 1 0 0 1-.9 1.5H15.4a1 1 0 0 1-.9-1.5Z" fill="#FFE0A3"/><circle cx="24" cy="26" r="2.2" fill="#FF5A4D"/><circle cx="20" cy="31" r="2" fill="#FF5A4D"/><circle cx="28" cy="31" r="2" fill="#FF5A4D"/></svg>),
+  burger:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#FCE2C2"/><path d="M13 20c0-5 5-8 11-8s11 3 11 8Z" fill="#E6A95A"/><rect x="13" y="20" width="22" height="3.4" rx="1.5" fill="#54B15A"/><rect x="13" y="23" width="22" height="4" rx="1.5" fill="#8A5A33"/><path d="M13 27h22a5 5 0 0 1-5 5H18a5 5 0 0 1-5-5Z" fill="#E6A95A"/></svg>),
+  sandwich:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#E8F3D8"/><path d="M14 16h20l-9 18Z" fill="#E6B873"/><path d="M16 18h16l-7.5 13Z" fill="#FFF0C8"/><path d="M17 21h14l-6.5 9Z" fill="#54B15A"/><path d="M18.5 23.5h11l-5 7Z" fill="#FF8A66"/></svg>),
+  salad:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#E2F4DF"/><path d="M12 23h24a12 12 0 0 1-12 12 12 12 0 0 1-12-12Z" fill="#fff"/><path d="M14 23h20a10 10 0 0 1-10 10 10 10 0 0 1-10-10Z" fill="#54B15A"/><circle cx="20" cy="27" r="2.4" fill="#79C96E"/><circle cx="27" cy="27" r="2.4" fill="#30B350"/><circle cx="24" cy="30" r="2.2" fill="#FF5A4D"/></svg>),
+  soup:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#FCE4C4"/><path d="M11 24h26a13 13 0 0 1-13 11 13 13 0 0 1-13-11Z" fill="#fff"/><path d="M13 24h22a11 11 0 0 1-11 9 11 11 0 0 1-11-9Z" fill="#F0A64E"/><path d="M21 13c-1.4 1.8-1.4 3.4 0 5.2M27 13c-1.4 1.8-1.4 3.4 0 5.2" stroke="#D98B3A" strokeWidth="1.8" fill="none" strokeLinecap="round"/></svg>),
+  rice:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#EFEFF2"/><path d="M12 23h24a12 12 0 0 1-12 12 12 12 0 0 1-12-12Z" fill="#fff"/><path d="M13.5 23c3-5 18-5 21 0Z" fill="#F4F4F6"/><circle cx="19" cy="20.5" r="1.1" fill="#CBD2DC"/><circle cx="23" cy="19.5" r="1.1" fill="#CBD2DC"/><circle cx="27" cy="20.5" r="1.1" fill="#CBD2DC"/><circle cx="25" cy="21.5" r="1.1" fill="#CBD2DC"/></svg>),
+  chicken:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#F3DEC4"/><path d="M28 14a7 7 0 0 1 2 11l-9 9a4.5 4.5 0 1 1-5-5l9-9a7 7 0 0 1 3-6Z" fill="#D79A5C"/><path d="M17 30l-3 3m3-3a2.6 2.6 0 1 0-.1 0Z" fill="#fff" stroke="#E7E0D3" strokeWidth="1"/></svg>),
+  meat:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#F6D4CE"/><path d="M15 20c0-4 5-7 10-7s9 3 9 8-5 11-11 11-9-4-9-8c0-2 1-3 1-4Z" fill="#C14A3E"/><path d="M18 22c0-2.5 3.5-4.5 7-4.5s6 2 6 5-3.5 7-7.5 7S17 26 17 24c0-1 .5-1.5 1-2Z" fill="#E3786B"/></svg>),
+  fish:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#D7EEF7"/><path d="M12 24c4-6 12-8 18-6 2 .7 4 2 5 6-1 4-3 5.3-5 6-6 2-14 0-18-6Z" fill="#F08A5A"/><path d="M35 24l5-3v6Z" fill="#E07A4A"/><circle cx="18" cy="22" r="1.4" fill="#fff"/><path d="M24 20c2 2 2 6 0 8" stroke="#E07A4A" strokeWidth="1.4" fill="none"/></svg>),
+  fruit:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#E4F3DB"/><path d="M24 16c-2-2-7-2-8 2-1.4 5 2 13 5 14 1.4.5 2 .5 3 0 3-1 6.4-9 5-14-1-4-3-4-5-2Z" fill="#FF5A4D"/><path d="M24 16c1-3 3-4 5-4-1 2-2 3.5-5 4Z" fill="#54B15A"/></svg>),
+  veggie:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#DFF2DC"/><circle cx="19" cy="19" r="4.5" fill="#3FA84E"/><circle cx="26" cy="18" r="4.5" fill="#4CB85B"/><circle cx="29" cy="22" r="4" fill="#3FA84E"/><circle cx="22" cy="21" r="4.5" fill="#54C063"/><path d="M20 23h8l-1.5 9a2 2 0 0 1-2 1.6h-1a2 2 0 0 1-2-1.6Z" fill="#9BD98A"/></svg>),
+  nuts:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#EFE1CC"/><path d="M19 16c3-2 5 1 5 4s-1 8-4 9-5-3-4-7c.6-2.4 1.6-4.8 3-6Z" fill="#C89B63"/><path d="M27 20c3-1 4 2 3.6 5s-2.6 6-5 5.6-2.6-4-1.6-7c.6-1.8 1.4-3.2 3-3.6Z" fill="#B5894F"/></svg>),
+  dessert:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#FBDCEB"/><path d="M16 26h16l-2 8a2 2 0 0 1-2 1.6h-8a2 2 0 0 1-2-1.6Z" fill="#E7B873"/><path d="M15 26c1-5 4-7 9-7s8 2 9 7Z" fill="#FF6FA5"/><circle cx="24" cy="15" r="2" fill="#FF5A4D"/></svg>),
+  cheese:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#FBEFC6"/><path d="M14 30l18-11 3 5-3 9a2 2 0 0 1-2 1.4H16a2 2 0 0 1-2-2Z" fill="#F6C945"/><path d="M14 30l18-11" stroke="#E0B23A" strokeWidth="1.4"/><circle cx="20" cy="30" r="1.6" fill="#E8C24A"/><circle cx="27" cy="29" r="1.4" fill="#E8C24A"/></svg>),
+  bowl:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#D9F0EC"/><path d="M12 23h24a12 12 0 0 1-12 12 12 12 0 0 1-12-12Z" fill="#fff"/><path d="M14 23h20a10 10 0 0 1-10 10 10 10 0 0 1-10-10Z" fill="#35C2A8"/><circle cx="20" cy="27" r="2" fill="#7FE0CF"/><circle cx="27" cy="27" r="2" fill="#7FE0CF"/></svg>),
+  plate:s=>(<svg width={s} height={s} viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#E7EAF0"/><circle cx="24" cy="24" r="12" fill="#fff"/><circle cx="24" cy="24" r="7.5" fill="#EDF0F5"/><rect x="9" y="17" width="2.2" height="14" rx="1.1" fill="#9AA6B6"/><rect x="37" y="17" width="2.2" height="14" rx="1.1" fill="#9AA6B6"/></svg>),
+};
+const ILLO_KEYS=Object.keys(ILLO);
+// Pick an illustration from a food/dish name (+ optional extra text from ingredients). Ordered: most specific first.
+function illoKey(name,extra){
+  const t=((name||"")+" "+(extra||"")).toLowerCase();
+  const has=re=>re.test(t);
+  if(has(/smoothie|protein shake|milkshake|frapp/))return"smoothie";
+  if(has(/coffee|espresso|latte|cappuccino|mocha|americano/))return"coffee";
+  if(has(/\bwater\b|sparkling water|seltzer/))return"water";
+  if(has(/juice|soda|cola|lemonade|gatorade|kool|punch|iced tea|\btea\b|matcha/))return"drink";
+  if(has(/pancake|waffle|french toast/))return"pancakes";
+  if(has(/yogurt|yoghurt|parfait|skyr/))return"yogurt";
+  if(has(/oat|oatmeal|porridge|granola|muesli|cereal|overnight/))return"oats";
+  if(has(/egg|omelet|omelette|scramble|frittata|benedict/))return"eggs";
+  if(has(/pizza/))return"pizza";
+  if(has(/pasta|spaghetti|noodle|ramen|mac\b|macaroni|penne|lasagna|fettuccine|udon|linguine/))return"pasta";
+  if(has(/burger|cheeseburger|hamburger/))return"burger";
+  if(has(/sandwich|\bsub\b|wrap|taco|burrito|quesadilla|panini|bagel.*(cream|lox)|blt/))return"sandwich";
+  if(has(/soup|stew|chili|broth|bisque|chowder|ramen broth/))return"soup";
+  if(has(/salad|greens|caesar|slaw/))return"salad";
+  if(has(/salmon|tuna|fish|cod|tilapia|shrimp|seafood|sushi|crab|lobster/))return"fish";
+  if(has(/chicken|turkey|poultry|nugget/))return"chicken";
+  if(has(/steak|beef|pork|bacon|sausage|ham\b|ribeye|sirloin|meatball|lamb|brisket/))return"meat";
+  if(has(/toast|bread|bagel|muffin|biscuit|croissant|roll\b/))return"toast";
+  if(has(/rice|quinoa|couscous|grain bowl|poke/))return"rice";
+  if(has(/cake|cookie|brownie|donut|doughnut|ice cream|candy|chocolate|dessert|pie\b|pastry|cupcake/))return"dessert";
+  if(has(/cheese|feta|cheddar|mozzarella|parmesan/))return"cheese";
+  if(has(/almond|peanut|cashew|walnut|pistachio|\bnut|trail mix/))return"nuts";
+  if(has(/apple|banana|berry|blueberr|strawberr|orange\b|grape|mango|melon|peach|pear|fruit|kiwi|pineapple/))return"fruit";
+  if(has(/broccoli|spinach|carrot|kale|asparagus|pepper|zucchini|cauliflower|vegetable|veggie|avocado|cucumber|tomato/))return"veggie";
+  if(has(/bowl/))return"bowl";
+  return"plate";
+}
+// Parse OCR text from a Nutrition Facts panel into {serving:{label,grams}, nutr:{...}}. Best-effort; blanks stay blank.
+function parseNutritionLabel(raw){
+  const text=(raw||"").replace(/ /g," ");
+  const low=text.toLowerCase();
+  const num=m=>m?parseFloat(String(m).replace(/[, ]/g,"").replace(/[oO]/g,"0")):null;
+  const grab=re=>{const m=low.match(re);return m?num(m[1]):null;};
+  const out={serving:{label:"",grams:""},nutr:{}};
+  // serving size: "serving size 2/3 cup (55g)" or "(55 g)"
+  let sm=low.match(/serving size[:\s]*([^\n(]+?)\s*\(\s*([\d.]+)\s*g\s*\)/);
+  if(sm){out.serving.label=sm[1].trim();out.serving.grams=String(num(sm[2]));}
+  else{const gm=low.match(/\(\s*([\d.]+)\s*g\s*\)/);if(gm)out.serving.grams=String(num(gm[1]));const lm=low.match(/serving size[:\s]*([^\n(]+)/);if(lm)out.serving.label=lm[1].trim();}
+  const set=(id,v)=>{if(v!==null&&!isNaN(v))out.nutr[id]=v;};
+  set("calories",grab(/calories[:\s]*([\d.,]+)/));
+  set("fat",grab(/total fat[:\s]*([\d.]+)\s*g/));
+  set("satfat",grab(/saturated fat[:\s]*([\d.]+)\s*g/));
+  set("transfat",grab(/trans[\s\w]*fat[:\s]*([\d.]+)\s*g/));
+  set("cholesterol",grab(/cholesterol[:\s]*([\d.]+)\s*mg/));
+  set("sodium",grab(/sodium[:\s]*([\d.]+)\s*mg/));
+  set("carbs",grab(/(?:total carb(?:ohydrate)?s?)[:\s]*([\d.]+)\s*g/));
+  set("fiber",grab(/(?:dietary fiber|fiber|fibre)[:\s]*([\d.]+)\s*g/));
+  set("sugar",grab(/(?:total sugars?|sugars?)[:\s]*([\d.]+)\s*g/));
+  let add=grab(/added sugars?[:\s]*([\d.]+)\s*g/);if(add===null)add=grab(/includes[:\s]*([\d.]+)\s*g\s*added/);set("addedsugar",add);
+  set("protein",grab(/protein[:\s]*([\d.]+)\s*g/));
+  set("potassium",grab(/potassium[:\s]*([\d.]+)\s*mg/));
+  set("calcium",grab(/calcium[:\s]*([\d.]+)\s*mg/));
+  set("iron",grab(/iron[:\s]*([\d.]+)\s*mg/));
+  set("vitd",grab(/vitamin d[:\s]*([\d.]+)\s*mcg/));
+  return out;
+}
+
 
 // Circular progress ring (SVG). Center content passed as children.
 function Ring({value,goal,size=120,stroke=12,color,children}){
@@ -1154,6 +1252,7 @@ export default function Dashboard(){
   const orderedSplitKeys=useMemo(()=>{const keys=Object.keys(splits);const inOrder=splitOrder.filter(k=>keys.includes(k));const rest=keys.filter(k=>!inOrder.includes(k));return[...inOrder,...rest];},[splits,splitOrder]);
   const[settings,setSettings]=useState(defSettings);
   const[curWkState,setCurWkState]=useState(null); // persisted workout draft
+  const[wkActive,setWkActive]=useState(null); // timestamp of last real logging action; truthy = a workout is actively being logged (drives iOS resume). Cleared on save.
   // NEW: completion log — tracks the order you complete tasks each day, used to learn your actual routine
   // Shape: {dateKey: [{taskId, time, ordinal}]} — ordinal is the nth task you checked that day
   const[completionLog,setCompletionLog]=useState({});
@@ -1294,6 +1393,12 @@ export default function Dashboard(){
   const[libSearch,setLibSearch]=useState("");
   const[logDetail,setLogDetail]=useState(null);  // {resolved,meal,editId?} serving/qty chooser
   const[foodEditor,setFoodEditor]=useState(null);// {mode:"food"|"recipe",draft}
+  const[ingEditor,setIngEditor]=useState(null);// inline new-ingredient creator (layers above recipe editor)
+  const[foodCreateMenu,setFoodCreateMenu]=useState(null);// {meal} chooser: New Food / New Recipe → Manual / Scan
+  const[scanner,setScanner]=useState(null);// {phase:"camera"|"processing"|"error"|"nocam", meal, image, frame, progress, error}
+  const scanVideoRef=useRef(null);
+  const scanStreamRef=useRef(null);
+  const scanBoxRef=useRef(null);
   const[dietVarPicker,setDietVarPicker]=useState(false);
   const[dietVarSearch,setDietVarSearch]=useState("");
   const[anCardCfg,setAnCardCfg]=useState(null);  // index of analytics card being configured, or "new"
@@ -2488,6 +2593,12 @@ ${body}
       if(d.focusCompletionLog)setFocusCompletionLog(d.focusCompletionLog);
       if(d.habitOrder)setHabitOrder(d.habitOrder);
       if(d.career)setCareer(migrateCareer({...defCareer,...d.career}));
+      // RESTORE ACTIVE WORKOUT: only when a workout is genuinely being logged (wkActive set by a real
+      // logging action — typing a set, adding a set, or marking Done — not the pre-filled template, and
+      // not a saved/idle draft). Reopens that split's log instead of landing on Home when iOS reloads the
+      // PWA mid-workout. Stale (>12h) active flags are ignored so a forgotten workout never hijacks launch.
+      if(typeof d.wkActive==="number")setWkActive(d.wkActive);
+      if(d.wkActive&&(Date.now()-d.wkActive<12*3600*1000)&&d.curWkState&&d.splits&&d.splits[d.curWkState.split]){setTab(null);setMenuTab("workout");setGView("workouts");setGSplit(d.curWkState.split);}
       // Migrate photoLog from main blob to separate key (one-time)
       if(d.photoLog&&d.photoLog.length>0){try{localStorage.setItem("dash-v18-photos",JSON.stringify(d.photoLog));}catch(e){}}
     }
@@ -2496,6 +2607,16 @@ ${body}
   }catch(e){console.error("Load failed:",e);}
   finally{setHydrated(true);}
   },[]);
+
+  // iOS hardening: the moment the app is hidden/suspended (iOS reclaims PWAs after a few min in the
+  // background), flush the live workout draft to storage immediately rather than waiting for the debounce,
+  // so the set you just typed is never lost on a cold reload.
+  useEffect(()=>{
+    const flush=()=>{try{const raw=localStorage.getItem("dash-v18");const d=raw?JSON.parse(raw):{};d.curWkState=curWkState;d.wkActive=wkActive;localStorage.setItem("dash-v18",JSON.stringify(d));}catch(e){}};
+    const onVis=()=>{if(typeof document!=="undefined"&&document.visibilityState==="hidden")flush();};
+    if(typeof window!=="undefined"){window.addEventListener("pagehide",flush);document.addEventListener("visibilitychange",onVis);}
+    return()=>{if(typeof window!=="undefined"){window.removeEventListener("pagehide",flush);document.removeEventListener("visibilitychange",onVis);}};
+  },[curWkState,wkActive]);
 
   // SAVE HELPER — writes to localStorage with error surfacing
   const trySave=(key,data)=>{
@@ -2560,10 +2681,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,wkActive,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,wkActive,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -2602,15 +2723,15 @@ ${body}
   const syncSession=(s)=>{try{const raw=localStorage.getItem("dash-v18");const d=raw?JSON.parse(raw):{};d.activeSession=s;delete d.photoLog;localStorage.setItem("dash-v18",JSON.stringify(d));}catch(e){setSaveError("Workout save failed — try clearing photos in Settings");}};
   const uSet=(ei,si,f,v)=>{
     if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets[si][f]=parseFloat(v)||0;syncSession(n);return n;});}
-    else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets[si][f]=parseFloat(v)||0;return n;});
+    else{setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets[si][f]=parseFloat(v)||0;return n;});setWkActive(Date.now());}
   };
   const aSet=ei=>{
     if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0,sec:0});syncSession(n);return n;});}
-    else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0,sec:0});return n;});
+    else{setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].sets.push({w:0,r:0,sec:0});return n;});setWkActive(Date.now());}
   };
   const rSet=ei=>{
     if(activeSession){setActiveSession(p=>{const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei].sets.length>1)n.exercises[ei].sets.pop();syncSession(n);return n;});}
-    else setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei].sets.length>1)n.exercises[ei].sets.pop();return n;});
+    else{setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));if(n.exercises[ei].sets.length>1)n.exercises[ei].sets.pop();return n;});setWkActive(Date.now());}
   };
   // Rename an exercise in the current split (updates the live draft + saved template by index; muscle groups re-map automatically from the new name)
   const renameExercise=(ei,name)=>{
@@ -2634,7 +2755,7 @@ ${body}
   };
   const cancelSession=()=>setShowCancelConfirm(true);
   const confirmCancel=()=>{setActiveSession(null);syncSession(null);setDoneEx({});setShowCancelConfirm(false);setSessionMinimized(false);};
-  const saveWk=()=>{if(!curWkState||savingWk)return;const durMin=parseFloat(manualDuration);const dur=durMin>0?Math.round(durMin*60000):undefined;setWHist(p=>[...p,{id:uid(),date:manualDate||dk(now),split:curWkState.split,exercises:curWkState.exercises,...(dur?{duration:dur}:{})}]);setConfetti(true);setSavingWk(true);setTimeout(()=>setSavingWk(false),2200);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>ex.kind==="cardio"?{name:ex.name,kind:"cardio",distance:0,distUnit:ex.distUnit||"mi",timeMin:0,sets:[]}:({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});setManualDuration("");setManualDate(dk(new Date()));},2000);};
+  const saveWk=()=>{if(!curWkState||savingWk)return;const durMin=parseFloat(manualDuration);const dur=durMin>0?Math.round(durMin*60000):undefined;setWHist(p=>[...p,{id:uid(),date:manualDate||dk(now),split:curWkState.split,exercises:curWkState.exercises,...(dur?{duration:dur}:{})}]);setWkActive(null);setConfetti(true);setSavingWk(true);setTimeout(()=>setSavingWk(false),2200);setTimeout(()=>{setConfetti(false);setCurWkState(p=>({...p,exercises:p.exercises.map(ex=>ex.kind==="cardio"?{name:ex.name,kind:"cardio",distance:0,distUnit:ex.distUnit||"mi",timeMin:0,sets:[]}:({name:ex.name,sets:ex.sets.map(()=>({w:0,r:0}))}))}));setDoneEx({});setManualDuration("");setManualDate(dk(new Date()));},2000);};
   // Save a running/cardio workout: distance + time (min:sec) → wHist entry with type:"cardio".
   const saveCardio=()=>{
     const dist=parseFloat(cardioLog.distance)||0;
@@ -2688,13 +2809,20 @@ ${body}
   const dietSaveFood=(item)=>setFoodLib(prev=>{const i=prev.findIndex(f=>f.id===item.id);if(i<0)return[...prev,item];const c=[...prev];c[i]={...item,updatedAt:Date.now()};return c;});
   const dietDeleteFood=(id)=>setFoodLib(prev=>prev.filter(f=>f.id!==id));
   const dietDuplicateFood=(id)=>{const src=foodLib.find(f=>f.id===id);if(!src)return null;const copy={...JSON.parse(JSON.stringify(src)),id:uid(),name:(src.name||"Food")+" (copy)",seeded:false,createdAt:Date.now(),updatedAt:Date.now()};setFoodLib(prev=>[...prev,copy]);return copy;};
+  // illustration resolution + render
+  const illoForFood=(f)=>{if(!f)return"plate";if(f.illo)return f.illo;let extra="";if(f.kind==="recipe"&&f.ingredients)extra=f.ingredients.map(i=>{const g=foodLib.find(x=>x.id===i.foodId);return g?g.name:"";}).join(" ");return illoKey(f.name,extra);};
+  const illoEl=(key,size)=>{const s=size||38;return(<span style={{width:s,height:s,flexShrink:0,display:"inline-flex",lineHeight:0}}>{(ILLO[key]||ILLO.plate)(s)}</span>);};
+  // dedupe helper: find an existing library food matching a normalized name (+brand)
+  const findFoodByIdentity=(name,brand)=>{const nn=(name||"").trim().toLowerCase();const bb=(brand||"").trim().toLowerCase();return foodLib.find(f=>f.kind!=="recipe"&&f.name.trim().toLowerCase()===nn&&(f.brand||"").trim().toLowerCase()===bb);};
   // logging (snapshots nutrients at log time so later edits to the library don't rewrite history)
-  const dietLogFood=(resolved,meal,qty)=>{const q=+qty||1;const entry={id:uid(),date:dietDate,meal,srcId:resolved.id||null,srcKind:resolved.kind||"food",name:resolved.name,brand:resolved.brand||"",servingLabel:resolved.servingLabel,servingGrams:resolved.servingGrams,qty:q,nutr:{...resolved.nutr},t:Date.now()};setDietLog(prev=>[...prev,entry]);};
+  const dietLogFood=(resolved,meal,qty)=>{const q=+qty||1;const entry={id:uid(),date:dietDate,meal,srcId:resolved.id||null,srcKind:resolved.kind||"food",name:resolved.name,brand:resolved.brand||"",servingLabel:resolved.servingLabel,servingGrams:resolved.servingGrams,qty:q,nutr:{...resolved.nutr},illo:resolved.illo||illoKey(resolved.name),t:Date.now()};setDietLog(prev=>[...prev,entry]);};
   const dietUpdEntry=(id,patch)=>setDietLog(prev=>prev.map(e=>e.id===id?{...e,...patch}:e));
   const dietDelEntry=(id)=>setDietLog(prev=>prev.filter(e=>e.id!==id));
-  const dietLogWater=(ml,meal)=>{const entry={id:uid(),date:dietDate,meal:meal||"snacks",srcId:null,srcKind:"water",name:"Water",brand:"",servingLabel:ml+" ml",servingGrams:ml,qty:1,nutr:{water:ml},t:Date.now()};setDietLog(prev=>[...prev,entry]);};
+  const dietLogWater=(ml,meal)=>{const entry={id:uid(),date:dietDate,meal:meal||"snacks",srcId:null,srcKind:"water",name:"Water",brand:"",servingLabel:ml+" ml",servingGrams:ml,qty:1,nutr:{water:ml},illo:"water",t:Date.now()};setDietLog(prev=>[...prev,entry]);};
   // recent + search over the library
   const dietRecentFoods=useMemo(()=>{const seen=new Set(),out=[];[...dietLog].sort((a,b)=>(b.t||0)-(a.t||0)).forEach(e=>{if(e.srcId&&!seen.has(e.srcId)){seen.add(e.srcId);const f=foodLib.find(x=>x.id===e.srcId);if(f)out.push(f);}});return out.slice(0,8);},[dietLog,foodLib]);
+  // Per-meal food memory: foods most frequently logged under a given meal (breakfast/lunch/dinner/snacks), ranked by count then recency.
+  const dietMealFoods=(meal)=>{if(!meal)return[];const score={},last={};dietLog.forEach(e=>{if(e.meal!==meal||!e.srcId)return;score[e.srcId]=(score[e.srcId]||0)+1;last[e.srcId]=Math.max(last[e.srcId]||0,e.t||0);});return Object.keys(score).map(id=>{const f=foodLib.find(x=>x.id===id);return f?{...f,_count:score[id],_last:last[id]}:null;}).filter(Boolean).sort((a,b)=>b._count-a._count||b._last-a._last).slice(0,12);};
   const dietLibMatches=useMemo(()=>{const q=libSearch.trim().toLowerCase();let list=foodLib;if(libBottom==="drinks")list=foodLib.filter(f=>f.category==="drink");else if(libFilter==="recipe")list=foodLib.filter(f=>f.kind==="recipe");else if(libFilter==="food")list=foodLib.filter(f=>f.kind!=="recipe");if(!q)return list;return list.filter(f=>f.name.toLowerCase().includes(q)||(f.brand||"").toLowerCase().includes(q));},[foodLib,libSearch,libBottom,libFilter]);
   // ── Analytics: day-key range ending today (no future), per-day totals, averages over days ACTUALLY recorded ──
   const dietRangeKeys=useMemo(()=>{const n=dietAnalyticsRange*7;const arr=[];const base=new Date();base.setHours(0,0,0,0);for(let i=0;i<n;i++){const d=new Date(base);d.setDate(d.getDate()-i);arr.push(dk(d));}return arr;},[dietAnalyticsRange]);
@@ -2705,6 +2833,23 @@ ${body}
   const dietTrendMax=useMemo(()=>{let mx=0;dietTrendSeries.forEach(p=>{if(p.v!==null&&p.v>mx)mx=p.v;});const tg=dietTargets[dietTrendVar];if(tg>mx)mx=tg;return mx;},[dietTrendSeries,dietTargets,dietTrendVar]);
   // Build editor drafts (strings for inputs; blank = not provided).
   const makeFoodDraft=(f)=>{const nutr={};if(f&&f.nutr)Object.keys(f.nutr).forEach(k=>{nutr[k]=String(f.nutr[k]);});return{mode:"food",id:f?f.id:null,name:f?f.name:"",brand:f?(f.brand||""):"",category:f?(f.category||"food"):"food",serving:{label:f?((f.serving||{}).label||""):"",grams:f?String((f.serving||{}).grams||""):""},nutr,expand:{0:true},createdAt:f?f.createdAt:null};};
+  const makeIngDraft=()=>({name:"",brand:"",serving:{label:"",grams:""},amount:"",nutr:{},expand:{0:true}});
+  // ── Nutrition-label scanner: lazy-load OCR, run it, open the New Food form prefilled ──
+  const loadTesseract=()=>new Promise((res,rej)=>{if(typeof window!=="undefined"&&window.Tesseract)return res(window.Tesseract);if(typeof document==="undefined")return rej(new Error("no-doc"));const sc=document.createElement("script");sc.src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";sc.async=true;sc.onload=()=>window.Tesseract?res(window.Tesseract):rej(new Error("Scanner library failed to load."));sc.onerror=()=>rej(new Error("Couldn't load the scanner. Check your connection and try again."));document.head.appendChild(sc);});
+  const scanOpenResult=(parsed,img,meal)=>{const nutr={};Object.keys(parsed.nutr||{}).forEach(k=>{nutr[k]=String(parsed.nutr[k]);});setFoodEditor({mode:"food",id:null,name:"",brand:"",category:"food",serving:{label:parsed.serving.label||"",grams:(parsed.serving.grams!==""&&parsed.serving.grams!=null)?String(parsed.serving.grams):""},nutr,expand:{0:true,1:Object.keys(nutr).some(k=>NUT_BY_ID[k]&&NUT_BY_ID[k].group===1)},createdAt:null,scanImage:img,_meal:meal||null});setScanner(null);};
+  const scanRunOcr=async(img,meal)=>{setScanner(s=>({...(s||{}),phase:"processing",image:img,meal:meal,progress:0,error:""}));try{const T=await loadTesseract();const r=await T.recognize(img,"eng",{logger:m=>{if(m&&m.status==="recognizing text")setScanner(s=>(s&&s.phase==="processing")?{...s,progress:Math.round((m.progress||0)*100)}:s);}});const text=(r&&r.data&&r.data.text)||"";scanOpenResult(parseNutritionLabel(text),img,meal);}catch(e){setScanner(s=>({...(s||{}),phase:"error",image:img,error:String((e&&e.message)||e)}));}};
+  useEffect(()=>{
+    if(!(scanner&&scanner.phase==="camera"))return;
+    let cancelled=false;
+    (async()=>{try{
+      if(typeof navigator==="undefined"||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setScanner(s=>s?{...s,phase:"nocam"}:s);return;}
+      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});
+      if(cancelled){stream.getTracks().forEach(t=>t.stop());return;}
+      scanStreamRef.current=stream;
+      if(scanVideoRef.current){scanVideoRef.current.srcObject=stream;const pr=scanVideoRef.current.play();if(pr&&pr.catch)pr.catch(()=>{});}
+    }catch(e){setScanner(s=>s?{...s,phase:"nocam",error:String((e&&e.message)||e)}:s);}})();
+    return()=>{cancelled=true;if(scanStreamRef.current){scanStreamRef.current.getTracks().forEach(t=>t.stop());scanStreamRef.current=null;}};
+  },[scanner&&scanner.phase]);
   const makeRecipeDraft=(f)=>({mode:"recipe",id:f?f.id:null,name:f?f.name:"",brand:f?(f.brand||""):"",ingredients:f&&f.ingredients?f.ingredients.map(i=>({foodId:i.foodId,grams:String(i.grams)})):[{foodId:"",grams:""}],servings:f?String(f.servings||1):"1",cookedWeight:f&&f.cookedWeight?String(f.cookedWeight):"",servingLabel:f?(f.servingLabel||"serving"):"serving",createdAt:f?f.createdAt:null});
   const dietDay=diet[dietDate]||{calories:0,protein:0,carbs:0,fat:0,water:0};
   const setDietMetric=(key,val)=>setDiet(p=>({...p,[dietDate]:{calories:0,protein:0,carbs:0,fat:0,water:0,...(p[dietDate]||{}),[key]:Math.max(0,val)}}));
@@ -6025,6 +6170,7 @@ ${body}
                   </div>
                   {items.map(e=>{const grams=Math.round((e.servingGrams||0)*(+e.qty||0));return(
                     <div key={e.id} onClick={()=>setLogDetail({resolved:{id:e.srcId,kind:e.srcKind,name:e.name,brand:e.brand,servingGrams:e.servingGrams,servingLabel:e.servingLabel,nutr:e.nutr},meal:e.meal,editId:e.id,qty:e.qty})} className="press" style={{display:"flex",alignItems:"center",gap:10,padding:"10px 15px",borderTop:`1px solid ${C.hairline}`,cursor:"pointer"}}>
+                      {illoEl(e.illo||illoKey(e.name),30)}
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13.5,fontWeight:600,color:C.text,fontFamily:FN.b,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.name}{e.brand?<span style={{color:C.textDim,fontWeight:500}}> · {e.brand}</span>:null}</div>
                         <div style={{fontSize:10.5,color:C.textDim,fontWeight:600,fontFamily:FN.m,marginTop:2}}>{(+e.qty||0)===1?"1 serving":`${(+e.qty||0)} × ${e.servingLabel}`}{grams>0?` · ${grams} g`:""}</div>
@@ -6102,6 +6248,7 @@ ${body}
           {/* ═══════════ FOOD LIBRARY SHEET ═══════════ */}
           {libModal&&(()=>{const meal=libModal.meal;const mealL=meal?(DIET_MEALS.find(x=>x.k===meal)||{}).l:"Food Library";
             const openLog=f=>{const r=resolveFood(f,foodLib);if(meal)setLogDetail({resolved:r,meal,qty:1});else setFoodEditor(f.kind==="recipe"?makeRecipeDraft(f):makeFoodDraft(f));};
+            const mealFav=meal?dietMealFoods(meal):[];
             const waters=[{l:"8 oz",ml:237},{l:"12 oz",ml:355},{l:"16 oz",ml:473},{l:"24 oz",ml:710}];
             return(<div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setLibModal(null)}>
               <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.72)",backdropFilter:"blur(8px)"}}/>
@@ -6123,7 +6270,7 @@ ${body}
                 {libBottom!=="drinks"&&<div style={{display:"flex",alignItems:"center",gap:7,padding:"0 18px 12px"}}>
                   {[{k:"all",l:"All"},{k:"food",l:"Foods"},{k:"recipe",l:"Recipes"}].map(ff=>{const on=libFilter===ff.k;return(<button key={ff.k} className="press" onClick={()=>setLibFilter(ff.k)} style={{padding:"7px 13px",borderRadius:20,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:11,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{ff.l}</button>);})}
                   <div style={{flex:1}}/>
-                  <button className="press" onClick={()=>setFoodEditor(libFilter==="recipe"?makeRecipeDraft():makeFoodDraft())} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",borderRadius:20,border:"none",background:C.accentSoft,color:C.accent,fontSize:11,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>{libFilter==="recipe"?"Recipe":"New"}</button>
+                  <button className="press" onClick={()=>{if(libFilter==="recipe")setFoodEditor(makeRecipeDraft());else setFoodCreateMenu({meal});}} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",borderRadius:20,border:"none",background:C.accentSoft,color:C.accent,fontSize:11,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>{libFilter==="recipe"?"Recipe":"New"}</button>
                 </div>}
                 {/* body */}
                 <div className="hide-scroll" style={{flex:1,overflowY:"auto",padding:"0 18px 16px"}}>
@@ -6132,18 +6279,25 @@ ${body}
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{waters.map(w=>(<button key={w.ml} className="press" onClick={()=>{dietLogWater(w.ml,meal);setLibModal(null);}} style={{flex:"1 0 40%",padding:"13px 0",borderRadius:12,border:`1px solid ${C.hairline}`,background:C.surface,color:C.text,fontSize:13,fontWeight:700,fontFamily:FN.b,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}><span style={{color:NUT_BY_ID.water.color,fontSize:15,fontWeight:800}}>{w.l}</span><span style={{fontSize:9.5,color:C.textDim}}>{w.ml} ml</span></button>))}</div>
                     <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",margin:"18px 0 10px"}}>Beverages</div>
                   </div>}
+                  {meal&&!libSearch&&libBottom!=="drinks"&&mealFav.length>0&&<div style={{marginBottom:18}}>
+                    <div style={{fontSize:11,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.08em",margin:"6px 0 10px",display:"flex",alignItems:"center",gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.3 5.9 20.4l1.4-6.8L2.2 9l6.9-.7Z"/></svg>Your {mealL}</div>
+                    <div className="hide-scroll" style={{display:"flex",gap:9,overflowX:"auto",paddingBottom:2}}>{mealFav.map(f=>(<button key={f.id} className="press" onClick={()=>openLog(f)} style={{flex:"0 0 auto",width:92,padding:"11px 8px",borderRadius:14,border:`1px solid ${C.hairline}`,background:C.surface,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:7,position:"relative"}}><span style={{position:"absolute",top:6,right:6,fontSize:8.5,fontWeight:800,color:C.accent,background:C.accentSoft,borderRadius:7,padding:"1px 5px"}}>×{f._count}</span>{illoEl(illoForFood(f),40)}<span style={{fontSize:10,fontWeight:600,color:C.text,fontFamily:FN.b,textAlign:"center",lineHeight:1.2,maxHeight:24,overflow:"hidden"}}>{f.name.length>18?f.name.slice(0,17)+"…":f.name}</span></button>))}</div>
+                  </div>}
                   {libBottom!=="drinks"&&!libSearch&&dietRecentFoods.length>0&&<div style={{marginBottom:18}}>
                     <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",margin:"6px 0 10px"}}>Recent</div>
-                    <div className="hide-scroll" style={{display:"flex",gap:9,overflowX:"auto",paddingBottom:2}}>{dietRecentFoods.map(f=>(<button key={f.id} className="press" onClick={()=>openLog(f)} style={{flex:"0 0 auto",width:84,padding:"12px 8px",borderRadius:13,border:`1px solid ${C.hairline}`,background:C.surface,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:7}}><span style={{width:34,height:34,borderRadius:"50%",background:C.accentSoft,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{f.category==="drink"?<><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></>:<><path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 0 0 2-2V2M5 2v20M19 2v20M13 11V2a4 4 0 0 1 4 4v5a4 4 0 0 1-4 0Z"/></>}</svg></span><span style={{fontSize:10,fontWeight:600,color:C.text,fontFamily:FN.b,textAlign:"center",lineHeight:1.2,maxHeight:24,overflow:"hidden"}}>{f.name.length>16?f.name.slice(0,15)+"…":f.name}</span></button>))}</div>
+                    <div className="hide-scroll" style={{display:"flex",gap:9,overflowX:"auto",paddingBottom:2}}>{dietRecentFoods.map(f=>(<button key={f.id} className="press" onClick={()=>openLog(f)} style={{flex:"0 0 auto",width:84,padding:"12px 8px",borderRadius:13,border:`1px solid ${C.hairline}`,background:C.surface,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:7}}>{illoEl(illoForFood(f),38)}<span style={{fontSize:10,fontWeight:600,color:C.text,fontFamily:FN.b,textAlign:"center",lineHeight:1.2,maxHeight:24,overflow:"hidden"}}>{f.name.length>16?f.name.slice(0,15)+"…":f.name}</span></button>))}</div>
                   </div>}
                   <div style={{fontSize:11,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",margin:"6px 0 10px"}}>{libSearch?"Results":libBottom==="library"?"All Foods & Recipes":libBottom==="drinks"?"":"Suggestions"}</div>
                   {dietLibMatches.length===0&&<div style={{textAlign:"center",color:C.textDim,fontSize:12.5,padding:"26px 10px"}}>{libSearch?`No matches for “${libSearch}”.`:libFilter==="recipe"?"No recipes yet.":libFilter==="food"?"No foods yet.":"Nothing here yet."}<div style={{marginTop:14,display:"flex",gap:8,justifyContent:"center"}}><button className="press" onClick={()=>setFoodEditor(makeFoodDraft())} style={{...btnG,fontSize:12,padding:"10px 16px"}}>+ New food</button><button className="press" onClick={()=>setFoodEditor(makeRecipeDraft())} style={{...btnB,fontSize:12,padding:"10px 16px"}}>+ New recipe</button></div></div>}
                   {dietLibMatches.map(f=>{const r=resolveFood(f,foodLib);const cal=Math.round((r.nutr.calories||0));return(
                     <div key={f.id} style={{display:"flex",alignItems:"center",gap:11,padding:"11px 2px",borderBottom:`1px solid ${C.hairline}`}}>
-                      <div onClick={()=>openLog(f)} className="press" style={{flex:1,minWidth:0,cursor:"pointer"}}>
+                      <div onClick={()=>openLog(f)} className="press" style={{flex:1,minWidth:0,cursor:"pointer",display:"flex",alignItems:"center",gap:11}}>
+                        {illoEl(illoForFood(f),42)}
+                        <div style={{flex:1,minWidth:0}}>
                         <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:13.5,fontWeight:600,color:C.text,fontFamily:FN.b,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name}</span>{f.kind==="recipe"&&<span style={{fontSize:8.5,fontWeight:800,color:C.purple,background:C.purpleSoft,borderRadius:5,padding:"2px 5px",textTransform:"uppercase"}}>Recipe</span>}</div>
                         <div style={{fontSize:10.5,color:C.textDim,fontWeight:600,fontFamily:FN.m,marginTop:2}}>{r.servingLabel}{r.servingGrams?` · ${Math.round(r.servingGrams)} g`:""}{f.brand?` · ${f.brand}`:""}</div>
                         <div style={{display:"flex",gap:10,marginTop:5}}>{["calories","carbs","fat","protein"].map(k=>{const v=r.nutr[k];if(v===null||v===undefined)return null;return(<span key={k} style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:10,fontWeight:700,color:C.textSec,fontFamily:FN.m}}><span style={{width:6,height:6,borderRadius:"50%",background:NUT_BY_ID[k].color}}/>{nutFmt(k,v)}{k==="calories"?"":"g"}</span>);})}</div>
+                        </div>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:1,flexShrink:0}}>
                         <button className="press" onClick={()=>setFoodEditor(f.kind==="recipe"?makeRecipeDraft(f):makeFoodDraft(f))} title="Edit" style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",padding:6,display:"flex"}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
@@ -6155,7 +6309,7 @@ ${body}
                 {/* bottom bar */}
                 <div style={{display:"flex",borderTop:`1px solid ${C.hairline}`,background:C.surface}}>
                   {[{k:"create",l:"Create",ic:<path d="M12 5v14M5 12h14"/>},{k:"library",l:"Library",ic:<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></>},{k:"drinks",l:"Drinks",ic:<><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4Z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></>}].map(b=>{const active=b.k!=="create"&&libBottom===b.k;return(
-                    <button key={b.k} className="press" onClick={()=>{if(b.k==="create")setFoodEditor(makeFoodDraft());else setLibBottom(active?"add":b.k);}} style={{flex:1,padding:"13px 0 15px",background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,color:active?C.accent:C.textDim}}>
+                    <button key={b.k} className="press" onClick={()=>{if(b.k==="create")setFoodCreateMenu({meal});else setLibBottom(active?"add":b.k);}} style={{flex:1,padding:"13px 0 15px",background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,color:active?C.accent:C.textDim}}>
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{b.ic}</svg>
                       <span style={{fontSize:10,fontWeight:700,fontFamily:FN.b}}>{b.l}</span>
                     </button>);})}
@@ -6175,7 +6329,7 @@ ${body}
             return(<div style={{position:"fixed",inset:0,zIndex:560,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setLogDetail(null)}>
               <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.75)",backdropFilter:"blur(8px)"}}/>
               <div onClick={e=>e.stopPropagation()} className="d-sheet" style={{position:"relative",background:C.bg,width:"100%",maxWidth:460,borderTopLeftRadius:22,borderTopRightRadius:22,border:`1px solid ${C.hairline}`,padding:"20px 20px 24px"}}>
-                <div style={{fontSize:17,fontWeight:800,color:C.text,fontFamily:FN.h,marginBottom:2}}>{r.name}</div>
+                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:5}}>{illoEl(r.illo||illoKey(r.name),46)}<div style={{fontSize:17,fontWeight:800,color:C.text,fontFamily:FN.h,flex:1,minWidth:0,lineHeight:1.15}}>{r.name}</div></div>
                 <div style={{fontSize:11.5,color:C.textDim,fontWeight:600,marginBottom:16}}>{r.servingLabel}{sg?` · ${Math.round(sg)} g per serving`:""}{r.brand?` · ${r.brand}`:""}</div>
                 {/* serving / grams toggle */}
                 {canG&&<div style={{display:"flex",gap:6,marginBottom:14,background:C.surfaceDim,borderRadius:11,padding:4,border:`1px solid ${C.hairline}`}}>{seg("serving","Servings")}{seg("grams","Grams")}</div>}
@@ -6206,8 +6360,11 @@ ${body}
             const recipePrev=isRecipe?resolveFood({kind:"recipe",ingredients:d.ingredients,servings:d.servings,cookedWeight:d.cookedWeight,servingLabel:d.servingLabel,name:d.name},foodLib):null;
             const canSave=d.name.trim()&&(isRecipe?(d.ingredients||[]).some(i=>i.foodId&&+i.grams>0)&&+d.servings>0:+((d.serving||{}).grams)>0);
             const saveFood=()=>{
-              if(isRecipe){const item={id:d.id||uid(),kind:"recipe",name:d.name.trim(),brand:d.brand.trim(),ingredients:(d.ingredients||[]).filter(i=>i.foodId&&+i.grams>0).map(i=>({foodId:i.foodId,grams:+i.grams})),servings:Math.max(1,+d.servings||1),cookedWeight:+d.cookedWeight>0?+d.cookedWeight:null,servingLabel:d.servingLabel||"serving",createdAt:d.createdAt||Date.now()};dietSaveFood(item);}
-              else{const nutr={};Object.keys(d.nutr||{}).forEach(k=>{const raw=d.nutr[k];if(raw===""||raw===null||raw===undefined)return;const v=+raw;if(isNaN(v)||v<0)return;nutr[k]=v;});const item={id:d.id||uid(),kind:"food",name:d.name.trim(),brand:d.brand.trim(),category:d.category||"food",serving:{label:(d.serving.label||"").trim()||"serving",grams:+d.serving.grams},nutr,createdAt:d.createdAt||Date.now()};dietSaveFood(item);}
+              let saved=null;
+              if(isRecipe){const item={id:d.id||uid(),kind:"recipe",name:d.name.trim(),brand:d.brand.trim(),ingredients:(d.ingredients||[]).filter(i=>i.foodId&&+i.grams>0).map(i=>({foodId:i.foodId,grams:+i.grams})),servings:Math.max(1,+d.servings||1),cookedWeight:+d.cookedWeight>0?+d.cookedWeight:null,servingLabel:d.servingLabel||"serving",illo:illoKey(d.name,(d.ingredients||[]).map(i=>{const g=foodLib.find(x=>x.id===i.foodId);return g?g.name:"";}).join(" ")),createdAt:d.createdAt||Date.now()};dietSaveFood(item);saved=item;}
+              else{const nutr={};Object.keys(d.nutr||{}).forEach(k=>{const raw=d.nutr[k];if(raw===""||raw===null||raw===undefined)return;const v=+raw;if(isNaN(v)||v<0)return;nutr[k]=v;});const item={id:d.id||uid(),kind:"food",name:d.name.trim(),brand:d.brand.trim(),category:d.category||"food",serving:{label:(d.serving.label||"").trim()||"serving",grams:+d.serving.grams},nutr,illo:illoKey(d.name),createdAt:d.createdAt||Date.now()};dietSaveFood(item);saved=item;}
+              // Came from "Add Food" under a meal (scan or new) → jump straight to logging it there.
+              if(saved&&d._meal){const r=resolveFood(saved,[...foodLib.filter(f=>f.id!==saved.id),saved]);setFoodEditor(null);setLogDetail({resolved:r,meal:d._meal,qty:1});return;}
               setFoodEditor(null);
             };
             return(<div style={{position:"fixed",inset:0,zIndex:580,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setFoodEditor(null)}>
@@ -6220,6 +6377,10 @@ ${body}
                 </div>
                 <div className="hide-scroll" style={{flex:1,overflowY:"auto",padding:"16px 18px 24px"}}>
                   {!d.id&&<div style={{display:"flex",gap:8,marginBottom:18,background:C.surfaceDim,borderRadius:11,padding:4,border:`1px solid ${C.hairline}`}}>{[{k:"food",l:"Single Food"},{k:"recipe",l:"Recipe"}].map(t=>{const on=d.mode===t.k;return(<button key={t.k} className="press" onClick={()=>setFoodEditor(t.k==="recipe"?makeRecipeDraft():makeFoodDraft())} style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{t.l}</button>);})}</div>}
+                  {d.scanImage&&<div style={{display:"flex",alignItems:"center",gap:11,marginBottom:16,background:C.surface,border:`1px solid ${C.accentMed||C.hairline}`,borderRadius:12,padding:10}}>
+                    <img src={d.scanImage} alt="Scanned label" style={{width:54,height:54,borderRadius:9,objectFit:"cover",border:`1px solid ${C.hairline}`}}/>
+                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:800,color:C.accent,fontFamily:FN.b,display:"flex",alignItems:"center",gap:5}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/></svg>Scanned label</div><div style={{fontSize:10.5,color:C.textDim,fontWeight:500,marginTop:2,lineHeight:1.4}}>Recognized values are filled in below — review and correct anything before saving.</div></div>
+                  </div>}
                   {/* name + brand */}
                   <label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:6}}>Name</label>
                   <input value={d.name} onChange={e=>set({name:e.target.value})} placeholder={isRecipe?"e.g. Chicken & Rice Bowl":"e.g. Grilled Chicken"} style={{...dietInp,marginBottom:12}}/>
@@ -6238,7 +6399,10 @@ ${body}
                         <input type="number" inputMode="decimal" value={ing.grams} onChange={e=>{const v=e.target.value;setFoodEditor(ff=>({...ff,ingredients:ff.ingredients.map((x,xi)=>xi===i?{...x,grams:v}:x)}));}} placeholder="g" style={{...dietInp,width:68,textAlign:"center",padding:"10px 6px"}}/>
                         <button className="press" onClick={()=>setFoodEditor(ff=>({...ff,ingredients:ff.ingredients.filter((_,xi)=>xi!==i)}))} style={{background:"transparent",border:"none",color:C.textDim,fontSize:18,cursor:"pointer"}}>×</button>
                       </div>);})}
-                    <button className="press" onClick={()=>setFoodEditor(ff=>({...ff,ingredients:[...(ff.ingredients||[]),{foodId:"",grams:""}]}))} style={{...btnG,width:"100%",fontSize:12,marginBottom:16}}>+ Add ingredient</button>
+                    <div style={{display:"flex",gap:8,marginBottom:16}}>
+                      <button className="press" onClick={()=>setFoodEditor(ff=>({...ff,ingredients:[...(ff.ingredients||[]),{foodId:"",grams:""}]}))} style={{...btnG,flex:1,fontSize:12}}>+ Existing food</button>
+                      <button className="press" onClick={()=>setIngEditor(makeIngDraft())} style={{...btnB,flex:1,fontSize:12}}>+ New ingredient</button>
+                    </div>
                     <div style={{display:"flex",gap:10,marginBottom:8}}>
                       <div style={{flex:1}}><label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",display:"block",marginBottom:6}}>Servings</label><input type="number" inputMode="decimal" value={d.servings} onChange={e=>set({servings:e.target.value})} style={dietInp}/></div>
                       <div style={{flex:1}}><label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",display:"block",marginBottom:6}}>Cooked wt (g)</label><input type="number" inputMode="decimal" value={d.cookedWeight} onChange={e=>set({cookedWeight:e.target.value})} placeholder="optional" style={dietInp}/></div>
@@ -6276,6 +6440,139 @@ ${body}
                     <button className="press" onClick={()=>{const c=dietDuplicateFood(d.id);if(c)setFoodEditor(c.kind==="recipe"?makeRecipeDraft(c):makeFoodDraft(c));}} style={{...btnG,flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Duplicate</button>
                     <button className="press" onClick={()=>setDietConfirm({msg:`Delete “${d.name||"this item"}”${isRecipe?" recipe":""}? This can't be undone. Past log entries keep their data.`,label:"Delete",onYes:()=>{dietDeleteFood(d.id);setFoodEditor(null);}})} style={{...btnG,flex:1,color:C.red,borderColor:C.red+"55",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Delete</button>
                   </div>}
+                </div>
+              </div>
+            </div>);})()}
+
+          {/* ═══════════ CREATE CHOOSER: New Food / New Recipe → Manual / Scan ═══════════ */}
+          {foodCreateMenu&&(()=>{const menu=foodCreateMenu;const step=menu.step||"root";
+            const Opt=({onClick,icon,title,sub,accent})=>(<button className="press" onClick={onClick} style={{display:"flex",alignItems:"center",gap:14,width:"100%",textAlign:"left",padding:"16px 16px",borderRadius:15,border:`1px solid ${C.hairline}`,background:C.surface,cursor:"pointer",marginBottom:11}}><span style={{width:46,height:46,borderRadius:12,flexShrink:0,background:accent?C.accentSoft:C.surfaceDim,color:accent?C.accent:C.textSec,display:"flex",alignItems:"center",justifyContent:"center"}}>{icon}</span><span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:14.5,fontWeight:800,color:C.text,fontFamily:FN.h}}>{title}</span><span style={{display:"block",fontSize:11.5,color:C.textDim,fontWeight:500,marginTop:2,lineHeight:1.35}}>{sub}</span></span><span style={{color:C.textDim,fontSize:18}}>›</span></button>);
+            return(<div style={{position:"fixed",inset:0,zIndex:610,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setFoodCreateMenu(null)}>
+              <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.75)",backdropFilter:"blur(8px)"}}/>
+              <div onClick={e=>e.stopPropagation()} className="d-sheet" style={{position:"relative",background:C.bg,width:"100%",maxWidth:460,borderTopLeftRadius:22,borderTopRightRadius:22,border:`1px solid ${C.hairline}`,padding:"20px 20px 26px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
+                  {step!=="root"&&<button className="press" onClick={()=>setFoodCreateMenu(m=>({...m,step:"root"}))} style={{background:"transparent",border:"none",color:C.accent,fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>‹</button>}
+                  <span style={{fontSize:17,fontWeight:800,color:C.text,fontFamily:FN.h,flex:1}}>{step==="root"?"Add to library":"New Food"}</span>
+                  <button className="press" onClick={()=>setFoodCreateMenu(null)} style={{background:"transparent",border:"none",color:C.textDim,fontSize:14,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+                </div>
+                {step==="root"?<>
+                  <Opt accent onClick={()=>setFoodCreateMenu(m=>({...m,step:"food"}))} title="New Food" sub="A single food or packaged item" icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2a2 2 0 0 0 2-2V2M5 2v20M19 2v20M13 11V2a4 4 0 0 1 4 4v5a4 4 0 0 1-4 0Z"/></svg>}/>
+                  <Opt onClick={()=>{setFoodEditor({...makeRecipeDraft(),_meal:menu.meal});setFoodCreateMenu(null);}} title="New Recipe" sub="Combine several ingredients into one dish" icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0-6 6c0 2 1 3 1 4h10c0-1 1-2 1-4a6 6 0 0 0-6-6Z"/><path d="M7 17h10M8 21h8"/></svg>}/>
+                </>:<>
+                  <Opt accent onClick={()=>{setScanner({phase:"camera",meal:menu.meal,frame:{l:9,t:26,w:82,h:48},progress:0});setFoodCreateMenu(null);}} title="Scan Nutrition Label" sub="Point your camera at the Nutrition Facts panel and we'll fill in the values" icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>}/>
+                  <Opt onClick={()=>{setFoodEditor({...makeFoodDraft(),_meal:menu.meal});setFoodCreateMenu(null);}} title="Manual Input" sub="Type in the nutrition yourself" icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>}/>
+                </>}
+              </div>
+            </div>);})()}
+
+          {/* ═══════════ NUTRITION LABEL SCANNER ═══════════ */}
+          {scanner&&(()=>{const ph=scanner.phase;const fr=scanner.frame||{l:9,t:26,w:82,h:48};
+            const onFile=e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>scanRunOcr(String(rd.result),scanner.meal);rd.readAsDataURL(f);};
+            const startDrag=(e,modeR)=>{e.preventDefault();e.stopPropagation();const box=scanBoxRef.current;if(!box)return;const rect=box.getBoundingClientRect();const sf={...fr};const sx=e.clientX,sy=e.clientY;
+              const move=ev=>{const dx=(ev.clientX-sx)/rect.width*100,dy=(ev.clientY-sy)/rect.height*100;setScanner(s=>{if(!s)return s;const f={...sf};if(modeR){f.w=Math.min(100-sf.l,Math.max(28,sf.w+dx));f.h=Math.min(100-sf.t,Math.max(16,sf.h+dy));}else{f.l=Math.min(100-sf.w,Math.max(0,sf.l+dx));f.t=Math.min(100-sf.h,Math.max(0,sf.t+dy));}return{...s,frame:f};});};
+              const up=()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up);};window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);};
+            const capture=()=>{const v=scanVideoRef.current,box=scanBoxRef.current;if(!v||!box||!v.videoWidth){return;}const vw=v.videoWidth,vh=v.videoHeight,cw=box.clientWidth,ch=box.clientHeight;const scale=Math.max(cw/vw,ch/vh);const offX=(vw*scale-cw)/2,offY=(vh*scale-ch)/2;let sx=(cw*fr.l/100+offX)/scale,sy=(ch*fr.t/100+offY)/scale,sw=(cw*fr.w/100)/scale,sh=(ch*fr.h/100)/scale;sx=Math.max(0,Math.min(vw-1,sx));sy=Math.max(0,Math.min(vh-1,sy));sw=Math.min(vw-sx,sw);sh=Math.min(vh-sy,sh);const MAXW=1500,os=sw>MAXW?MAXW/sw:1;const cv=document.createElement("canvas");cv.width=Math.max(1,Math.round(sw*os));cv.height=Math.max(1,Math.round(sh*os));cv.getContext("2d").drawImage(v,sx,sy,sw,sh,0,0,cv.width,cv.height);scanRunOcr(cv.toDataURL("image/jpeg",0.92),scanner.meal);};
+            return(<div style={{position:"fixed",inset:0,zIndex:700,background:"#05070C",display:"flex",flexDirection:"column"}}>
+              {ph==="camera"&&<>
+                <div ref={scanBoxRef} style={{position:"relative",flex:1,overflow:"hidden",touchAction:"none"}}>
+                  <video ref={scanVideoRef} autoPlay playsInline muted style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+                  {/* scan frame */}
+                  <div onPointerDown={e=>startDrag(e,false)} style={{position:"absolute",left:`${fr.l}%`,top:`${fr.t}%`,width:`${fr.w}%`,height:`${fr.h}%`,border:`2px solid ${C.accent}`,borderRadius:12,boxShadow:"0 0 0 9999px rgba(0,0,0,0.58)",cursor:"move",touchAction:"none"}}>
+                    <div style={{position:"absolute",top:-1,left:-1,width:18,height:18,borderTop:`3px solid ${C.accentBright||C.accent}`,borderLeft:`3px solid ${C.accentBright||C.accent}`,borderTopLeftRadius:12}}/>
+                    <div style={{position:"absolute",top:-1,right:-1,width:18,height:18,borderTop:`3px solid ${C.accentBright||C.accent}`,borderRight:`3px solid ${C.accentBright||C.accent}`,borderTopRightRadius:12}}/>
+                    <div style={{position:"absolute",bottom:-1,left:-1,width:18,height:18,borderBottom:`3px solid ${C.accentBright||C.accent}`,borderLeft:`3px solid ${C.accentBright||C.accent}`,borderBottomLeftRadius:12}}/>
+                    <div onPointerDown={e=>startDrag(e,true)} style={{position:"absolute",bottom:-11,right:-11,width:28,height:28,borderRadius:"50%",background:C.accent,border:"3px solid #05070C",cursor:"nwse-resize",touchAction:"none",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#05140D" strokeWidth="3" strokeLinecap="round"><path d="M8 20h12M20 8v12"/></svg></div>
+                  </div>
+                  <div style={{position:"absolute",top:14,left:0,right:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px"}}>
+                    <button className="press" onClick={()=>setScanner(null)} style={{background:"rgba(0,0,0,0.5)",border:"none",borderRadius:20,padding:"9px 15px",color:"#fff",fontSize:13,fontWeight:700,fontFamily:FN.b,cursor:"pointer"}}>Cancel</button>
+                  </div>
+                  <div style={{position:"absolute",top:60,left:0,right:0,textAlign:"center",padding:"0 24px"}}><span style={{background:"rgba(0,0,0,0.5)",color:"#fff",fontSize:12,fontWeight:600,padding:"7px 13px",borderRadius:20,fontFamily:FN.b}}>Align the Nutrition Facts panel in the frame · drag to move, pull the corner to resize</span></div>
+                </div>
+                <div style={{padding:"18px 20px 26px",background:"#05070C",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <label className="press" style={{cursor:"pointer",color:"#9AA6B6",fontSize:11.5,fontWeight:700,fontFamily:FN.b,width:72,textAlign:"center"}}>Photo<input type="file" accept="image/*" onChange={onFile} style={{display:"none"}}/></label>
+                  <button className="press" onClick={capture} style={{width:72,height:72,borderRadius:"50%",background:"#fff",border:`5px solid ${C.accent}`,cursor:"pointer",boxShadow:`0 0 20px ${C.accent}66`}}/>
+                  <button className="press" onClick={()=>{setFoodEditor({...makeFoodDraft(),_meal:scanner.meal});setScanner(null);}} style={{background:"transparent",border:"none",color:"#9AA6B6",fontSize:11.5,fontWeight:700,fontFamily:FN.b,cursor:"pointer",width:72,textAlign:"center"}}>Type it</button>
+                </div>
+              </>}
+              {ph==="nocam"&&<div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"30px 26px",textAlign:"center"}}>
+                <div style={{width:64,height:64,borderRadius:18,background:C.surfaceDim,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:18,color:C.textDim}}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/><path d="M2 2l20 20"/></svg></div>
+                <div style={{fontSize:16,fontWeight:800,color:"#fff",fontFamily:FN.h,marginBottom:8}}>Camera unavailable</div>
+                <div style={{fontSize:12.5,color:"#9AA6B6",fontWeight:500,marginBottom:24,maxWidth:300,lineHeight:1.5}}>{scanner.error?"We couldn't open the camera. You can upload a photo of the label instead, or enter it manually.":"You can upload a photo of the label instead, or enter it manually."}</div>
+                <label className="press" style={{...btnB,cursor:"pointer",marginBottom:10,width:240,textAlign:"center"}}>Upload a photo<input type="file" accept="image/*" onChange={onFile} style={{display:"none"}}/></label>
+                <button className="press" onClick={()=>{setFoodEditor({...makeFoodDraft(),_meal:scanner.meal});setScanner(null);}} style={{...btnG,width:240}}>Enter manually</button>
+                <button className="press" onClick={()=>setScanner(null)} style={{background:"transparent",border:"none",color:"#6B7585",fontSize:12.5,fontWeight:600,marginTop:16,cursor:"pointer"}}>Cancel</button>
+              </div>}
+              {ph==="processing"&&<div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"30px 26px"}}>
+                <div style={{position:"relative",width:"82%",maxWidth:320,borderRadius:16,overflow:"hidden",border:`1px solid rgba(255,255,255,0.12)`,marginBottom:26}}>
+                  <img src={scanner.image} alt="" style={{width:"100%",display:"block",opacity:0.85}}/>
+                  <div className="scan-line" style={{position:"absolute",left:"5%",right:"5%",height:3,background:`linear-gradient(90deg,transparent,${C.accent},transparent)`,boxShadow:`0 0 14px ${C.accent}`,borderRadius:2}}/>
+                  <div style={{position:"absolute",inset:0,background:`linear-gradient(180deg,rgba(5,7,12,0.1),rgba(5,7,12,0.45))`}}/>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>{[0,1,2].map(i=>(<span key={i} className="scan-dot" style={{width:9,height:9,borderRadius:"50%",background:C.accent,animationDelay:`${i*0.18}s`}}/>))}</div>
+                <div style={{fontSize:15,fontWeight:800,color:"#fff",fontFamily:FN.h}}>Reading the label…</div>
+                <div style={{fontSize:12,color:"#9AA6B6",fontWeight:600,marginTop:6,fontFamily:FN.m}}>{scanner.progress?`${scanner.progress}%`:"Preparing"}</div>
+                <div style={{width:"72%",maxWidth:260,height:5,borderRadius:3,background:"rgba(255,255,255,0.12)",overflow:"hidden",marginTop:12}}><div style={{height:"100%",width:`${scanner.progress||6}%`,background:C.accent,borderRadius:3,transition:"width 0.3s ease"}}/></div>
+              </div>}
+              {ph==="error"&&<div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"30px 26px",textAlign:"center"}}>
+                {scanner.image&&<img src={scanner.image} alt="" style={{width:120,borderRadius:12,marginBottom:18,border:`1px solid rgba(255,255,255,0.12)`}}/>}
+                <div style={{fontSize:16,fontWeight:800,color:"#fff",fontFamily:FN.h,marginBottom:8}}>Couldn't read the label</div>
+                <div style={{fontSize:12.5,color:"#9AA6B6",fontWeight:500,marginBottom:24,maxWidth:300,lineHeight:1.5}}>{scanner.error||"The text wasn't clear enough."} You can try again or enter the values manually — your photo is kept either way.</div>
+                <button className="press" onClick={()=>setScanner(s=>({...s,phase:"camera",error:""}))} style={{...btnB,width:240,marginBottom:10}}>Try again</button>
+                <button className="press" onClick={()=>{setFoodEditor({...makeFoodDraft(),_meal:scanner.meal,scanImage:scanner.image});setScanner(null);}} style={{...btnG,width:240}}>Enter manually (keep photo)</button>
+                <button className="press" onClick={()=>setScanner(null)} style={{background:"transparent",border:"none",color:"#6B7585",fontSize:12.5,fontWeight:600,marginTop:16,cursor:"pointer"}}>Cancel</button>
+              </div>}
+            </div>);})()}
+
+          {/* ═══════════ INLINE NEW-INGREDIENT CREATOR (saves to global library, adds to recipe) ═══════════ */}
+          {ingEditor&&(()=>{const d=ingEditor;const set=patch=>setIngEditor(f=>({...f,...patch}));
+            const setNutr=(id,val)=>setIngEditor(f=>({...f,nutr:{...f.nutr,[id]:val}}));
+            const toggleGroup=gi=>setIngEditor(f=>({...f,expand:{...f.expand,[gi]:!(f.expand||{})[gi]}}));
+            const sg=+d.serving.grams;const dup=d.name.trim()?findFoodByIdentity(d.name,d.brand):null;
+            const canAdd=d.name.trim()&&sg>0;
+            const addIng=()=>{if(!canAdd)return;let foodId;
+              if(dup){foodId=dup.id;}
+              else{const nutr={};Object.keys(d.nutr||{}).forEach(k=>{const raw=d.nutr[k];if(raw===""||raw===null||raw===undefined)return;const v=+raw;if(isNaN(v)||v<0)return;nutr[k]=v;});const item={id:uid(),kind:"food",name:d.name.trim(),brand:d.brand.trim(),category:"food",serving:{label:(d.serving.label||"").trim()||"serving",grams:sg},nutr,illo:illoKey(d.name),createdAt:Date.now()};dietSaveFood(item);foodId=item.id;}
+              const amt=+d.amount>0?+d.amount:sg;
+              setFoodEditor(ff=>({...ff,ingredients:[...(ff.ingredients||[]),{foodId,grams:String(amt)}]}));
+              setIngEditor(null);
+            };
+            return(<div style={{position:"fixed",inset:0,zIndex:600,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setIngEditor(null)}>
+              <div className="overlay-bg" style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.78)",backdropFilter:"blur(8px)"}}/>
+              <div onClick={e=>e.stopPropagation()} className="d-sheet" style={{position:"relative",background:C.bg,width:"100%",maxWidth:560,height:"90vh",borderTopLeftRadius:22,borderTopRightRadius:22,border:`1px solid ${C.hairline}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px 12px",borderBottom:`1px solid ${C.hairline}`}}>
+                  <button className="press" onClick={()=>setIngEditor(null)} style={{background:"transparent",border:"none",color:C.textDim,fontSize:14,fontWeight:600,fontFamily:FN.b,cursor:"pointer"}}>Cancel</button>
+                  <span style={{fontSize:14.5,fontWeight:800,color:C.text,fontFamily:FN.h}}>New Ingredient</span>
+                  <button className="press" onClick={addIng} disabled={!canAdd} style={{background:"transparent",border:"none",color:canAdd?C.accent:C.textDim,fontSize:14,fontWeight:800,fontFamily:FN.b,cursor:canAdd?"pointer":"default",opacity:canAdd?1:0.5}}>Add</button>
+                </div>
+                <div className="hide-scroll" style={{flex:1,overflowY:"auto",padding:"16px 18px 24px"}}>
+                  <div style={{fontSize:11,color:C.textDim,fontWeight:500,marginBottom:16,lineHeight:1.5}}>Create an ingredient on the fly — it's saved to your global food library and becomes searchable everywhere, not locked to this recipe.</div>
+                  <label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:6}}>Name</label>
+                  <input value={d.name} onChange={e=>set({name:e.target.value})} placeholder="e.g. Feta Cheese" style={{...dietInp,marginBottom:dup?6:12}}/>
+                  {dup&&<div style={{fontSize:10.5,color:C.gold||C.accent,fontWeight:600,marginBottom:12,display:"flex",alignItems:"center",gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>“{dup.name}” already exists — it'll be reused instead of duplicated.</div>}
+                  <label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:6}}>Brand <span style={{textTransform:"none",fontWeight:500}}>(optional)</span></label>
+                  <input value={d.brand} onChange={e=>set({brand:e.target.value})} placeholder="Brand" style={{...dietInp,marginBottom:16}}/>
+                  <div style={{display:"flex",gap:10,marginBottom:12}}>
+                    <div style={{flex:1.4}}><label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",display:"block",marginBottom:6}}>Serving name</label><input value={d.serving.label} onChange={e=>set({serving:{...d.serving,label:e.target.value}})} placeholder="1 oz, 1 cup…" style={dietInp}/></div>
+                    <div style={{flex:1}}><label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",display:"block",marginBottom:6}}>Weight (g)</label><input type="number" inputMode="decimal" value={d.serving.grams} onChange={e=>set({serving:{...d.serving,grams:e.target.value}})} placeholder="grams" style={{...dietInp,borderColor:(sg>0||d.serving.grams==="")?C.hairline:C.red}}/></div>
+                  </div>
+                  <div style={{marginBottom:18}}><label style={{fontSize:10.5,fontWeight:700,color:C.textDim,textTransform:"uppercase",display:"block",marginBottom:6}}>Amount used in recipe (g) <span style={{textTransform:"none",fontWeight:500}}>— defaults to one serving</span></label><input type="number" inputMode="decimal" value={d.amount} onChange={e=>set({amount:e.target.value})} placeholder={sg>0?String(sg):"grams"} style={dietInp}/></div>
+                  {dup?<div style={{background:C.surface,border:`1px solid ${C.hairline}`,borderRadius:12,padding:"14px 15px",fontSize:12,color:C.textSec,fontFamily:FN.b,lineHeight:1.5}}>This matches a food already in your library, so its saved nutrition will be used. Clear the name or rename it to create a brand-new ingredient.</div>:<>
+                  {NUT_GROUPS.map((gname,gi)=>{const nuts=NUTRIENTS.filter(n=>n.group===gi);const open=(d.expand||{})[gi];const filled=nuts.filter(n=>{const v=(d.nutr||{})[n.id];return v!==""&&v!==null&&v!==undefined;}).length;return(
+                    <div key={gi} style={{border:`1px solid ${C.hairline}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
+                      <button className="press" onClick={()=>toggleGroup(gi)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",background:C.surface,border:"none",cursor:"pointer"}}>
+                        <span style={{fontSize:12.5,fontWeight:800,color:C.text,fontFamily:FN.b}}>{gname}</span>
+                        <span style={{display:"flex",alignItems:"center",gap:8}}>{filled>0&&<span style={{fontSize:9.5,fontWeight:800,color:C.accent,background:C.accentSoft,borderRadius:6,padding:"2px 7px"}}>{filled}</span>}<span style={{color:C.textDim,fontSize:12,transform:open?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▾</span></span>
+                      </button>
+                      {open&&<div style={{padding:"4px 14px 14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:9}}>{nuts.map(n=>(
+                        <div key={n.id}>
+                          <label style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>{nutBadge(n.id,20)}<span style={{fontSize:10.5,fontWeight:600,color:C.textSec,fontFamily:FN.b,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{n.name}</span></label>
+                          <div style={{display:"flex",alignItems:"center",gap:5}}>
+                            <input type="number" inputMode="decimal" value={(d.nutr||{})[n.id]??""} onChange={e=>setNutr(n.id,e.target.value)} placeholder="—" style={{...dietInp,padding:"9px 10px",fontSize:13}}/>
+                            <span style={{fontSize:9.5,color:C.textDim,fontWeight:700,minWidth:26}}>{n.unit}</span>
+                          </div>
+                        </div>))}</div>}
+                    </div>);})}
+                  </>}
                 </div>
               </div>
             </div>);})()}
@@ -6499,7 +6796,9 @@ ${body}
               {renameSplitVal!==null
                 ?<input autoFocus value={renameSplitVal} onChange={e=>setRenameSplitVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")renameSplit(gSplit,renameSplitVal);if(e.key==="Escape")setRenameSplitVal(null);}} onBlur={()=>renameSplit(gSplit,renameSplitVal)} style={{...inp,flex:1,fontWeight:800,textTransform:"uppercase",fontSize:15}}/>
                 :<button className="press" onClick={()=>setRenameSplitVal(gSplit)} style={{flex:1,display:"flex",alignItems:"center",gap:7,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",padding:0}}><span style={{fontSize:16,fontWeight:800,color:clr,textTransform:"uppercase"}}>{gSplit}</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg></button>}
-              <span style={{fontSize:9,color:C.green}}>● auto-saving</span>
+              {wkActive
+                ?<span title="Your workout is saved as you go — you can leave the app or get interrupted and it'll reopen right here until you save." style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:8.5,fontWeight:800,color:C.green,background:C.greenSoft,borderRadius:7,padding:"4px 8px",textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}><span className="scan-dot" style={{width:5,height:5,borderRadius:"50%",background:C.green}}/>Logging · saved</span>
+                :<span style={{fontSize:9,color:C.textDim,whiteSpace:"nowrap"}}>● auto-saving</span>}
             </div>
 
             {/* Muscle map for the whole workout */}
@@ -6524,14 +6823,14 @@ ${body}
                   <div style={{display:"flex",alignItems:"center",gap:5}}>{dn&&<span style={{color:C.green,fontSize:13,fontWeight:700,flexShrink:0}}>✓</span>}<input value={ex.name} onChange={e=>renameExercise(ei,e.target.value)} placeholder="Exercise name…" style={{fontSize:13,fontWeight:700,color:dn?C.green:C.text,background:"transparent",border:"none",borderBottom:`1px dashed ${C.hairline}`,padding:"2px 0",width:"100%",fontFamily:FN.b,outline:"none",minWidth:0}}/></div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:5}}>{exM.length>0?exM.map(m=><span key={m} style={{fontSize:7,fontWeight:700,color:C.textDim,background:C.surfaceDim,borderRadius:3,padding:"1px 5px",textTransform:"uppercase",letterSpacing:"0.03em"}}>{MUSCLE_LABELS[m]}</span>):<span style={{fontSize:7,color:C.textDim,fontStyle:"italic"}}>unmapped — try a clearer name</span>}</div>
                 </div>
-                <div style={{display:"flex",gap:3,flexShrink:0}}><button onClick={()=>setDoneEx(p=>({...p,[ei]:!p[ei]}))} style={{...pill(dn,C.green),padding:"3px 8px",fontSize:10}}>Done</button><button onClick={()=>rSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>−</button><button onClick={()=>aSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>+</button><button onClick={()=>{setSplits(p=>({...p,[gSplit]:(p[gSplit]||[]).filter((_,i)=>i!==ei)}));setCurWkState(p=>({...p,exercises:p.exercises.filter((_,i)=>i!==ei)}));}} style={{...btnG,padding:"3px 6px",fontSize:11,color:C.red}}>✕</button></div>
+                <div style={{display:"flex",gap:3,flexShrink:0}}><button onClick={()=>{setDoneEx(p=>({...p,[ei]:!p[ei]}));setWkActive(Date.now());}} style={{...pill(dn,C.green),padding:"3px 8px",fontSize:10}}>Done</button><button onClick={()=>rSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>−</button><button onClick={()=>aSet(ei)} style={{...btnG,padding:"3px 6px",fontSize:14}}>+</button><button onClick={()=>{setSplits(p=>({...p,[gSplit]:(p[gSplit]||[]).filter((_,i)=>i!==ei)}));setCurWkState(p=>({...p,exercises:p.exercises.filter((_,i)=>i!==ei)}));}} style={{...btnG,padding:"3px 6px",fontSize:11,color:C.red}}>✕</button></div>
               </div>
               {/* Exercise type selectors */}
               {ex.kind==="cardio"?(()=>{const c=ex;const pace=(c.distance&&c.timeMin)?(()=>{const p=c.timeMin/c.distance;const m=Math.floor(p);const s=Math.round((p-m)*60);return `${m}:${String(s).padStart(2,"0")} /${c.distUnit||"mi"}`;})():"—";return(
                 <div style={{marginBottom:4}}>
                   <div style={{display:"flex",gap:8,marginBottom:8}}>
-                    <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Distance</div><div style={{display:"flex",gap:4,alignItems:"center"}}><input type="number" inputMode="decimal" value={c.distance||""} onChange={e=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].distance=parseFloat(e.target.value)||0;return n;})} placeholder="0.0" style={{...numI,flex:1}}/><button onClick={()=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].distUnit=(n.exercises[ei].distUnit==="km"?"mi":"km");return n;})} style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${C.hairline}`,background:C.surfaceDim,color:C.text,fontSize:11,fontWeight:700,fontFamily:FN.m,cursor:"pointer"}}>{c.distUnit||"mi"}</button></div></div>
-                    <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Time (min)</div><input type="number" inputMode="decimal" value={c.timeMin||""} onChange={e=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].timeMin=parseFloat(e.target.value)||0;return n;})} placeholder="0" style={{...numI,width:"100%",boxSizing:"border-box"}}/></div>
+                    <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Distance</div><div style={{display:"flex",gap:4,alignItems:"center"}}><input type="number" inputMode="decimal" value={c.distance||""} onChange={e=>{setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].distance=parseFloat(e.target.value)||0;return n;});setWkActive(Date.now());}} placeholder="0.0" style={{...numI,flex:1}}/><button onClick={()=>setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].distUnit=(n.exercises[ei].distUnit==="km"?"mi":"km");return n;})} style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${C.hairline}`,background:C.surfaceDim,color:C.text,fontSize:11,fontWeight:700,fontFamily:FN.m,cursor:"pointer"}}>{c.distUnit||"mi"}</button></div></div>
+                    <div style={{flex:1}}><div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",marginBottom:3}}>Time (min)</div><input type="number" inputMode="decimal" value={c.timeMin||""} onChange={e=>{setCurWkState(p=>{const n=JSON.parse(JSON.stringify(p));n.exercises[ei].timeMin=parseFloat(e.target.value)||0;return n;});setWkActive(Date.now());}} placeholder="0" style={{...numI,width:"100%",boxSizing:"border-box"}}/></div>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",padding:"7px 10px",borderRadius:8,background:C.surfaceDim}}><span style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase"}}>Pace</span><span style={{fontSize:13,fontWeight:800,color:clr,fontFamily:FN.m}}>{pace}</span></div>
                 </div>
