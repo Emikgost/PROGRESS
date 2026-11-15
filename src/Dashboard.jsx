@@ -1346,7 +1346,12 @@ export default function Dashboard(){
   const[showRecap,setShowRecap]=useState(false);
   const[confetti,setConfetti]=useState(false);
   const[proofTask,setProofTask]=useState(null);
-  const[todaySub,setTodaySub]=useState("morning"); // morning | evening | focus
+  const[todaySub,setTodaySub]=useState("morning"); // morning | evening | weekly | focus
+  // ─── Weekly habits: sourced from measurable Goals that have a weekly commitment. Logging is entry-based. ───
+  const[weeklyEntries,setWeeklyEntries]=useState({}); // {goalId:[{id,date,amt,note,t}]} — amt is MINUTES (hours goals) or COUNT (count goals)
+  const[weeklyLogModal,setWeeklyLogModal]=useState(null); // {goalId, date, draft:{h,m,note}, editId?} — the tap-to-log interface
+  const[behavioralLog,setBehavioralLog]=useState({}); // {habitId:{dateKey:{answer:"yes"|"partly"|"no",note,t}}} — behavioral goal reflections
+  const[behavioralModal,setBehavioralModal]=useState(null); // {todoId,date,q,text,draft:{answer,note}} — the reflection check-in
   const[focusCollapsed,setFocusCollapsed]=useState({}); // {goalId:true} — collapsed goal cards in Today→Focus (default expanded)
   const[reorderMode,setReorderMode]=useState(false); // Today: drag-to-reorder habits
   const[focusReorder,setFocusReorder]=useState(false); // Today: drag-to-reorder focus tasks
@@ -1463,19 +1468,27 @@ export default function Dashboard(){
   const[showGoalCreator,setShowGoalCreator]=useState(false);
   const[gcStep,setGcStep]=useState(0); // 0=name, 1=type, 2=details
   const[gcName,setGcName]=useState("");
-  const[gcType,setGcType]=useState(null); // "measurable"|"outcome"|"habit"
+  const[gcType,setGcType]=useState(null); // "behavioral" | "measurable"
   const[gcDeadline,setGcDeadline]=useState("");
   const[gcHours,setGcHours]=useState("");
+  const[gcMeasMode,setGcMeasMode]=useState("weekly"); // legacy (kept so old refs don't break)
+  const[gcWeeklyCommit,setGcWeeklyCommit]=useState(""); // weekly target (hrs/week or count/week)
+  const[gcUnit,setGcUnit]=useState("hours"); // hours | count (legacy)
+  const[gcFreq,setGcFreq]=useState("daily");      // measurable: "daily" | "weekly"
+  const[gcMeasure,setGcMeasure]=useState("time"); // measurable: "time" | "quantity"
+  const[gcUnitLabel,setGcUnitLabel]=useState(""); // quantity unit label (e.g. "pages")
+  const[gcDailyCommit,setGcDailyCommit]=useState(""); // daily target amount
+  const[gcReflectQ,setGcReflectQ]=useState("");   // behavioral reflection question
   const[gcSteps,setGcSteps]=useState(["","",""]);
   const[gcTarget,setGcTarget]=useState(""); // days per month for habit type
   const[gcAction,setGcAction]=useState(""); // daily action text for habit type
-  const[gcSlot,setGcSlot]=useState("morning"); // habit-building: when ("morning"|"night")
+  const[gcSlot,setGcSlot]=useState("morning"); // daily-habit slot ("morning"|"night")
   const[gcIntention,setGcIntention]=useState(""); // implementation intention — situational cue
   const[intentionPromptFor,setIntentionPromptFor]=useState(null); // legacy goal being asked about
   const[intentionPromptText,setIntentionPromptText]=useState("");
   const[intentionPromptDismissed,setIntentionPromptDismissed]=useState({}); // {goalId:true}
   const[gcOverride,setGcOverride]=useState(false); // direct habit override
-  const resetGc=()=>{setGcStep(0);setGcName("");setGcType(null);setGcDeadline("");setGcHours("");setGcSteps(["","",""]);setGcTarget("");setGcAction("");setGcSlot("morning");setGcIntention("");setGcOverride(false);setShowGoalCreator(false);};
+  const resetGc=()=>{setGcStep(0);setGcName("");setGcType(null);setGcDeadline("");setGcHours("");setGcMeasMode("weekly");setGcWeeklyCommit("");setGcUnit("hours");setGcFreq("daily");setGcMeasure("time");setGcUnitLabel("");setGcDailyCommit("");setGcReflectQ("");setGcSteps(["","",""]);setGcTarget("");setGcAction("");setGcSlot("morning");setGcIntention("");setGcOverride(false);setShowGoalCreator(false);};
   const[showGal,setShowGal]=useState(false);
   const[selGrp,setSelGrp]=useState(null);const[mkGrp,setMkGrp]=useState(false);const[nGrpName,setNGrpName]=useState("");const[nGrpTasks,setNGrpTasks]=useState([]);
   const[modal,setModal]=useState(null);
@@ -1614,12 +1627,38 @@ export default function Dashboard(){
      completions (taskLog:{dayKey:hours}). Deriving from a per-day record makes checking/unchecking
      a day idempotent: toggling re-sets or deletes that day's entry instead of adding/subtracting a
      drifting delta, so repeated toggles can never inflate progress. Manual entries are never touched. */
-  const goalDone=(a)=>Math.round(((Number(a.hoursLogged)||0)+Object.values(a.taskLog||{}).reduce((s,v)=>s+(Number(v)||0),0))*10)/10;
+  // Lifetime hours done = manual +h logging + per-day task completions + hours logged through weekly-habit entries.
+  // Deriving the weekly-habit contribution straight from the single entry store means logging never double-counts.
+  const goalDone=(a)=>{const we=(a.measureUnit==="count")?0:((weeklyEntries[a.id]||[]).reduce((s,e)=>s+(+e.amt||0),0)/60);return Math.round(((Number(a.hoursLogged)||0)+Object.values(a.taskLog||{}).reduce((s,v)=>s+(Number(v)||0),0)+we)*10)/10;};
   /* Consecutive-day completion streak for a habit id, ending today (or yesterday if not yet done
      today). Uses the same `checks` + local date rules as the rest of the app. Drives the "Testing"
      habit badge and the 30-day graduation of experimental habits. */
   const habitStreakFor=(id)=>{let s=0;const d=new Date();if(!((checks[dk(d)]||{})[id]))d.setDate(d.getDate()-1);while((checks[dk(d)]||{})[id]){s++;d.setDate(d.getDate()-1);}return s;};
   const removeHabit=(id)=>setTodos(p=>p.map(t=>t.id===id?{...t,removedOn:dk(now)}:t)); // soft-delete: keep on past days, drop from today onward
+  /* ─── Weekly-habit helpers ─── A weekly habit is a MEASURABLE goal that carries a weekly commitment.
+     Engagement reuses `checks` (so streaks/animations work). Activity is stored as individual dated ENTRIES in
+     `weeklyEntries` (editable, multiple per day), summed over the Mon–Sun week for weekly progress and over all
+     time for the goal's lifetime total. Weekly habits are kept OUT of the daily roster so an unworked day never
+     drags down the daily completion %. */
+  const wkDays=(k)=>{const mon=weekStartOf(k||dk(now));const out=[];for(let i=0;i<7;i++){const d=new Date(mon);d.setDate(mon.getDate()+i);out.push(dk(d));}return out;};
+  // Weekly habits = active measurable goals with a weekly commitment set.
+  const weeklyGoalHabits=()=>aspirations.filter(a=>a.goalType==="measurable"&&!a.graduated&&a.status!=="archived"&&!a.completedOn&&(+a.weeklyCommit>0));
+  const weeklyUnit=(a)=>a.measureUnit==="count"?"count":"hours";
+  const weeklyEntriesOf=(id)=>weeklyEntries[id]||[];
+  const weeklyDayEntries=(id,dateKey)=>weeklyEntriesOf(id).filter(e=>e.date===dateKey).sort((a,b)=>(a.t||0)-(b.t||0));
+  const weeklyDaySum=(id,dateKey)=>weeklyDayEntries(id,dateKey).reduce((s,e)=>s+(+e.amt||0),0); // minutes or count
+  const weeklySum=(id,weekKey)=>{const set=new Set(wkDays(weekKey));return weeklyEntriesOf(id).reduce((s,e)=>set.has(e.date)?s+(+e.amt||0):s,0);};
+  const weeklyDaysEngaged=(id,weekKey)=>{const ds=wkDays(weekKey);return ds.filter(k=>(checks[k]||{})[id]||weeklyDaySum(id,k)>0).length;};
+  const weeklyStats=(a,weekKey)=>{const isHours=weeklyUnit(a)==="hours";const raw=weeklySum(a.id,weekKey);const totalInTarget=isHours?raw/60:raw;const target=+a.weeklyCommit||0;const pct=target>0?Math.min(100,Math.round(totalInTarget/target*100)):0;return{raw,totalInTarget:Math.round(totalInTarget*100)/100,target,pct,over:totalInTarget>target,remaining:Math.max(0,Math.round((target-totalInTarget)*100)/100),isHours,daysEngaged:weeklyDaysEngaged(a.id,weekKey)};};
+  const weeklyStreakFor=(a)=>{const target=+a.weeklyCommit||0;if(!(target>0))return 0;let s=0,anchor=weekStartOf(now);for(let i=0;i<104;i++){anchor=new Date(anchor);anchor.setDate(anchor.getDate()-7);const wk=dk(anchor);const created=a.createdOn||a.created;if(created&&anchor<weekStartOf(created))break;const raw=weeklySum(a.id,wk);const tot=weeklyUnit(a)==="hours"?raw/60:raw;if(tot>=target)s++;else break;}return s;};
+  // Entry mutations — logging auto-completes that day's checkbox; deleting never force-unchecks (manual control).
+  const addWeeklyEntry=(id,dateKey,amt,note)=>{const a=Math.max(0,+amt||0);if(a<=0)return;const entry={id:uid(),date:dateKey,amt:a,note:(note||"").trim(),t:Date.now()};setWeeklyEntries(p=>({...p,[id]:[...(p[id]||[]),entry]}));if(!(checks[dateKey]||{})[id]){flashChecked(id);setChecks(p=>({...p,[dateKey]:{...(p[dateKey]||{}),[id]:true}}));}};
+  const updateWeeklyEntry=(id,entryId,patch)=>setWeeklyEntries(p=>({...p,[id]:(p[id]||[]).map(e=>e.id===entryId?{...e,...patch}:e)}));
+  const deleteWeeklyEntry=(id,entryId)=>setWeeklyEntries(p=>({...p,[id]:(p[id]||[]).filter(e=>e.id!==entryId)}));
+  const toggleWeeklyEngage=(id,dateKey)=>{const k=dateKey||dk(now);const on=!!(checks[k]||{})[id];if(!on)flashChecked(id);setChecks(p=>({...p,[k]:{...(p[k]||{}),[id]:!on}}));};
+  // Format a stored amount (minutes or count) for display.
+  const fmtWeeklyAmt=(a,amt)=>{if(weeklyUnit(a)==="count")return `${Math.round(amt)} ${a.unitLabel||"×"}`;const m=Math.round(amt);const h=Math.floor(m/60),mm=m%60;return h>0?(mm>0?`${h}h ${mm}m`:`${h}h`):`${mm}m`;};
+  const weeklyCountLabel=(a)=>a.unitLabel||"×"; // display label for count-type weekly goals
   const focusTasks=focusByDate[vk]||[];
   const morningT=activeTodos(vk).filter(t=>t.grp==="morning");
   const nightT=activeTodos(vk).filter(t=>t.grp==="night");
@@ -1739,38 +1778,58 @@ export default function Dashboard(){
   // Recurring aspirations that haven't been hit today — these surface on Today as focus tasks
   const todaysAspirations=useMemo(()=>aspirationProgress.filter(a=>a.goalType==="habit"&&!a.graduated),[aspirationProgress]);
 
-  // Submit a new goal from the creation flow
+  // Format a decimal-hours value as a short label: 1→"1h", 0.5→"30m", 1.5→"1h 30m".
+  const fmtHrsLabel=(h)=>{const m=Math.round((+h||0)*60);const hh=Math.floor(m/60),mm=m%60;if(hh&&mm)return `${hh}h ${mm}m`;if(hh)return `${hh}h`;return `${mm}m`;};
+  // A daily measurable goal's compact target label (e.g. "1h/day", "20 pages/day").
+  const fmtDailyTarget=(a)=>a.measureUnit==="count"?`${a.dailyCommit} ${a.unitLabel||"×"}/day`:`${fmtHrsLabel(a.dailyCommit)}/day`;
+  const defaultReflectQ=(name)=>`Did you stay true to "${name}" today?`;
+
+  /* Submit a new long-term goal from the creation flow. Goals are the ONLY place habits are created:
+     every goal automatically spawns the habit that appears in the Today tab.
+       • Behavioral   → a daily reflection habit (todo flagged `behavioral`, linked by goalId).
+       • Measurable+Daily  → a daily habit with a target (todo flagged `measurableDaily`).
+       • Measurable+Weekly → a weekly habit (measurable aspiration w/ weeklyCommit, shown in Today › Weekly).
+     The behavioral + daily goals use goalTypes the focus/plan machinery doesn't recognise, so they stay
+     inert to it and surface purely through their generated habit. */
   const submitGoal=()=>{
     if(!gcName.trim())return;
-    const base={id:uid(),text:gcName.trim(),created:dk(now),status:"active",graduated:false,monthsAtTarget:0};
-    let goal;
+    const name=gcName.trim();
+    const base={id:uid(),text:name,created:dk(now),createdOn:dk(now),status:"active",graduated:false,monthsAtTarget:0};
+    // Established-habit shortcut (unchanged — skips the funnel, lands straight in Habits).
     if(gcOverride){
-      goal={...base,goalType:"established",targetDays:parseInt(gcTarget)||20,dailyAction:gcAction.trim()||gcName.trim(),graduated:true,graduatedAt:dk(now)};
-    }else if(gcType==="measurable"){
-      const totalH=parseInt(gcHours)||20;
-      const deadlineDate=gcDeadline?new Date(gcDeadline):new Date(now.getFullYear(),now.getMonth()+2,0);
-      const weeksLeft=Math.max(1,Math.ceil((deadlineDate-now)/(7*24*60*60*1000)));
-      goal={...base,goalType:"measurable",deadline:dk(deadlineDate),totalHours:totalH,weeklyHours:Math.round(totalH/weeksLeft*10)/10,hoursLogged:0};
-    }else if(gcType==="outcome"){
-      const steps=gcSteps.filter(s=>s.trim()).map(s=>({id:uid(),text:s.trim(),done:false}));
-      goal={...base,goalType:"outcome",steps};
-    }else{
-      // habit-building: a daily experimental habit. It lives directly in the daily-habits system
-      // (todos) in the chosen Morning/Evening slot, flagged experimental, and graduates to a
-      // permanent habit after a 30-day consecutive streak. No separate goal record is created.
-      const slot=gcSlot==="night"?"night":"morning";
-      const text=gcAction.trim()||gcName.trim();
-      setTodos(p=>[...p,{id:uid(),text,grp:slot,diff:"easy",createdOn:dk(now),experimental:true,expStart:dk(now)}]);
-      resetGc();
-      return;
+      setAspirations(p=>[...p,{...base,goalType:"established",targetDays:parseInt(gcTarget)||20,dailyAction:gcAction.trim()||name,graduated:true,graduatedAt:dk(now)}]);
+      resetGc();return;
     }
-    setAspirations(p=>[...p,goal]);
-    resetGc();
+    const slot=gcSlot==="night"?"night":"morning";
+    if(gcType==="behavioral"){
+      const habitId=uid();const q=gcReflectQ.trim()||defaultReflectQ(name);
+      setTodos(p=>[...p,{id:habitId,text:name,grp:slot,diff:"easy",createdOn:dk(now),behavioral:true,goalId:base.id,reflectQ:q}]);
+      setAspirations(p=>[...p,{...base,goalType:"behavioral",slot,reflectQ:q,habitId}]);
+      resetGc();return;
+    }
+    if(gcType==="measurable"){
+      const isQty=gcMeasure==="quantity";
+      const measureUnit=isQty?"count":"hours";
+      const unitLabel=isQty?(gcUnitLabel.trim()||"times"):"";
+      if(gcFreq==="weekly"){
+        const wc=Math.round((parseFloat(gcWeeklyCommit)||0)*10)/10;
+        const totalH=(!isQty&&parseFloat(gcHours)>0)?Math.round(parseFloat(gcHours)*10)/10:0;
+        setAspirations(p=>[...p,{...base,goalType:"measurable",freq:"weekly",measureUnit,unitLabel,weeklyCommit:wc,weeklyHours:wc,
+          ...(totalH>0?{totalHours:totalH}:{}),...(gcDeadline?{deadline:dk(new Date(gcDeadline))}:{}),hoursLogged:0}]);
+        resetGc();return;
+      }
+      // Daily measurable → a daily habit carrying a per-day target.
+      const daily=isQty?(parseFloat(gcDailyCommit)||0):(Math.round((parseFloat(gcDailyCommit)||0)*100)/100);
+      const habitId=uid();
+      setTodos(p=>[...p,{id:habitId,text:name,grp:slot,diff:"easy",createdOn:dk(now),measurableDaily:true,goalId:base.id,dailyCommit:daily,measureUnit,unitLabel}]);
+      setAspirations(p=>[...p,{...base,goalType:"measurableDaily",freq:"daily",measureUnit,unitLabel,dailyCommit:daily,slot,habitId}]);
+      resetGc();return;
+    }
   };
 
   // Auto-derived weekly targets from monthly goals
   const weeklyTargets=useMemo(()=>{
-    return aspirations.filter(a=>a.status==="active"&&!a.graduated).map(a=>{
+    return aspirations.filter(a=>a.status==="active"&&!a.graduated&&!(a.goalType==="measurable"&&+a.weeklyCommit>0)).map(a=>{
       if(a.goalType==="measurable"){
         const remaining=Math.max(0,(a.totalHours||0)-goalDone(a));
         if(remaining<=0)return null; // goal met — disappears from the weekly funnel
@@ -1792,7 +1851,7 @@ export default function Dashboard(){
 
   // Auto-derived daily focus tasks from goals (surfaces on Today)
   const goalDerivedFocus=useMemo(()=>{
-    return aspirations.filter(a=>a.status==="active").map(a=>{
+    return aspirations.filter(a=>a.status==="active"&&!(a.goalType==="measurable"&&+a.weeklyCommit>0)).map(a=>{
       if(a.graduated&&a.goalType!=="established")return null; // graduated habits don't need focus
       const hitToday=!!(checks[dk(now)]||{})[a.id];
       if(a.goalType==="measurable")return{id:a.id,text:`${a.text} — study session`,goalId:a.id,goalType:a.goalType,hitToday,parentText:a.text};
@@ -1870,7 +1929,7 @@ export default function Dashboard(){
     if(g.steps&&g.steps.length>0){const done=g.steps.filter(s=>s.done).length;return{id:g.id,text:g.text,kind:"steps",steps:g.steps,done,total:g.steps.length,complete:done>=g.steps.length};}
     const current=g.current||0,target=g.target||1;return{id:g.id,text:g.text,kind:"count",current,target,complete:current>=target};
   }).filter(g=>!g.complete),[wGoals]);
-  const monthlyFocusGoals=useMemo(()=>{const tkn=dk(now);return aspirations.filter(a=>a.status==="active"&&!a.graduated&&a.goalType!=="established").map(a=>{
+  const monthlyFocusGoals=useMemo(()=>{const tkn=dk(now);return aspirations.filter(a=>a.status==="active"&&!a.graduated&&a.goalType!=="established"&&a.goalType!=="behavioral"&&a.goalType!=="measurableDaily"&&!(a.goalType==="measurable"&&+a.weeklyCommit>0)).map(a=>{
     if(a.goalType==="outcome"){const steps=a.steps||[];const done=steps.filter(s=>s.done).length;return{id:a.id,text:a.text,kind:"steps",steps,done,total:steps.length,complete:steps.length>0&&done>=steps.length,completedOn:a.completedOn};}
     const hit=!!(checks[tkn]||{})[a.id];
     return{id:a.id,text:a.text,kind:"action",actionText:a.dailyAction||(a.goalType==="measurable"?`${a.text} — study session`:a.text),implementationIntention:a.implementationIntention,complete:hit||a.completedOn===tkn,completedOn:a.completedOn};
@@ -1897,7 +1956,7 @@ export default function Dashboard(){
   const graduateGoal=(id)=>{const g=aspirations.find(a=>a.id===id);if(g)setGraduatingGoal(g);};
   const finalizeGraduation=()=>{if(!graduatingGoal)return;setAspirations(p=>p.map(a=>a.id===graduatingGoal.id?{...a,graduated:true,graduatedAt:dk(now),status:"active"}:a));setGraduatingGoal(null);};
   const demoteGoal=(id)=>{setAspirations(p=>p.map(a=>a.id===id?{...a,graduated:false,monthsAtTarget:0}:a));};
-  const removeGoal=(id)=>{setAspirations(p=>p.filter(a=>a.id!==id));};
+  const removeGoal=(id)=>{const g=aspirations.find(a=>a.id===id);setAspirations(p=>p.filter(a=>a.id!==id));if(g&&g.habitId)setTodos(p=>p.filter(t=>t.id!==g.habitId));}; // behavioral/daily goals also drop their linked Today habit
 
   /* ─── LEGACY IMPLEMENTATION INTENTION PROMPT — auto-popup disabled (no more nudges) ─── */
   // The overlay no longer surfaces on its own. Implementation intentions can still be set
@@ -2602,6 +2661,8 @@ ${body}
     let s=localStorage.getItem("dash-v18");if(!s)s=localStorage.getItem("dash-v17");
     if(s){const d=JSON.parse(s);
       if(d.todos)setTodos(d.todos);if(d.focusByDate)setFocusByDate(d.focusByDate);if(d.checks)setChecks(d.checks);
+      if(d.weeklyEntries)setWeeklyEntries(d.weeklyEntries);else if(d.weeklyLog){const we={};Object.keys(d.weeklyLog).forEach(id=>{we[id]=Object.keys(d.weeklyLog[id]||{}).map(date=>({id:uid(),date,amt:+(d.weeklyLog[id][date])||0,note:"",t:Date.now()})).filter(e=>e.amt>0);});setWeeklyEntries(we);}
+      if(d.behavioralLog)setBehavioralLog(d.behavioralLog);
       if(d.wGoals)setWGoals(d.wGoals);if(d.mGoals)setMGoals(d.mGoals);if(d.wHist)setWHist(d.wHist);
       if(d.bwLog)setBwLog(d.bwLog);if(d.exMeta)setExMeta(d.exMeta);if(d.sleepLog)setSleepLog(d.sleepLog);if(d.carryover)setCarryover(d.carryover);if(d.goalPeriod)setGoalPeriod(d.goalPeriod);if(d.goalHistory)setGoalHistory(d.goalHistory);if(d.txns)setTxns(d.txns);if(d.groups)setGroups(d.groups);if(d.splits)setSplits(d.splits);if(d.splitOrder)setSplitOrder(d.splitOrder);
       if(d.settings)setSettings({...defSettings,...d.settings});
@@ -2612,7 +2673,7 @@ ${body}
       if(d.completionLog)setCompletionLog(d.completionLog);if(d.activeSession)setActiveSession(d.activeSession);
       if(d.diet)setDiet(d.diet);if(d.dietGoals)setDietGoals({...defDietGoals,...d.dietGoals});if(d.foodDB)setFoodDB(d.foodDB);if(d.favFoods)setFavFoods(d.favFoods);if(d.meals)setMeals(d.meals);
       if(d.foodLib)setFoodLib(d.foodLib);if(d.dietLog)setDietLog(d.dietLog);if(d.dietTargets)setDietTargets({...defDietTargets,...d.dietTargets});if(d.dietDashVars)setDietDashVars(d.dietDashVars);if(d.dietAnalyticsVars)setDietAnalyticsVars(d.dietAnalyticsVars);if(typeof d.dietAnalyticsRange==="number")setDietAnalyticsRange(d.dietAnalyticsRange);if(d.dietTrendVar)setDietTrendVar(d.dietTrendVar);
-      if(d.aspirations)setAspirations(d.aspirations);
+      if(d.aspirations||d.weeklyHabits){const base=d.aspirations?[...d.aspirations]:[];const have=new Set(base.map(a=>a.id));(d.weeklyHabits||[]).forEach(h=>{if(!have.has(h.id)&&!h.removedOn)base.push({id:h.id,text:h.name,goalType:"measurable",measureUnit:h.unit==="count"?"count":"hours",weeklyCommit:+h.target||0,weeklyHours:+h.target||0,hoursLogged:0,status:"active",created:h.createdOn||dk(now)});});if(base.length)setAspirations(base);}
       if(d.videoJournal)setVideoJournal(d.videoJournal);if(d.writtenJournal)setWrittenJournal(d.writtenJournal);
       if(d.accounts)setAccounts({checking:"",savings:"",cash:"",investment:"",credit:"",...d.accounts});
       if(d.subscriptions)setSubscriptions(d.subscriptions);if(d.txRules)setTxRules(d.txRules);if(d.weekPlan)setWeekPlan(d.weekPlan);if(d.finGoals)setFinGoals(d.finGoals);if(typeof d.dietEnabled==="boolean")setDietEnabled(d.dietEnabled);if(typeof d.handwriting==="boolean")setHandwriting(d.handwriting);if(d.catBudgets)setCatBudgets(d.catBudgets);
@@ -2707,10 +2768,10 @@ ${body}
   // NON-CRITICAL STATE — saved with 400ms debounce. These matter but a 400ms loss window is acceptable.
   useEffect(()=>{if(!hydrated)return;const t=setTimeout(()=>{
     const blob=JSON.parse(localStorage.getItem("dash-v18")||"{}");
-    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,wkActive,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar});
+    Object.assign(blob,{wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,wkActive,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar,weeklyEntries,behavioralLog});
     delete blob.photoLog;
     trySave("dash-v18",blob);
-  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,wkActive,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar]);
+  },400);return()=>clearTimeout(t);},[hydrated,wGoals,mGoals,wHist,bwLog,txns,groups,splits,settings,curWkState,wkActive,chains,reflections,reviews,weekPriorities,reflectDismissed,reviewDismissed,launchDismissed,eveningClosed,intentionPromptDismissed,completionLog,activeSession,theme,videoJournal,accounts,subscriptions,focusCompletionLog,habitOrder,diet,dietGoals,foodDB,writtenJournal,splitOrder,favFoods,meals,exMeta,sleepLog,carryover,goalPeriod,goalHistory,txRules,weekPlan,finGoals,catBudgets,aspirations,dietEnabled,handwriting,career,foodLib,dietLog,dietTargets,dietDashVars,dietAnalyticsVars,dietAnalyticsRange,dietTrendVar,weeklyEntries,behavioralLog]);
 
   // PHOTO LOG — saved to its own key, only when photos change
   useEffect(()=>{if(photoLog.length>0)trySave("dash-v18-photos",photoLog);},[photoLog]);
@@ -3391,7 +3452,7 @@ ${body}
   // ── Smart suggestions: which goals are stalled or behind pace, so they feel alive ──
   const goalSuggestions=useMemo(()=>{
     const out={};const today=new Date(dk(now));
-    aspirations.filter(a=>!a.graduated&&a.status!=="archived").forEach(a=>{
+    aspirations.filter(a=>!a.graduated&&a.status!=="archived"&&a.goalType!=="behavioral"&&a.goalType!=="measurableDaily").forEach(a=>{
       // days since last progress
       const lp=a.lastProgress||a.created||a.createdOn;
       if(lp){const days=Math.round((today-new Date(lp))/86400000);
@@ -3826,7 +3887,7 @@ ${body}
     if(!editGoal||!egText.trim())return;
     const{kind,goal}=editGoal;
     if(kind==="weekly"){const t=Math.max(1,parseInt(egNum)||goal.target||1);setWGoals(p=>p.map(g=>g.id===goal.id?{...g,text:egText.trim(),target:t}:g));}
-    else{setAspirations(p=>p.map(a=>{if(a.id!==goal.id)return a;const u={...a,text:egText.trim()};if(a.goalType==="habit")u.targetDays=Math.max(1,parseInt(egNum)||a.targetDays);else if(a.goalType==="measurable"){u.totalHours=Math.max(1,parseInt(egNum)||a.totalHours);u.deadline=egDeadline||a.deadline;}else if(a.goalType==="outcome")u.steps=egSteps.filter(s=>s.text&&s.text.trim());return u;}));}
+    else{const newText=egText.trim();let habitId=null;setAspirations(p=>p.map(a=>{if(a.id!==goal.id)return a;const u={...a,text:newText};if(a.goalType==="habit")u.targetDays=Math.max(1,parseInt(egNum)||a.targetDays);else if(a.goalType==="measurable"){u.totalHours=Math.max(1,parseInt(egNum)||a.totalHours);u.deadline=egDeadline||a.deadline;}else if(a.goalType==="outcome")u.steps=egSteps.filter(s=>s.text&&s.text.trim());if(a.habitId)habitId=a.habitId;return u;}));if(habitId)setTodos(p=>p.map(t=>t.id===habitId?{...t,text:newText}:t));}
     setEditGoal(null);
   };
   const deleteGoalEdit=()=>{if(!editGoal)return;const{kind,goal}=editGoal;if(kind==="weekly")setWGoals(p=>p.filter(g=>g.id!==goal.id));else removeGoal(goal.id);setEditGoal(null);};
@@ -4103,7 +4164,28 @@ ${body}
   const chainNextId=useMemo(()=>{const m={};chains.forEach(c=>{const next=c.taskIds.find(tid=>!dc[tid]);if(next)m[c.id]=next;});return m;},[chains,dc]);
   const flashChecked=(id)=>{setJustChecked(p=>({...p,[id]:true}));setTimeout(()=>setJustChecked(p=>{const n={...p};delete n[id];return n;}),420);};
   const celebrateGoal=()=>{setConfetti(true);setTimeout(()=>setConfetti(false),1600);};
+  // Behavioral goals complete through a reflection check-in (not a plain tick). Tapping opens the
+  // modal — pre-filled if already answered today — so the day's answer can be set or revised.
+  const openReflection=(t)=>{
+    const ex=(behavioralLog[t.id]||{})[vk];
+    setBehavioralModal({todoId:t.id,date:vk,q:t.reflectQ||`Did you stay true to "${t.text}" today?`,text:t.text,draft:{answer:ex?.answer||"",note:ex?.note||""}});
+  };
+  const saveReflection=()=>{
+    if(!behavioralModal)return;const{todoId,date,draft}=behavioralModal;
+    if(!draft.answer)return;
+    setBehavioralLog(p=>({...p,[todoId]:{...(p[todoId]||{}),[date]:{answer:draft.answer,note:(draft.note||"").trim(),t:Date.now()}}}));
+    if(!(checks[date]||{})[todoId])flashChecked(todoId);
+    setChecks(p=>({...p,[date]:{...(p[date]||{}),[todoId]:true}}));
+    setBehavioralModal(null);
+  };
+  const clearReflection=()=>{
+    if(!behavioralModal)return;const{todoId,date}=behavioralModal;
+    setBehavioralLog(p=>{const n={...p};if(n[todoId]){const m={...n[todoId]};delete m[date];n[todoId]=m;}return n;});
+    setChecks(p=>{const day={...(p[date]||{})};delete day[todoId];return{...p,[date]:day};});
+    setBehavioralModal(null);
+  };
   const handleCheck=(t)=>{
+    if(t.behavioral){openReflection(t);return;}
     const wasOff=!dc[t.id];
     toggle(t);
     if(wasOff){
@@ -4144,8 +4226,124 @@ ${body}
     </div>);
   };
 
+  const renderWeeklySection=()=>{
+    const list=weeklyGoalHabits();const tk=dk(now);
+    return(<>
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontSize:9,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em"}}>Week of {fd(weekStartOf(now))} · resets Monday</div>
+        </div>
+        {list.length===0&&<div style={{textAlign:"center",padding:"30px 24px"}}>
+          <div style={{width:54,height:54,borderRadius:16,background:C.accentSoft,color:C.accent,display:"inline-flex",alignItems:"center",justifyContent:"center",marginBottom:16}}><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+          <div style={{fontSize:16,fontWeight:700,fontFamily:FN.h,fontStyle:"italic",color:C.text,marginBottom:8}}>Weekly habits come from your Goals</div>
+          <div style={{fontSize:12.5,color:C.textDim,fontWeight:500,lineHeight:1.6,maxWidth:300,margin:"0 auto 18px"}}>Create a <strong>Measurable</strong> goal in the <strong>Goals</strong> tab and set it to <strong>Weekly</strong>. It appears here automatically — log your time or count on any day toward the week's commitment.</div>
+          <button className="press" onClick={()=>setTab("goals")} style={{display:"inline-flex",alignItems:"center",gap:6,background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:10,padding:"9px 16px",color:C.textDim,fontSize:11.5,fontWeight:700,fontFamily:FN.b,cursor:"pointer"}}>Go to Goals <span style={{fontSize:13}}>→</span></button>
+        </div>}
+        {(()=>{if(list.length===0)return null;
+          const days=wkDays(tk);const DOW=["M","T","W","T","F","S","S"];const AMBER="#E8A33D";
+          const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+          const gridCols="minmax(68px,1.25fr) repeat(7,1fr) 50px";
+          const boxFmt=(a,sum)=>{if(weeklyUnit(a)==="count")return String(Math.round(sum));const m=Math.round(sum);if(m===0)return"";if(m<60)return m+"m";return m%60===0?(m/60)+"h":(Math.round(m/60*10)/10)+"h";};
+          const openLog=(id,k)=>setWeeklyLogModal({goalId:id,date:k,draft:{h:"",m:"",amt:"",note:""},editId:null});
+          return(<div>
+            {/* Column header — day letters + dates, mirrors the habit grid */}
+            <div style={{display:"grid",gridTemplateColumns:gridCols,gap:3,alignItems:"end",marginBottom:8,paddingRight:2}}>
+              <div/>
+              {days.map((k,i)=>{const d=pd(k);const isT=k===tk;return(<div key={k} style={{textAlign:"center"}}>
+                <div style={{fontSize:9,fontFamily:FN.m,fontWeight:isT?800:600,color:isT?C.accent:C.textSec}}>{DOW[i]}</div>
+                <div style={{fontSize:11,fontFamily:FN.m,fontWeight:isT?800:500,color:isT?C.accent:C.text}}>{d.getDate()}</div>
+              </div>);})}
+              <div style={{textAlign:"center",fontSize:8,fontFamily:FN.m,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.04em"}}>Left</div>
+            </div>
+            {list.map(a=>{const st=weeklyStats(a,tk);const unit=weeklyUnit(a);const done=st.pct>=100;const flash=justChecked[a.id];
+              const remDisp=unit==="hours"?Math.round(st.remaining*10)/10:st.remaining;
+              const lifeTot=+a.totalHours||0;const lifeDone=goalDone(a);const wkStreak=weeklyStreakFor(a);
+              return(<div key={a.id} style={{marginBottom:12}}>
+                <div style={{display:"grid",gridTemplateColumns:gridCols,gap:3,alignItems:"center"}}>
+                  {/* Name + weekly commitment subtitle */}
+                  <div onClick={()=>openLog(a.id,tk)} style={{minWidth:0,paddingRight:4,cursor:"pointer"}}>
+                    <div style={{fontSize:13,fontWeight:600,fontFamily:FN.b,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.text}</div>
+                    <div style={{fontSize:8.5,color:C.textDim,fontFamily:FN.m,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.weeklyCommit}{unit==="hours"?"h":` ${weeklyCountLabel(a)}`}/wk{wkStreak>0?` · 🔥${wkStreak}`:""}</div>
+                  </div>
+                  {/* One box per day — green with the logged amount, amber "+" for today-empty */}
+                  {days.map(k=>{const sum=weeklyDaySum(a.id,k);const has=sum>0;const d=pd(k);const cdMid=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();const isT=k===tk;const isFuture=cdMid>todayMid;
+                    const bg=has?(done?C.greenBright:C.green):(isT?`${AMBER}22`:"transparent");
+                    const bd=has?"none":(isT?`1px solid ${AMBER}`:`1px solid ${C.hairline}`);
+                    return(<div key={k} onClick={()=>{if(!isFuture)openLog(a.id,k);}} title={has?fmtWeeklyAmt(a,sum):""} style={{height:34,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",cursor:isFuture?"default":"pointer",opacity:isFuture?0.4:1,background:bg,border:bd,transition:"all 0.15s ease",animation:flash&&isT?"checkStamp 0.4s ease":"none"}}>
+                      {has?<span style={{fontSize:10,fontWeight:800,fontFamily:FN.m,color:"#0B1120"}}>{boxFmt(a,sum)}</span>:isT?<span style={{fontSize:13,fontWeight:700,color:AMBER,lineHeight:1}}>+</span>:null}
+                    </div>);})}
+                  {/* Weekly number that counts down + percent complete */}
+                  <div style={{textAlign:"center",lineHeight:1.15}}>
+                    <div style={{fontSize:13,fontFamily:FN.m,fontWeight:800,color:done?C.greenBright:C.text}}>{done?"✓":`${remDisp}${unit==="hours"?"h":""}`}</div>
+                    <div style={{fontSize:8.5,fontFamily:FN.m,fontWeight:700,color:done?C.greenBright:(st.pct>=50?C.accent:C.textDim)}}>{st.pct}%</div>
+                  </div>
+                </div>
+                {/* Thin weekly progress bar under the row */}
+                <div style={{height:4,background:C.surfaceDim,borderRadius:2,overflow:"hidden",marginTop:7}}><div style={{height:"100%",width:`${st.pct}%`,background:done?C.greenBright:C.accent,borderRadius:2,transition:"width 0.45s cubic-bezier(0.4,0,0.2,1)"}}/></div>
+                {lifeTot>0&&<div style={{fontSize:8.5,color:C.textDim,fontFamily:FN.m,marginTop:4,textAlign:"right"}}>Lifetime {lifeDone}/{lifeTot}h</div>}
+              </div>);})}
+          </div>);})()}
+      </div>
+      {weeklyLogModal&&(()=>{const a=aspirations.find(x=>x.id===weeklyLogModal.goalId);if(!a)return null;
+        const unit=weeklyUnit(a);const selDate=weeklyLogModal.date;const draft=weeklyLogModal.draft||{h:"",m:"",amt:"",note:""};
+        const setDraft=pp=>setWeeklyLogModal(x=>({...x,draft:{...draft,...pp}}));
+        const days=wkDays(dk(now));const dayEntries=weeklyDayEntries(a.id,selDate);
+        const weekTotal=weeklySum(a.id,dk(now));const wkDisp=unit==="hours"?Math.round(weekTotal/60*10)/10:weekTotal;
+        const canSave=unit==="hours"?((parseInt(draft.h)||0)*60+(parseInt(draft.m)||0)>0):(parseFloat(draft.amt)>0);
+        const saveEntry=()=>{let amt;if(unit==="hours")amt=(parseInt(draft.h)||0)*60+(parseInt(draft.m)||0);else amt=parseFloat(draft.amt)||0;if(amt<=0)return;if(weeklyLogModal.editId)updateWeeklyEntry(a.id,weeklyLogModal.editId,{amt,note:(draft.note||"").trim()});else addWeeklyEntry(a.id,selDate,amt,draft.note);setWeeklyLogModal(x=>({...x,draft:{h:"",m:"",amt:"",note:""},editId:null}));};
+        const editEntry=e=>{if(unit==="hours")setWeeklyLogModal(x=>({...x,editId:e.id,draft:{h:String(Math.floor(e.amt/60)||""),m:String(e.amt%60||""),note:e.note||"",amt:""}}));else setWeeklyLogModal(x=>({...x,editId:e.id,draft:{amt:String(e.amt),note:e.note||"",h:"",m:""}}));};
+        const DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+        return(<div style={{position:"fixed",inset:0,zIndex:600,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setWeeklyLogModal(null)}>
+          <div style={{position:"absolute",inset:0,background:"rgba(5,8,16,0.75)",backdropFilter:"blur(8px)"}}/>
+          <div onClick={e=>e.stopPropagation()} style={{position:"relative",background:C.bg,width:"100%",maxWidth:480,maxHeight:"92vh",overflowY:"auto",borderTopLeftRadius:22,borderTopRightRadius:22,border:`1px solid ${C.hairline}`,padding:"18px 20px 26px",animation:"overlayIn 0.22s ease"}} className="hide-scroll">
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <span style={{fontSize:16,fontWeight:800,color:C.text,fontFamily:FN.h}}>Log · {a.text}</span>
+              <button className="press" onClick={()=>setWeeklyLogModal(null)} style={{background:"transparent",border:"none",color:C.accent,fontSize:14,fontWeight:700,fontFamily:FN.b,cursor:"pointer"}}>Done</button>
+            </div>
+            {/* day picker — this week */}
+            <div className="hide-scroll" style={{display:"flex",gap:6,overflowX:"auto",marginBottom:16,paddingBottom:2}}>
+              {days.map((d,i)=>{const on=d===selDate;const sum=weeklyDaySum(a.id,d);const isFuture=pd(d)>pd(dk(now));const dt=pd(d);return(
+                <button key={d} disabled={isFuture} onClick={()=>setWeeklyLogModal(x=>({...x,date:d,draft:{h:"",m:"",amt:"",note:""},editId:null}))} className="press" style={{flex:"0 0 auto",width:46,padding:"7px 0",borderRadius:11,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:C.surface,cursor:isFuture?"default":"pointer",opacity:isFuture?0.35:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <span style={{fontSize:9,fontWeight:700,color:on?C.btnText:C.textDim,textTransform:"uppercase"}}>{DOW[i]}</span>
+                  <span style={{fontSize:14,fontWeight:800,color:on?C.btnText:C.text,fontFamily:FN.h,lineHeight:1}}>{dt.getDate()}</span>
+                  <span style={{width:5,height:5,borderRadius:"50%",background:sum>0?(on?C.btnText:C.green):"transparent"}}/>
+                </button>);})}
+            </div>
+            {/* entry input */}
+            <div style={{fontSize:12,color:C.textDim,marginBottom:9}}>{weeklyLogModal.editId?"Edit entry":unit==="hours"?"How much time did you spend?":"How many did you do?"}</div>
+            {unit==="hours"?<div style={{display:"flex",gap:10,marginBottom:12}}>
+              <div style={{flex:1}}><input type="number" inputMode="numeric" value={draft.h} onChange={e=>setDraft({h:e.target.value})} placeholder="0" style={{...inp,textAlign:"center",marginBottom:0}}/><div style={{fontSize:9.5,color:C.textDim,fontWeight:700,textAlign:"center",marginTop:4,textTransform:"uppercase"}}>Hours</div></div>
+              <div style={{flex:1}}><input type="number" inputMode="numeric" value={draft.m} onChange={e=>setDraft({m:e.target.value})} placeholder="0" style={{...inp,textAlign:"center",marginBottom:0}}/><div style={{fontSize:9.5,color:C.textDim,fontWeight:700,textAlign:"center",marginTop:4,textTransform:"uppercase"}}>Minutes</div></div>
+            </div>:<div style={{marginBottom:12}}><input type="number" inputMode="decimal" value={draft.amt} onChange={e=>setDraft({amt:e.target.value})} placeholder="1" style={{...inp,textAlign:"center",marginBottom:0}}/><div style={{fontSize:9.5,color:C.textDim,fontWeight:700,textAlign:"center",marginTop:4,textTransform:"uppercase"}}>Count</div></div>}
+            <input value={draft.note} onChange={e=>setDraft({note:e.target.value})} placeholder="Add a short note (optional)" style={{...inp,marginBottom:12}}/>
+            <button className="press" onClick={saveEntry} disabled={!canSave} style={{...btnB,width:"100%",opacity:canSave?1:0.45,cursor:canSave?"pointer":"default",marginBottom:weeklyLogModal.editId?8:0}}>{weeklyLogModal.editId?"Save changes":"Save entry"}</button>
+            {weeklyLogModal.editId&&<button className="press" onClick={()=>setWeeklyLogModal(x=>({...x,editId:null,draft:{h:"",m:"",amt:"",note:""}}))} style={{...btnG,width:"100%"}}>Cancel edit</button>}
+            {/* entries for the selected day */}
+            {dayEntries.length>0&&<div style={{marginTop:18}}>
+              <div style={{fontSize:10.5,fontWeight:800,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>{pd(selDate).toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"})} · {fmtWeeklyAmt(a,weeklyDaySum(a.id,selDate))}</div>
+              {dayEntries.map(e=>(<div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderTop:`1px solid ${C.hairline}`}}>
+                <span style={{fontSize:13.5,fontWeight:800,color:C.text,fontFamily:FN.m,minWidth:56}}>{fmtWeeklyAmt(a,e.amt)}</span>
+                <span style={{flex:1,minWidth:0,fontSize:12,color:C.textDim,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.note||"—"}</span>
+                <button className="press" onClick={()=>editEntry(e)} style={{background:"transparent",border:"none",color:C.textDim,cursor:"pointer",padding:4}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                <button className="press" onClick={()=>deleteWeeklyEntry(a.id,e.id)} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",padding:4,opacity:0.8}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+              </div>))}
+            </div>}
+            <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${C.hairline}`,display:"flex",justifyContent:"space-between",fontSize:11.5,fontFamily:FN.m,fontWeight:700}}>
+              <span style={{color:C.textDim}}>This week</span>
+              <span style={{color:C.text}}>{wkDisp}{unit==="hours"?" h":` ${weeklyCountLabel(a)}`} / {a.weeklyCommit}{unit==="hours"?" h":` ${weeklyCountLabel(a)}`}</span>
+            </div>
+          </div>
+        </div>);})()}
+    </>);
+  };
+
   const TRow=({t,big,onEdit,onDelete})=>{
     const on=dc[t.id];const flash=justChecked[t.id];const link=taskToChain[t.id];const isNext=link&&chainNextId[link.chain.id]===t.id&&!on;
+    // Goal-linked habits (generated from a long-term goal) get a distinct gold treatment so they read
+    // as coming from the Goals tab. Behavioral ones also carry their reflection answer for the day.
+    const goalLinked=t.behavioral||t.measurableDaily;
+    const refl=t.behavioral?(behavioralLog[t.id]||{})[vk]:null;
+    const REFL_CLR={yes:C.greenBright,partly:"#E8A33D",no:C.textDim};
     const[swipeX,setSwipeX]=useState(0);const[swipeStart,setSwipeStart]=useState(null);
     const onTouchStart=e=>{if(!onDelete)return;setSwipeStart(e.touches[0].clientX);};
     const onTouchMove=e=>{if(swipeStart===null)return;const dx=e.touches[0].clientX-swipeStart;if(dx<0)setSwipeX(Math.max(dx,-80));else if(swipeX<0)setSwipeX(Math.min(0,swipeX+dx));};
@@ -4153,7 +4351,9 @@ ${body}
     return(
     <div data-swiperow style={{position:"relative",marginBottom:big?10:8,marginLeft:link?14:0}}>
       {onDelete&&swipeX<0&&<div onClick={onDelete} style={{position:"absolute",right:0,top:0,bottom:0,width:72,background:C.red,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div>}
-    <div className={`task-row${flash?" just-checked":""}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{position:"relative",display:"flex",alignItems:"center",gap:big?14:12,padding:big?"18px 18px":"14px 16px",borderRadius:10,background:C.surface,border:`1px solid ${isNext?C.accent:C.hairline}`,opacity:on?0.65:1,animation:isNext?"chainPulse 2.4s ease-in-out infinite":"none",overflow:"hidden",transform:`translateX(${swipeX}px)`,transition:swipeStart===null?"transform 0.3s ease, opacity 0.5s ease":"none"}}>
+    <div className={`task-row${flash?" just-checked":""}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{position:"relative",display:"flex",alignItems:"center",gap:big?14:12,padding:big?"18px 18px":"14px 16px",borderRadius:10,background:C.surface,border:`1px solid ${isNext?C.accent:(goalLinked&&!on?(C.accentMed||C.accent):C.hairline)}`,borderLeft:goalLinked&&!on?`3px solid ${C.accent}`:undefined,opacity:on?0.65:1,animation:isNext?"chainPulse 2.4s ease-in-out infinite":"none",overflow:"hidden",transform:`translateX(${swipeX}px)`,transition:swipeStart===null?"transform 0.3s ease, opacity 0.5s ease":"none"}}>
+      {/* Behavioral goal — faint gold wash so it's clearly set apart from ordinary daily habits */}
+      {t.behavioral&&!on&&<div style={{position:"absolute",inset:0,pointerEvents:"none",background:theme==="light"?"rgba(217,119,6,0.06)":"rgba(245,158,11,0.09)"}}/>}
       {on&&<div style={{position:"absolute",inset:0,borderRadius:10,pointerEvents:"none",overflow:"hidden",borderLeft:`3px solid ${C.green}`}}>
         {/* Settled state — solid soft green once the sweep has finished */}
         {!flash&&<div style={{position:"absolute",inset:0,background:theme==="light"?"rgba(5,150,105,0.10)":"rgba(52,211,153,0.18)"}}/>}
@@ -4168,6 +4368,14 @@ ${body}
       <div onClick={()=>handleCheck(t)} style={{position:"relative",zIndex:2,width:big?24:22,height:big?24:22,borderRadius:7,flexShrink:0,border:on?"none":`2px solid ${C.textDim}`,background:on?`linear-gradient(135deg,${C.greenBright},${C.green})`:"transparent",boxShadow:on?`0 2px 8px ${C.green}55`:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s cubic-bezier(0.34,1.4,0.5,1)"}}>{on&&<svg width={big?15:13} height={big?15:13} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>}</div>
       {t.diff&&DIFF[t.diff]&&<div style={{position:"relative",zIndex:2,width:4,height:big?26:20,borderRadius:2,background:DIFF[t.diff].color,flexShrink:0,opacity:on?0.4:1}}/>}
       <span onClick={()=>handleCheck(t)} style={{position:"relative",zIndex:2,flex:1,fontSize:big?15:13,fontWeight:500,fontFamily:big?FN.h:FN.b,fontStyle:big?"italic":"normal",color:on?C.textDim:C.text,cursor:"pointer",transition:"color 0.4s ease"}}>{t.text}</span>
+      {t.behavioral&&<span onClick={()=>openReflection(t)} style={{position:"relative",zIndex:2,display:"inline-flex",alignItems:"center",gap:6,flexShrink:0,cursor:"pointer"}}>
+        {refl&&<span title={`Reflected: ${refl.answer}`} style={{width:8,height:8,borderRadius:"50%",background:REFL_CLR[refl.answer]||C.textDim,flexShrink:0}}/>}
+        <span style={{fontSize:8.5,fontWeight:800,color:C.accent,background:`${C.accent}1F`,border:`1px solid ${C.accent}55`,borderRadius:5,padding:"2px 6px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.05em"}}>✨ Goal</span>
+      </span>}
+      {t.measurableDaily&&<span style={{position:"relative",zIndex:2,display:"inline-flex",alignItems:"center",gap:6,flexShrink:0}}>
+        <span style={{fontSize:9,fontWeight:800,color:C.accent,fontFamily:FN.m,whiteSpace:"nowrap"}}>{t.measureUnit==="count"?`${t.dailyCommit} ${t.unitLabel||"×"}`:fmtHrsLabel(t.dailyCommit)}<span style={{color:C.textDim,fontWeight:600}}>/day</span></span>
+        <span style={{fontSize:8.5,fontWeight:800,color:C.accent,background:`${C.accent}1F`,border:`1px solid ${C.accent}55`,borderRadius:5,padding:"2px 6px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.05em"}}>Goal</span>
+      </span>}
       {t.experimental&&(()=>{const st=habitStreakFor(t.id);return(<span style={{position:"relative",zIndex:2,display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}><span style={{fontSize:8.5,fontWeight:800,color:C.accent,background:`${C.accent}1F`,border:`1px solid ${C.accent}55`,borderRadius:5,padding:"2px 6px",fontFamily:FN.b,textTransform:"uppercase",letterSpacing:"0.05em"}}>🧪 Test</span><span style={{fontSize:9.5,fontWeight:800,color:st>=1?"#E8A33D":C.textDim,fontFamily:FN.m}}>{st}/30</span></span>);})()}
       {!t.experimental&&t.diff&&DIFF[t.diff]&&<span style={{position:"relative",zIndex:2,fontSize:9,fontWeight:700,fontFamily:FN.m,color:DIFF[t.diff].color,background:DIFF[t.diff].bg,borderRadius:4,padding:"2px 7px",flexShrink:0,opacity:on?0.5:1}}>{DIFF[t.diff].label}</span>}
       {t.proof&&<svg style={{position:"relative",zIndex:2}} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>}
@@ -4700,6 +4908,11 @@ ${body}
             {renderGridSection("Evening",nightItems,"#60A5FA")}
             {generalItems.length>0&&renderGridSection("All Day",generalItems,C.green)}
             {goalItems.length>0&&renderGridSection("Goals",goalItems.map(g=>({...g,id:g.goalId})),C.accent,"auto")}
+            {/* Weekly commitments — shown in the grid view too so they are visible every day */}
+            <div style={{marginTop:8,marginBottom:4}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><span style={{width:8,height:8,borderRadius:2,background:C.accent}}/><span style={{fontSize:11,fontWeight:800,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em"}}>Weekly</span></div>
+              {renderWeeklySection()}
+            </div>
 
             {/* ═══ ONE overall monthly completion % — across all habits, all elapsed days ═══ */}
             {(()=>{
@@ -4808,7 +5021,7 @@ ${body}
 
           {/* Big tab selector */}
           <div style={{display:"flex",gap:0,marginBottom:22,borderBottom:`1px solid ${C.hairline}`}}>
-            {[{k:"morning",l:"Morning"},{k:"evening",l:"Evening"},{k:"focus",l:"Focus"}].map(s=>{const on=todaySub===s.k;return(
+            {[{k:"morning",l:"Morning"},{k:"evening",l:"Evening"},{k:"weekly",l:"Weekly"},{k:"focus",l:"Focus"}].map(s=>{const on=todaySub===s.k;return(
               <button key={s.k} onClick={()=>setTodaySub(s.k)} style={{flex:1,padding:"16px 8px",background:"transparent",border:"none",borderBottom:on?`2px solid ${C.accent}`:"2px solid transparent",cursor:"pointer",color:on?C.text:C.textDim,fontFamily:FN.b,fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s ease",marginBottom:-1}}>{s.l}</button>
             );})}
           </div>
@@ -4967,6 +5180,9 @@ ${body}
               ?<DragReorderList items={nightTSorted} onReorder={applyHabitOrder} />
               :nightTSorted.map(t=><TRow key={t.id} t={t} />)}
           </div>}
+
+          {todaySub==="weekly"&&renderWeeklySection()}
+
 
         </div>);})()}
 
@@ -5496,14 +5712,18 @@ ${body}
                   {a.goalType==="outcome"&&steps.length>0&&<div style={{marginTop:8,paddingLeft:32}}>{steps.map((s,si)=>(<div key={s.id||si} style={{fontSize:10.5,color:C.textDim,padding:"2px 0",display:"flex",alignItems:"center",gap:6}}><span style={{color:GOLD,fontSize:9}}>✓</span><span style={{textDecoration:"line-through"}}>{s.text}</span></div>))}</div>}
                 </SwipeRow>
               );}
-              const p=aspirationProgress.find(x=>x.id===a.id);const pct=p?.pct||0;const typeBadge=a.goalType==="measurable"?"📐":a.goalType==="outcome"?"🎯":"🔄";return(
+              const p=aspirationProgress.find(x=>x.id===a.id);const pct=p?.pct||0;const typeBadge=a.goalType==="behavioral"?"✨":a.goalType==="measurableDaily"?"📊":a.goalType==="measurable"?"📐":a.goalType==="outcome"?"🎯":"🔄";return(
               <SwipeRow key={a.id} onDelete={()=>removeGoal(a.id)} bg={C.surface} padY={14}>
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:a.goalType==="habit"||a.goalType==="measurable"?8:0}}>
                   <span style={{fontSize:14}}>{typeBadge}</span>
                   <div style={{flex:1}}>
                     <div style={{fontSize:14,fontWeight:600,color:C.text}}>{a.text}</div>
                     <div style={{fontSize:10,color:C.textDim,fontFamily:FN.m,marginTop:2}}>
-                      {a.goalType==="measurable"&&(()=>{const pl=goalPlan[a.id];return pl?`${pl.done}/${pl.total}h · ${pl.pct}%`:`${goalDone(a)}/${a.totalHours}h`;})()}
+                      {a.goalType==="measurable"&&(+a.weeklyCommit>0
+                        ?`${a.weeklyCommit}${a.measureUnit==="count"?` ${a.unitLabel||"×"}`:"h"}/week${+a.totalHours>0?` · ${goalDone(a)}/${a.totalHours}h lifetime`:""}`
+                        :(()=>{const pl=goalPlan[a.id];return pl?`${pl.done}/${pl.total}h · ${pl.pct}%`:`${goalDone(a)}/${a.totalHours||0}h`;})())}
+                      {a.goalType==="behavioral"&&`Daily check-in · ${a.slot==="night"?"evening":"morning"}${a.habitId?` · 🔥 ${habitStreakFor(a.habitId)}`:""}`}
+                      {a.goalType==="measurableDaily"&&`${fmtDailyTarget(a)}${a.habitId?` · 🔥 ${habitStreakFor(a.habitId)}`:""}`}
                       {a.goalType==="outcome"&&`${(a.steps||[]).filter(s=>s.done).length}/${(a.steps||[]).length} steps`}
                       {a.goalType==="habit"&&`${p?.daysHit||0}/${a.targetDays} days · ${p?.onPace?"on pace":"behind"}`}
                     </div>
@@ -5530,8 +5750,10 @@ ${body}
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
                       <span style={{fontSize:9,color:pl.onPace?C.greenBright:(C.amber||"#E8A33D"),fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",flex:1}}>{pl.onPace?"On pace":`Behind by ${pl.behindBy}h`}</span>
-                      {[0.5,1,2].map(h=>(<button key={h} onClick={()=>logGoalHours(a.id,h)} className="press" style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 9px",fontSize:10,fontWeight:700,color:C.text,fontFamily:FN.m,cursor:"pointer"}}>+{h}h</button>))}
-                      <button onClick={()=>logGoalHours(a.id,-0.5)} className="press" style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 8px",fontSize:10,fontWeight:700,color:C.textDim,fontFamily:FN.m,cursor:"pointer"}}>−</button>
+                      {+a.weeklyCommit>0
+                        ?<span style={{fontSize:9,color:C.accent,fontWeight:800,fontFamily:FN.m,textTransform:"uppercase",letterSpacing:"0.04em"}}>Log in Today › Weekly</span>
+                        :<>{[0.5,1,2].map(h=>(<button key={h} onClick={()=>logGoalHours(a.id,h)} className="press" style={{background:C.surfaceDim,border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 9px",fontSize:10,fontWeight:700,color:C.text,fontFamily:FN.m,cursor:"pointer"}}>+{h}h</button>))}
+                      <button onClick={()=>logGoalHours(a.id,-0.5)} className="press" style={{background:"transparent",border:`1px solid ${C.hairline}`,borderRadius:7,padding:"5px 8px",fontSize:10,fontWeight:700,color:C.textDim,fontFamily:FN.m,cursor:"pointer"}}>−</button></>}
                     </div>
                   </div>
                 );})()}
@@ -5673,7 +5895,7 @@ ${body}
             {/* Daily Rituals — morning/evening/general recurring tasks */}
             <div style={{marginTop:28}}>
               <div style={{fontSize:11,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Daily Rituals</div>
-              {["morning","night"].map(grp=>{const items=todos.filter(t=>t.grp===grp&&!t.removedOn);return(
+              {["morning","night"].map(grp=>{const items=todos.filter(t=>t.grp===grp&&!t.removedOn&&!t.goalId);return(
                 <div key={grp} style={{marginBottom:16}}>
                   <div style={{fontSize:10,color:C.textDim,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6,paddingLeft:2}}>{grp==="night"?"Evening":grp.charAt(0).toUpperCase()+grp.slice(1)}</div>
                   {items.map(t=>{const exp=t.experimental;const st=exp?habitStreakFor(t.id):0;return(<SwipeRow key={t.id} onDelete={()=>removeHabit(t.id)} bg={exp?`${C.accent}0D`:C.surface} border={exp?`1px solid ${C.accent}55`:undefined} padY={11}>
@@ -5799,11 +6021,10 @@ ${body}
           {!gcOverride&&<div>
             <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>What are you working toward?</div>
             <input value={gcName} onChange={e=>setGcName(e.target.value)} placeholder="e.g. Study for IO exam, Learn Spanish" style={{...inp,marginBottom:18,fontSize:15,fontFamily:FN.h,fontStyle:"italic"}} autoFocus/>
-            <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Goal type <span style={{textTransform:"none",fontWeight:500,color:C.textDim,opacity:0.7}}>· switch anytime, your details are kept</span></div>
+            <div style={{fontSize:10,fontWeight:700,color:C.textDim,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Goal type <span style={{textTransform:"none",fontWeight:500,color:C.textDim,opacity:0.7}}>· each one becomes a habit in Today</span></div>
             {[
-              {k:"measurable",icon:"📐",title:"Measurable",desc:"A deadline and estimated hours. Study for an exam, finish a project.",ex:"Study 50 hours by May 15"},
-              {k:"outcome",icon:"🎯",title:"Outcome",desc:"A result you want, broken into actionable steps.",ex:"Get an offer from Morgan Stanley"},
-              {k:"habit",icon:"🔄",title:"Habit-Building",desc:"Test a new daily habit now; graduates to permanent after a 30-day streak.",ex:"Read daily, stretch every morning"},
+              {k:"behavioral",icon:"✨",title:"Behavioral",desc:"A way of being you practise daily. Completed with a short reflection — not a number. Highlighted in Today.",ex:"Be more present · Act with honesty"},
+              {k:"measurable",icon:"📊",title:"Measurable",desc:"Track time or a count — daily or across the week. Auto-becomes a trackable habit in Today.",ex:"Study 1h/day · Read 10 pages · Work out 4×/week"},
             ].map(t=>{const on=gcType===t.k;return(<button key={t.k} onClick={()=>setGcType(t.k)} className="press" style={{display:"flex",gap:11,width:"100%",textAlign:"left",padding:"14px 16px",marginBottom:8,borderRadius:12,background:on?(C.accentSoft||C.accent+"18"):C.surfaceDim,border:`1px solid ${on?C.accent:C.hairline}`,cursor:"pointer",transition:"all 0.18s ease"}}>
               <span style={{width:24,height:24,borderRadius:7,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:on?C.accent:"transparent",fontSize:on?13:17,fontWeight:800,color:on?C.btnText:C.text}}>{on?"✓":t.icon}</span>
               <span style={{flex:1,minWidth:0}}>
@@ -5814,36 +6035,69 @@ ${body}
             </button>);})}
             {/* Inline, type-specific details — appear under the picker and change as you switch types */}
             {gcType&&<div style={{marginTop:6,paddingTop:16,borderTop:`1px solid ${C.hairline}`}}>
-              {gcType==="measurable"&&<div>
-                <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>When is the deadline?</div>
-                <input type="date" value={gcDeadline} onChange={e=>setGcDeadline(e.target.value)} style={{...inp,marginBottom:12}}/>
-                <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>How many total hours do you estimate?</div>
-                <input type="number" value={gcHours} onChange={e=>setGcHours(e.target.value)} placeholder="e.g. 50" style={{...inp,marginBottom:14}}/>
-                {gcDeadline&&gcHours&&(()=>{const wks=Math.max(1,Math.ceil((new Date(gcDeadline)-now)/(7*24*60*60*1000)));const perWk=Math.round(parseInt(gcHours)/wks*10)/10;return(<div style={{...card,padding:12,marginBottom:14,background:C.accentSoft,border:`1px solid ${C.accentMed}`}}>
-                  <div style={{fontSize:11,fontFamily:FN.m,color:C.text}}>≈ <strong>{perWk} hrs/week</strong> across {wks} weeks → <strong>~{Math.round(perWk/7*60)} min/day</strong></div>
-                </div>);})()}
-              </div>}
-              {gcType==="outcome"&&<div>
-                <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>Break it into 2-4 actionable steps:</div>
-                {gcSteps.map((s,i)=>(<input key={i} value={s} onChange={e=>{const n=[...gcSteps];n[i]=e.target.value;setGcSteps(n);}} placeholder={`Step ${i+1}...`} style={{...inp,marginBottom:8}}/>))}
-                {gcSteps.length<20&&<button onClick={()=>setGcSteps(p=>[...p,""])} style={{...btnG,width:"100%",fontSize:10,marginBottom:8}}>+ Add step</button>}
-                {gcSteps.length>=20&&<div style={{fontSize:10,color:C.textDim,textAlign:"center",fontStyle:"italic",marginBottom:8}}>Maximum 20 steps</div>}
-              </div>}
-              {gcType==="habit"&&<div>
-                <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>This becomes a <strong style={{color:C.text}}>daily</strong> habit. When will you do it?</div>
+              {gcType==="behavioral"&&<div>
+                <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>Becomes a <strong style={{color:C.text}}>daily habit</strong> in Today, highlighted as a goal. When will you check in?</div>
                 <div style={{display:"flex",gap:8,marginBottom:16}}>
                   {[{k:"morning",l:"☀️ Morning"},{k:"night",l:"🌙 Evening"}].map(s=>{const on=gcSlot===s.k;return(<button key={s.k} onClick={()=>setGcSlot(s.k)} style={{flex:1,padding:"13px 0",borderRadius:12,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:13,fontWeight:800,fontFamily:FN.b,cursor:"pointer",transition:"all 0.2s ease"}}>{s.l}</button>);})}
                 </div>
-                <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Daily action (optional — defaults to the title):</div>
-                <input value={gcAction} onChange={e=>setGcAction(e.target.value)} placeholder="e.g. Read 30 min, Study Spanish 20 min" style={{...inp,marginBottom:14}}/>
-                <div style={{padding:"12px 14px",background:C.accentSoft,borderRadius:10,border:`1px solid ${C.accentMed}`,marginBottom:4}}>
-                  <div style={{fontSize:11,color:C.text,fontFamily:FN.m,lineHeight:1.55}}>It's added to your daily habits right away, marked <strong>Testing</strong>. Keep a <strong>30-day streak</strong> and it graduates into a permanent habit automatically.</div>
+                <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Reflection question <span style={{opacity:0.7}}>(optional)</span></div>
+                <input value={gcReflectQ} onChange={e=>setGcReflectQ(e.target.value)} placeholder={gcName.trim()?`Did you stay true to "${gcName.trim()}" today?`:"e.g. Did you act with patience today?"} style={{...inp,marginBottom:14}}/>
+                <div style={{padding:"12px 14px",background:C.accentSoft,borderRadius:10,border:`1px solid ${C.accentMed}`}}>
+                  <div style={{fontSize:11,color:C.text,fontFamily:FN.m,lineHeight:1.55}}>Each day you'll answer with a quick <strong>Yes / Partly / No</strong> and an optional note — an intentional check-in, not a box to tick.</div>
                 </div>
               </div>}
+              {gcType==="measurable"&&<div>
+                <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>How often?</div>
+                <div style={{display:"flex",gap:8,marginBottom:16}}>
+                  {[{k:"daily",l:"Daily"},{k:"weekly",l:"Weekly"}].map(f=>{const on=gcFreq===f.k;return(<button key={f.k} onClick={()=>setGcFreq(f.k)} style={{flex:1,padding:"13px 0",borderRadius:12,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:13,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{f.l}</button>);})}
+                </div>
+                <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Measured in</div>
+                <div style={{display:"flex",gap:8,marginBottom:gcMeasure==="quantity"?10:16}}>
+                  {[{k:"time",l:"⏱ Time"},{k:"quantity",l:"# Quantity"}].map(u=>{const on=gcMeasure===u.k;return(<button key={u.k} onClick={()=>setGcMeasure(u.k)} style={{flex:1,padding:"11px 0",borderRadius:10,border:`1px solid ${on?C.accent:C.hairline}`,background:on?C.accent:"transparent",color:on?C.btnText:C.textDim,fontSize:12,fontWeight:800,fontFamily:FN.b,cursor:"pointer"}}>{u.l}</button>);})}
+                </div>
+                {gcMeasure==="quantity"&&<input value={gcUnitLabel} onChange={e=>setGcUnitLabel(e.target.value)} placeholder="Unit — e.g. pages, workouts, books" style={{...inp,marginBottom:16}}/>}
+                {gcFreq==="daily"?<>
+                  <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Daily target</div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                    <input type="number" inputMode="decimal" value={gcDailyCommit} onChange={e=>setGcDailyCommit(e.target.value)} placeholder={gcMeasure==="time"?"1":"20"} style={{...inp,width:110,textAlign:"center",marginBottom:0}}/>
+                    <span style={{fontSize:13,color:C.textDim,fontWeight:600}}>{gcMeasure==="time"?"hours / day":`${gcUnitLabel.trim()||"units"} / day`}</span>
+                  </div>
+                </>:<>
+                  <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Weekly commitment</div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                    <input type="number" inputMode="decimal" value={gcWeeklyCommit} onChange={e=>setGcWeeklyCommit(e.target.value)} placeholder={gcMeasure==="time"?"10":"4"} style={{...inp,width:110,textAlign:"center",marginBottom:0}}/>
+                    <span style={{fontSize:13,color:C.textDim,fontWeight:600}}>{gcMeasure==="time"?"hours / week":`${gcUnitLabel.trim()||"units"} / week`}</span>
+                  </div>
+                  {gcMeasure==="time"&&<><div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Lifetime total hours <span style={{opacity:0.7}}>(optional)</span></div>
+                  <input type="number" inputMode="decimal" value={gcHours} onChange={e=>setGcHours(e.target.value)} placeholder="e.g. 200" style={{...inp,marginBottom:14}}/></>}
+                </>}
+                {(()=>{const amt=gcFreq==="daily"?gcDailyCommit:gcWeeklyCommit;if(!(+amt>0))return null;const per=gcFreq==="daily"?"day":"week";const unit=gcMeasure==="time"?"hrs":(gcUnitLabel.trim()||"×");const where=gcFreq==="daily"?"Today as a daily habit":"Today → Weekly";return(
+                  <div style={{...card,padding:12,marginBottom:4,background:C.accentSoft,border:`1px solid ${C.accentMed}`}}>
+                    <div style={{fontSize:11,fontFamily:FN.m,color:C.text,lineHeight:1.5}}>Appears in <strong>{where}</strong>. Commit to <strong>{amt} {unit}/{per}</strong>{gcFreq==="weekly"&&gcMeasure==="time"&&+gcHours>0?<> · lifetime <strong>{gcHours}h</strong></>:null}.</div>
+                  </div>);})()}
+              </div>}
             </div>}
-            <button onClick={submitGoal} disabled={!gcName.trim()||!gcType} style={{...btnB,width:"100%",marginTop:14,opacity:(gcName.trim()&&gcType)?1:0.4,cursor:(gcName.trim()&&gcType)?"pointer":"default"}}>{gcType==="habit"?"Start Habit":"Create Goal"}</button>
+            {(()=>{const ok=gcName.trim()&&(gcType==="behavioral"||(gcType==="measurable"&&(gcFreq==="daily"?+gcDailyCommit>0:+gcWeeklyCommit>0)&&(gcMeasure!=="quantity"||gcUnitLabel.trim())));return(
+            <button onClick={submitGoal} disabled={!ok} style={{...btnB,width:"100%",marginTop:14,opacity:ok?1:0.4,cursor:ok?"pointer":"default"}}>Create Goal</button>);})()}
             {!gcType&&<div style={{fontSize:11,color:C.textDim,textAlign:"center",marginTop:8,fontStyle:"italic"}}>Pick a goal type to continue</div>}
           </div>}
+        </Overlay>
+
+        {/* ═══ BEHAVIORAL REFLECTION CHECK-IN ═══ completes a behavioral goal's daily habit */}
+        <Overlay open={!!behavioralModal} onClose={()=>setBehavioralModal(null)} title="Daily check-in">
+          {behavioralModal&&(()=>{const draft=behavioralModal.draft||{answer:"",note:""};const had=!!(behavioralLog[behavioralModal.todoId]||{})[behavioralModal.date];
+            const OPTS=[{k:"yes",l:"Yes",clr:C.greenBright},{k:"partly",l:"Partly",clr:"#E8A33D"},{k:"no",l:"No",clr:C.textDim}];
+            return(<div>
+              <div style={{fontSize:9.5,color:C.accent,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>✨ {behavioralModal.text}</div>
+              <div style={{fontSize:16,fontWeight:700,fontFamily:FN.h,fontStyle:"italic",color:C.text,lineHeight:1.4,marginBottom:16}}>{behavioralModal.q}</div>
+              <div style={{display:"flex",gap:8,marginBottom:16}}>
+                {OPTS.map(o=>{const on=draft.answer===o.k;return(<button key={o.k} onClick={()=>setBehavioralModal(m=>({...m,draft:{...m.draft,answer:o.k}}))} style={{flex:1,padding:"14px 0",borderRadius:12,border:`1.5px solid ${on?o.clr:C.hairline}`,background:on?o.clr:"transparent",color:on?"#fff":C.textDim,fontSize:13.5,fontWeight:800,fontFamily:FN.b,cursor:"pointer",transition:"all 0.18s ease"}}>{o.l}</button>);})}
+              </div>
+              <div style={{fontSize:12,color:C.textDim,marginBottom:8}}>Note <span style={{opacity:0.7}}>(optional)</span></div>
+              <textarea value={draft.note} onChange={e=>setBehavioralModal(m=>({...m,draft:{...m.draft,note:e.target.value}}))} placeholder="A word on how it went…" rows={2} style={{...inp,fontFamily:FN.b,fontSize:13,resize:"none",lineHeight:1.5,marginBottom:14}}/>
+              <button className="press" onClick={saveReflection} disabled={!draft.answer} style={{...btnB,width:"100%",opacity:draft.answer?1:0.4,cursor:draft.answer?"pointer":"default",marginBottom:had?8:0}}>{had?"Update check-in":"Save check-in"}</button>
+              {had&&<button className="press" onClick={clearReflection} style={{...btnG,width:"100%"}}>Clear today's check-in</button>}
+            </div>);})()}
         </Overlay>
 
         {/* ═══════════════ CAREER TAB ═══════════════ */}
